@@ -1,296 +1,193 @@
-
-import fs from 'fs';
-import path from 'path';
-
+import fs from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { httpUrl } from "./safe-http.js";
 export interface StreamTemplate {
   name: string;
   description: string;
-  asset: string;        // DASH asset
-  hlsSource?: string;   // HLS source file (defaults to samples/bbb.mp4)
+  asset: string;
+  hlsSource?: string;
   segmentDuration: number;
   timescale: number;
   startNumber: number;
   bitrateLadder: number[];
   hasSCTE35: boolean;
-  contentType: 'video' | 'audio' | 'mixed';
-  sourceUrl?: string;  // For dynamic templates
-  isDynamic?: boolean; // True for generated templates
+  contentType: "video" | "audio" | "mixed";
+  sourceUrl?: string;
+  isDynamic?: boolean;
+  protocol?: "hls" | "dash";
+  supported?: boolean;
+  windowSegments?: number;
+  rendition?: "all" | "low" | "main";
 }
-
 export interface TemplateGenerationOptions {
   url: string;
   name?: string;
   authToken?: string;
   authHeader?: string;
   authFile?: string;
+  allowedOrigins?: string[];
 }
-
-// Predefined templates
+const base = {
+  asset: "sample",
+  segmentDuration: 2000,
+  timescale: 1000,
+  startNumber: 1,
+  hasSCTE35: false,
+  contentType: "mixed" as const,
+  protocol: "hls" as const,
+  supported: true,
+};
 export const PREDEFINED_TEMPLATES: Record<string, StreamTemplate> = {
   sports: {
-    name: 'Live Sports',
-    description: 'High-bitrate sports event with SCTE-35 cues',
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17',
-    hlsSource: 'samples/bbb.mp4', // HLS uses dummy content from /assets/hls-sample
-    segmentDuration: 2002,
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [150000, 250000, 400000, 600000, 950000, 1400000, 2200000, 3450000, 4750000, 6000000],
-    hasSCTE35: true,
-    contentType: 'video'
+    ...base,
+    name: "Live motion sample",
+    description:
+      "360p moving test pattern and tone; 12-second live window; no ad signaling",
+    bitrateLadder: [765536],
+    rendition: "main",
+    windowSegments: 6,
   },
-
-  'low-latency': {
-    name: 'Ultra Low Latency',
-    description: 'Sub-second latency streaming for real-time applications',
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17',
-    hlsSource: 'samples/bbb.mp4', // HLS uses dummy content from /assets/hls-sample
-    segmentDuration: 200,
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [250000, 500000, 750000, 1000000],
-    hasSCTE35: false,
-    contentType: 'video'
-  },
-
-  ott: {
-    name: 'OTT Premium',
-    description: 'Premium OTT streaming with 4K support',
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17',
-    hlsSource: 'samples/bbb.mp4', // HLS uses dummy content from /assets/hls-sample
-    segmentDuration: 6000,
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [800000, 1200000, 2400000, 4800000, 7200000, 10800000],
-    hasSCTE35: true,
-    contentType: 'video'
-  },
-
   news: {
-    name: '24/7 News',
-    description: 'Continuous news broadcast',
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17',
-    hlsSource: 'samples/bbb.mp4', // HLS uses dummy content from /assets/hls-sample
-    segmentDuration: 6000,
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [150000, 250000, 400000, 600000, 950000],
-    hasSCTE35: false,
-    contentType: 'mixed'
+    ...base,
+    name: "Long live window",
+    description: "Two H.264/AAC renditions with a 60-second live window",
+    bitrateLadder: [303056, 765536],
+    windowSegments: 30,
   },
-
+  ott: {
+    ...base,
+    name: "Two rendition sample",
+    description: "180p and 360p H.264/AAC live sample for quality switching",
+    bitrateLadder: [303056, 765536],
+    windowSegments: 6,
+  },
   mobile: {
-    name: 'Mobile Streaming',
-    description: 'Mobile-optimized with battery efficiency',
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17',
-    hlsSource: 'samples/bbb.mp4', // HLS uses dummy content from /assets/hls-sample
-    segmentDuration: 4000,
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [80000, 120000, 250000, 500000, 800000],
-    hasSCTE35: false,
-    contentType: 'video'
-  }
+    ...base,
+    name: "Small rendition",
+    description: "180p H.264/AAC sample with a 12-second live window",
+    bitrateLadder: [303056],
+    rendition: "low",
+    windowSegments: 6,
+  },
+  "low-latency": {
+    ...base,
+    name: "Low latency",
+    description:
+      "Unavailable: partial-segment transport and low-latency media are not implemented",
+    bitrateLadder: [],
+    supported: false,
+  },
 };
-
-// Dynamic template generation
-export async function createTemplateFromUrl(options: TemplateGenerationOptions): Promise<StreamTemplate> {
-  const { url, name } = options;
-
-  if (url.includes('.mpd') || url.includes('DASH') || url.includes('dash')) {
-    return await createTemplateFromDash(url, name, options);
-  } else if (url.includes('.m3u8') || url.includes('HLS') || url.includes('hls')) {
-    return await createTemplateFromHls(url, name, options);
-  } else {
-    throw new Error('Unsupported manifest format. Use .mpd for DASH or .m3u8 for HLS');
-  }
-}
-
-async function createTemplateFromDash(url: string, name?: string, options?: TemplateGenerationOptions): Promise<StreamTemplate> {
-  // Import the analysis function dynamically to avoid circular dependencies
-  const { analyzeMPD } = await import('./dash-sim-runner.js');
-
-  try {
-    // Analyze the real manifest to extract parameters
-    const mpdInfo = await analyzeMPD(url, {
-      token: options?.authToken,
-      header: options?.authHeader,
-      file: options?.authFile
-    });
-
-    // Extract real parameters from the manifest
-    const bitrates = mpdInfo.representations
-      .map(rep => rep.bandwidth)
-      .sort((a, b) => a - b); // Sort ascending
-
-    // Convert segment duration from seconds to milliseconds (default to 2000ms if not available)
-    const segmentDuration = mpdInfo.segmentDuration ? Math.round(mpdInfo.segmentDuration * 1000) : 2000;
-
-    const startNumber = mpdInfo.startNumber || 1;
-    const timescale = mpdInfo.timescale || 1000;
-    const hasSCTE35 = mpdInfo.hasSCTE35 || false;
-
-    // Determine content type based on representations
-    const contentType = determineContentType(mpdInfo.representations);
-
-    const templateName = name || `Auto-DASH-${extractDomain(url)}-${contentType}`;
-
-    console.info(`📊 Extracted from manifest:`);
-    console.info(`   Bitrates: ${bitrates.join(', ')} bps`);
-    console.info(`   Segment duration: ${segmentDuration}ms`);
-    console.info(`   Timescale: ${timescale}`);
-    console.info(`   Start number: ${startNumber}`);
-    console.info(`   Content type: ${contentType}`);
-    console.info(`   SCTE-35 cues: ${hasSCTE35 ? 'Present' : 'Not detected'}`);
-
+export async function createTemplateFromUrl(
+  options: TemplateGenerationOptions,
+): Promise<StreamTemplate> {
+  const url = httpUrl(options.url);
+  const name = options.name ?? `Imported-${url.hostname}`;
+  const auth = {
+    token: options.authToken,
+    header: options.authHeader,
+    file: options.authFile,
+  };
+  if (url.pathname.toLowerCase().endsWith(".m3u8")) {
+    const { analyzeHLS } = await import("./hls-sim-runner.js");
+    const info = await analyzeHLS(options.url, auth, options.allowedOrigins);
     return {
-      name: templateName,
-      description: `Generated from ${url}`,
-      asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17', // Keep default asset for now
-      segmentDuration,
-      timescale,
-      startNumber,
-      bitrateLadder: bitrates,
-      hasSCTE35,
-      contentType,
-      sourceUrl: url,
-      isDynamic: true
+      ...base,
+      name,
+      description: "Imported HLS source; startup proxies its actual media",
+      sourceUrl: options.url,
+      isDynamic: true,
+      segmentDuration: info.segmentDurationMs,
+      bitrateLadder: info.bitrateLadder,
+      hasSCTE35: info.hasSCTE35,
     };
-  } catch (error) {
-    console.warn(`⚠️  Failed to analyze manifest ${url}, falling back to basic template:`, error instanceof Error ? error.message : String(error));
-    return createBasicTemplateFromDash(url, name);
   }
-}
-
-function createBasicTemplateFromDash(url: string, name?: string): StreamTemplate {
-  const contentType = 'video';
-  const templateName = name || `Auto-DASH-${extractDomain(url)}-${contentType}`;
-
-  return {
-    name: templateName,
-    description: `Generated from ${url} (fallback - analysis failed)`,
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17',
-    segmentDuration: 2000,
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [150000, 250000, 400000, 600000, 950000],
-    hasSCTE35: false,
-    contentType: contentType,
-    sourceUrl: url,
-    isDynamic: true
-  };
-}
-
-async function createTemplateFromHls(url: string, name?: string, options?: TemplateGenerationOptions): Promise<StreamTemplate> {
-  // For now, create a basic HLS template - in a full implementation,
-  // we'd need to import and use the HLS analyzer
-  const contentType = 'mixed';
-  const templateName = name || `Auto-HLS-${extractDomain(url)}-${contentType}`;
-
-  return {
-    name: templateName,
-    description: `Generated from ${url}`,
-    asset: 'WAVE/vectors/cfhd_sets/12.5_25_50/t3/2022-10-17', // Default HLS asset
-    segmentDuration: 6000, // Default 6 seconds
-    timescale: 1000,
-    startNumber: 1,
-    bitrateLadder: [150000, 250000, 400000, 600000, 950000],
-    hasSCTE35: false,
-    contentType: contentType,
-    sourceUrl: url,
-    isDynamic: true
-  };
-}
-
-// Helper functions
-function extractDomain(url: string): string {
-  try {
-    return new URL(url).hostname.replace('www.', '').split('.')[0];
-  } catch {
-    return 'unknown';
+  if (url.pathname.toLowerCase().endsWith(".mpd")) {
+    const { analyzeMPD } = await import("./dash-sim-runner.js");
+    const info = await analyzeMPD(options.url, auth, options.allowedOrigins);
+    const video = info.representations.filter(
+      (r) => r.contentType === "video" || (r.width ?? 0) > 0,
+    );
+    const duration = info.segmentDurationMs;
+    if (!duration || !Number.isFinite(duration))
+      throw new Error("Source MPD has no supported segment duration");
+    return {
+      ...base,
+      name,
+      description:
+        "Imported DASH timing; startup uses validated local media, not a replica of the source",
+      sourceUrl: options.url,
+      isDynamic: true,
+      protocol: "dash",
+      segmentDuration: duration,
+      timescale: info.timescale ?? 1,
+      startNumber: info.startNumber ?? 1,
+      bitrateLadder: (video.length ? video : info.representations)
+        .map((r) => r.bandwidth)
+        .sort((a, b) => a - b),
+      hasSCTE35: info.hasSCTE35,
+    };
   }
+  throw new Error("Unsupported manifest path; use .m3u8 or .mpd");
 }
-
-function determineContentType(representations: Array<{ codecs?: string }>): 'video' | 'audio' | 'mixed' {
-  const hasVideo = representations.some(rep =>
-    rep.codecs?.includes('avc1') ||
-    rep.codecs?.includes('hev1') ||
-    rep.codecs?.includes('hvc1') ||
-    rep.codecs?.includes('vp9') ||
-    rep.codecs?.includes('av01')
-  );
-  const hasAudio = representations.some(rep =>
-    rep.codecs?.includes('mp4a') ||
-    rep.codecs?.includes('ac-3') ||
-    rep.codecs?.includes('ec-3') ||
-    rep.codecs?.includes('opus')
-  );
-
-  if (hasVideo && hasAudio) return 'mixed';
-  if (hasVideo) return 'video';
-  if (hasAudio) return 'audio';
-  return 'video'; // Default fallback
+const file = () =>
+  path.resolve(process.cwd(), ".hls-dash-manifest-templates.json");
+function validate(template: StreamTemplate): void {
+  if (
+    !template ||
+    typeof template !== "object" ||
+    typeof template.name !== "string" ||
+    !template.name ||
+    !Number.isFinite(template.segmentDuration) ||
+    template.segmentDuration <= 0 ||
+    !Array.isArray(template.bitrateLadder) ||
+    template.bitrateLadder.some((n) => !Number.isFinite(n) || n <= 0)
+  )
+    throw new Error("Invalid template metadata");
+  if (template.sourceUrl) httpUrl(template.sourceUrl);
 }
-
-// Template storage - file-based persistence
-const TEMPLATES_FILE = path.resolve(process.cwd(), '.hls-dash-manifest-templates.json');
-
-// Cache for loaded templates
-let loadedTemplates: Record<string, StreamTemplate> | null = null;
-
-function loadTemplatesFromFile(): Record<string, StreamTemplate> {
-  if (loadedTemplates !== null) {
-    return loadedTemplates;
-  }
-
-  try {
-    if (fs.existsSync(TEMPLATES_FILE)) {
-      const content = fs.readFileSync(TEMPLATES_FILE, 'utf8');
-      loadedTemplates = JSON.parse(content);
-    } else {
-      loadedTemplates = {};
-    }
-  } catch {
-    console.warn(`Warning: Could not load templates from .hls-dash-manifest-templates.json, starting with empty templates`);
-    loadedTemplates = {};
-  }
-
-  return loadedTemplates!;
-}
-
-function saveTemplatesToFile(templates: Record<string, StreamTemplate>): void {
-  try {
-    fs.writeFileSync(TEMPLATES_FILE, JSON.stringify(templates, null, 2));
-    loadedTemplates = templates; // Update cache
-  } catch (error) {
-    console.error(`Error: Could not save templates to .hls-dash-manifest-templates.json:`, error);
-  }
-}
-
 export function loadSavedTemplates(): Record<string, StreamTemplate> {
-  return loadTemplatesFromFile();
+  if (!fs.existsSync(file())) return {};
+  const saved = JSON.parse(fs.readFileSync(file(), "utf8"));
+  if (!saved || typeof saved !== "object" || Array.isArray(saved))
+    throw new Error("Saved templates must be a JSON object");
+  for (const template of Object.values(saved))
+    validate(template as StreamTemplate);
+  return saved;
 }
-
 export function saveTemplate(name: string, template: StreamTemplate): void {
-  const templates = loadTemplatesFromFile();
-  templates[name] = template;
-  saveTemplatesToFile(templates);
-  console.info(`💾 Template "${name}" saved`);
+  if (
+    !name ||
+    name.length > 128 ||
+    ["__proto__", "constructor", "prototype"].includes(name)
+  )
+    throw new Error("Invalid template name");
+  validate(template);
+  const templates = { ...loadSavedTemplates(), [name]: template };
+  const temporary = file() + "." + randomUUID() + ".tmp";
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(templates, null, 2) + "\n", {
+      mode: 0o600,
+    });
+    fs.renameSync(temporary, file());
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  console.info(`Template "${name}" saved`);
 }
-
-export function getTemplate(name: string): StreamTemplate | null {
-  const savedTemplates = loadSavedTemplates();
-  return PREDEFINED_TEMPLATES[name] || savedTemplates[name] || null;
+export function getTemplate(name: string): StreamTemplate | undefined {
+  return { ...PREDEFINED_TEMPLATES, ...loadSavedTemplates() }[name];
 }
-
-export function listTemplates(): Array<{name: string, template: StreamTemplate}> {
-  const savedTemplates = loadSavedTemplates();
-  const allTemplates = { ...PREDEFINED_TEMPLATES, ...savedTemplates };
-  return Object.entries(allTemplates).map(([name, template]) => ({ name, template }));
+export function listTemplates(): Array<{
+  name: string;
+  template: StreamTemplate;
+}> {
+  return Object.entries({
+    ...PREDEFINED_TEMPLATES,
+    ...loadSavedTemplates(),
+  }).map(([name, template]) => ({ name, template }));
 }
-
 export function getTemplateNames(): string[] {
-  const savedTemplates = loadSavedTemplates();
-  const allTemplates = { ...PREDEFINED_TEMPLATES, ...savedTemplates };
-  return Object.keys(allTemplates);
+  return listTemplates().map((t) => t.name);
 }

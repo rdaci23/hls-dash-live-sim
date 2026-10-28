@@ -7,3 +7,5 @@ dist/
 .hls-dash-faults.json
 .hls-dash-manifest-templates.json
 auth*.json
+.playwright-cli/
+output/

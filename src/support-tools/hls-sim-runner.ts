@@ -1,49 +1,43 @@
-import { ownershipArgs, assertOwnedContainer } from './container-ownership.js';
-import { OriginPolicy, fetchRemote, send, preflight, HttpError, listen, bindHost, portNumber } from './safe-http.js';
-import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
-import { spawn, spawnSync } from 'child_process';
-import * as https from 'https';
-import * as http from 'http';
+import path from "node:path";
+import fs from "node:fs";
+import http from "node:http";
+import { createHash } from "node:crypto";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  OriginPolicy,
+  OriginAuth,
+  fetchRemote,
+  send,
+  preflight,
+  HttpError,
+  listen,
+  closeServer,
+  bindHost,
+  portNumber,
+} from "./safe-http.js";
+import { ownershipArgs, assertOwnedContainer } from "./container-ownership.js";
 import {
   getFaultConfig,
-  onFaultConfigChange,
   setFaultConfigPath,
   applyConfigOverride,
-  type FaultMode
-} from './live-stream-fault-config.js';
-
-function getDockerPath(): string {
-  const possiblePaths = [
-    'docker',
-    '/usr/local/bin/docker',
-    '/Applications/Docker.app/Contents/Resources/bin/docker',
-    '/opt/homebrew/bin/docker',
-  ];
-  for (const dockerPath of possiblePaths) {
-    try {
-      const result = spawnSync(dockerPath, ['--version'], { stdio: 'pipe' });
-      if (result.status === 0) return dockerPath;
-    } catch { void 0; }
-  }
-  return 'docker';
-}
+} from "./live-stream-fault-config.js";
+import {
+  mediaSegments,
+  variantEntries,
+  rewritePlaylist,
+} from "./hls-playlist.js";
+import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
+import { FaultRuntime, faultDelay } from "./fault-runtime.js";
 
 export interface HLSStartOptions {
-  host?: string;
-  allowedOrigins?: string[];
-  image?: string;
-  port?: number;
-  vodroot?: string;
-  source?: string;
-  detach?: boolean;
-  name?: string;
-  open?: boolean;
-  noPull?: boolean;
-  forcePull?: boolean;
-  manifestUrl?: string;
+  rendition?: "all" | "low" | "main";
   proxy?: boolean;
+  host?: string;
+  port?: number;
+  mode?: StreamMode;
+  windowSegments?: number;
+  allowedOrigins?: string[];
+  manifestUrl?: string;
   authToken?: string;
   authHeader?: string;
   authFile?: string;
@@ -51,899 +45,451 @@ export interface HLSStartOptions {
   preserveManifest?: boolean;
   faultConfigPath?: string;
   faultProfile?: string;
+  image?: string;
+  vodroot?: string;
+  source?: string;
+  detach?: boolean;
+  name?: string;
+  open?: boolean;
+  noPull?: boolean;
+  forcePull?: boolean;
 }
-
-export interface HLSStopOptions { name?: string; }
-export interface HLSLogsOptions { name?: string; }
-
-interface HLSInfo {
+export interface HLSStopOptions {
+  name?: string;
+}
+export interface HLSLogsOptions {
+  name?: string;
+}
+export interface HlsSession {
   url: string;
-  targetDuration?: number;
-  mediaSequence?: number;
-  hasEndList?: boolean;
-  firstPdtEpoch?: number;
-  scte35?: boolean;
-  averageSegDur?: number;
+  close(): Promise<void>;
 }
 
-interface HlsSampleAssets {
-  master: string;
-  variant: string;
-  audio?: string;
-  segments: Map<string, { buffer: Buffer; contentType: string }>;
+function assetRoot(): string {
+  return path.resolve(__dirname, "assets/hls-sample");
 }
-
-interface ParsedMasterData {
-  versionLine?: string;
-  independentLine?: string;
-  sessionKeys: string[];
-  otherLines: string[];
-  mediaEntries: Array<{ rawLine: string; groupId?: string }>;
-  variantEntries: Array<{ infoLine: string; audioGroup?: string }>;
-}
-
-interface DummyManifestData {
-  master: string;
-  variantMap: Map<string, string>;
-  mediaMap: Map<string, string>;
-  segments: Map<string, { buffer: Buffer; contentType: string }>;
-}
-
-let cachedSampleAssets: HlsSampleAssets | null = null;
-
-let faultConfig = getFaultConfig();
-const randomDecisions = new Map<string, boolean>();
-const onceTriggers = new Set<string>();
-
-onFaultConfigChange(config => {
-  faultConfig = config;
-  randomDecisions.clear();
-  onceTriggers.clear();
-  logHlsEvent('config-update', {
-    segment: config.segment,
-    manifest: config.manifest,
-    drm: config.drm,
-    logging: config.logging
-  });
-});
-
-const RANDOM_THRESHOLD = 0.4;
-
-function shouldTriggerFault(mode: FaultMode | undefined, key: string): boolean {
-  if (!mode || mode === 'off') return false;
-  if (mode === 'always') return true;
-  if (mode === 'once') {
-    if (onceTriggers.has(key)) return false;
-    onceTriggers.add(key);
-    return true;
-  }
-  if (mode === 'random') {
-    if (!randomDecisions.has(key)) {
-      randomDecisions.set(key, Math.random() < RANDOM_THRESHOLD);
-    }
-    return randomDecisions.get(key) ?? false;
-  }
-  return false;
-}
-
-function delay(ms: number | undefined): Promise<void> {
-  if (!ms || ms <= 0) return Promise.resolve();
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function logHlsEvent(event: string, details: Record<string, unknown>): void {
-  const payload = {
-    timestamp: new Date().toISOString(),
-    event,
-    ...details
-  };
-  console.info(`[hls] ${JSON.stringify(payload)}`);
-}
-
-function resolveSampleAssetPath(fileName: string): string {
-  const candidates = [
-    path.resolve(__dirname, 'assets', 'hls-sample', fileName),
-    path.resolve(__dirname, '../assets', 'hls-sample', fileName),
-    path.resolve(__dirname, '../../assets/hls-sample', fileName),
-    path.resolve(__dirname, '../../src/support-tools/assets/hls-sample', fileName),
-    path.resolve(process.cwd(), 'assets/hls-sample', fileName),
-    path.resolve(process.cwd(), 'src/support-tools/assets/hls-sample', fileName)
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return candidates[0];
-}
-
-function getSampleAssets(): HlsSampleAssets {
-  if (cachedSampleAssets) {
-    return cachedSampleAssets;
-  }
-
-  const masterPath = resolveSampleAssetPath('master.m3u8');
-  const variantPath = resolveSampleAssetPath('variant.m3u8');
-  const audioPath = resolveSampleAssetPath('audio.m3u8');
-
-  if (!fs.existsSync(masterPath) || !fs.existsSync(variantPath)) {
-    throw new Error('Bundled HLS sample assets missing. Expected master.m3u8 and variant.m3u8.');
-  }
-
-  const rootDir = path.dirname(masterPath);
-  const segments = new Map<string, { buffer: Buffer; contentType: string }>();
-
-  const collectSegments = (currentDir: string, relativePrefix = ''): void => {
-    const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-    for (const entry of entries) {
-      const relPath = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name;
-      const fullPath = path.join(currentDir, entry.name);
-      if (entry.isDirectory()) {
-        collectSegments(fullPath, relPath);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      const lower = entry.name.toLowerCase();
-      if (lower.endsWith('.m3u8')) continue; // handled separately
-      let contentType = 'application/octet-stream';
-      if (lower.endsWith('.ts') || lower.endsWith('.m2t') || lower.endsWith('.m2ts')) {
-        contentType = 'video/mp2t';
-      } else if (lower.endsWith('.aac')) {
-        contentType = 'audio/aac';
-      } else if (lower.endsWith('.m4s') || lower.endsWith('.mp4')) {
-        contentType = 'video/mp4';
-      }
-      const buffer = fs.readFileSync(fullPath);
-      segments.set(relPath.replace(/\\/g, '/'), { buffer, contentType });
-    }
-  };
-
-  collectSegments(rootDir);
-
-  if (segments.size === 0) {
-    throw new Error('Bundled HLS sample assets missing segment files.');
-  }
-
-  cachedSampleAssets = {
-    master: fs.readFileSync(masterPath, 'utf8'),
-    variant: fs.readFileSync(variantPath, 'utf8'),
-    audio: fs.existsSync(audioPath) ? fs.readFileSync(audioPath, 'utf8') : undefined,
-    segments
-  };
-
-  return cachedSampleAssets;
-}
-
-function extractAttribute(line: string, key: string): string | undefined {
-  const regex = new RegExp(`${key}="([^"\\\\]*)"`);
-  const match = line.match(regex);
-  return match ? match[1] : undefined;
-}
-
-function setOrAppendAttribute(line: string, key: string, value: string): string {
-  const attribute = `${key}="`;
-  if (line.includes(attribute)) {
-    const regex = new RegExp(`${key}="[^"\\\\]*"`);
-    return line.replace(regex, `${key}="${value}"`);
-  }
-  if (!line.includes(':')) {
-    return `${line}:${key}="${value}"`;
-  }
-  return `${line},${key}="${value}"`;
-}
-
-function parsePlaylistSegments(base: string): Array<{ duration: number; uri: string }> {
-  const lines = base.split(/\r?\n/);
-  const segments: Array<{ duration: number; uri: string }> = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    if (!line.startsWith('#EXTINF')) continue;
-    const durationPart = line.split(':')[1] ?? '0';
-    const duration = Number.parseFloat(durationPart.replace(/,$/, ''));
-    let uri = '';
-    let j = i + 1;
-    while (j < lines.length) {
-      const candidate = lines[j].trim();
-      if (candidate === '') {
-        j++;
-        continue;
-      }
-      if (!candidate.startsWith('#')) {
-        uri = candidate;
-      }
-      break;
-    }
-    if (!uri) {
-      uri = `segment_${segments.length}.ts`;
-    }
-    segments.push({ duration: Number.isFinite(duration) && duration > 0 ? duration : 6, uri });
-    i = j;
-  }
-  return segments;
-}
-
-function buildLoopingPlaylist(base: string, loops = 30, segmentBase?: string): string {
-  const segments = parsePlaylistSegments(base);
-  if (segments.length === 0) {
-    return base;
-  }
-  const maxDuration = Math.max(...segments.map(segment => segment.duration));
-  const header = [
-    '#EXTM3U',
-    '#EXT-X-VERSION:6',
-    `#EXT-X-TARGETDURATION:${Math.ceil(maxDuration)}`,
-    '#EXT-X-MEDIA-SEQUENCE:0',
-    '#EXT-X-INDEPENDENT-SEGMENTS'
-  ];
-  const body: string[] = [];
-  for (let loop = 0; loop < loops; loop++) {
-    for (const segment of segments) {
-      body.push(`#EXTINF:${segment.duration.toFixed(6)},`);
-      let targetUri = segment.uri;
-      if (segmentBase) {
-        const cleanedBase = segmentBase.endsWith('/') ? segmentBase.slice(0, -1) : segmentBase;
-        const fileName = segment.uri.split('/').pop() ?? segment.uri;
-        targetUri = `${cleanedBase}/${fileName}`;
-        if (!targetUri.startsWith('/')) {
-          targetUri = `/${targetUri}`;
-        }
-      }
-      body.push(targetUri);
-    }
-  }
-  body.push('#EXT-X-ENDLIST');
-  return [...header, ...body].join('\n');
-}
-
-function parseMasterManifest(content: string): ParsedMasterData {
-  const lines = content.split(/\r?\n/);
-  const parsed: ParsedMasterData = {
-    sessionKeys: [],
-    otherLines: [],
-    mediaEntries: [],
-    variantEntries: []
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    const line = raw.trim();
-    if (!line) continue;
-    if (line === '#EXTM3U') continue;
-    if (line.startsWith('#EXT-X-VERSION') && !parsed.versionLine) {
-      parsed.versionLine = line;
-      continue;
-    }
-    if (line.startsWith('#EXT-X-INDEPENDENT-SEGMENTS')) {
-      parsed.independentLine = line;
-      continue;
-    }
-    if (line.startsWith('#EXT-X-SESSION-KEY')) {
-      parsed.sessionKeys.push(line);
-      continue;
-    }
-    if (line.startsWith('#EXT-X-MEDIA')) {
-      parsed.mediaEntries.push({ rawLine: line, groupId: extractAttribute(line, 'GROUP-ID') });
-      continue;
-    }
-    if (line.startsWith('#EXT-X-STREAM-INF')) {
-      parsed.variantEntries.push({ infoLine: line, audioGroup: extractAttribute(line, 'AUDIO') });
-      // Skip following URI
-      let j = i + 1;
-      while (j < lines.length) {
-        const candidate = lines[j].trim();
-        if (candidate === '') {
-          j++;
-          continue;
-        }
-        if (!candidate.startsWith('#')) {
-          i = j;
-        }
-        break;
-      }
-      continue;
-    }
-    if (line.startsWith('#')) {
-      parsed.otherLines.push(line);
-      continue;
-    }
-  }
-
-  return parsed;
-}
-
-function buildManifestFromParsed(parsed: ParsedMasterData, variantLoop: string, audioLoop?: string): { master: string; variantMap: Map<string, string>; mediaMap: Map<string, string> } {
-  const masterLines: string[] = ['#EXTM3U'];
-  masterLines.push(parsed.versionLine ?? '#EXT-X-VERSION:6');
-  masterLines.push(parsed.independentLine ?? '#EXT-X-INDEPENDENT-SEGMENTS');
-
-  const skipDirectives = new Set(['#EXT-X-VERSION', '#EXT-X-INDEPENDENT-SEGMENTS']);
-  for (const line of parsed.otherLines) {
-    if (skipDirectives.has(line.split(':')[0])) continue;
-    masterLines.push(line);
-  }
-
-  for (const session of parsed.sessionKeys) {
-    masterLines.push(session);
-  }
-
-  const mediaMap = new Map<string, string>();
-  const audioGroupUris = new Map<string, string>();
-
-  if (audioLoop) {
-    const mediaEntries = parsed.mediaEntries.length > 0 ? parsed.mediaEntries : [];
-    const referencedGroups = new Set(parsed.variantEntries.map(entry => entry.audioGroup).filter((id): id is string => Boolean(id)));
-    if (mediaEntries.length === 0 && referencedGroups.size > 0) {
-      for (const groupId of referencedGroups) {
-        mediaEntries.push({ rawLine: `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupId}",NAME="${groupId}",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="en"`, groupId });
-      }
-    }
-    if (mediaEntries.length === 0) {
-      mediaEntries.push({ rawLine: '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio-main",NAME="Audio",DEFAULT=YES,AUTOSELECT=YES,LANGUAGE="en"', groupId: 'audio-main' });
-    }
-    mediaEntries.forEach((entry, index) => {
-      const groupId = entry.groupId ?? `audio-${index}`;
-      const isClosedCaption = /TYPE=CLOSED-CAPTIONS/.test(entry.rawLine);
-      let updatedLine = setOrAppendAttribute(entry.rawLine, 'GROUP-ID', groupId);
-      if (!isClosedCaption) {
-        const uriRelative = `dummy/media/${groupId}.m3u8`;
-        updatedLine = setOrAppendAttribute(updatedLine, 'URI', uriRelative);
-        mediaMap.set(`/dummy/media/${groupId}.m3u8`, audioLoop);
-        audioGroupUris.set(groupId, uriRelative);
-      }
-      masterLines.push(updatedLine);
-    });
-  }
-
-  const variantMap = new Map<string, string>();
-  const variantEntries = parsed.variantEntries.length > 0 ? parsed.variantEntries : [{ infoLine: '#EXT-X-STREAM-INF:BANDWIDTH=600000,CODECS="avc1.4d401f,mp4a.40.2",RESOLUTION=1280x720,FRAME-RATE=24.000', audioGroup: audioLoop ? (parsed.mediaEntries[0]?.groupId ?? 'audio-main') : undefined }];
-
-  variantEntries.forEach((entry, index) => {
-    let streamLine = entry.infoLine;
-    if (audioLoop) {
-      const groups = Array.from(audioGroupUris.keys());
-      const targetGroup = entry.audioGroup && audioGroupUris.has(entry.audioGroup)
-        ? entry.audioGroup
-        : (groups[index % (groups.length || 1)] ?? 'audio-main');
-      streamLine = setOrAppendAttribute(streamLine.replace(/,?\s*AUDIO="[^"\\]*"/g, ''), 'AUDIO', targetGroup);
-    } else {
-      streamLine = streamLine.replace(/,?\s*AUDIO="[^"\\]*"/g, '');
-    }
-    masterLines.push(streamLine);
-    const variantRelative = `dummy/variant/${index}.m3u8`;
-    masterLines.push(variantRelative);
-    variantMap.set(`/dummy/variant/${index}.m3u8`, variantLoop);
-  });
-
+export async function analyzeHLS(
+  url: string,
+  auth: OriginAuth = {},
+  allowedOrigins: string[] = [],
+) {
+  const policy = new OriginPolicy(url, auth, allowedOrigins);
+  const source = await fetchRemote(url, policy, { maxBytes: 4 * 1024 * 1024 });
+  if (
+    source.status !== 200 ||
+    !source.body.toString().trimStart().startsWith("#EXTM3U")
+  )
+    throw new Error("Origin did not return an HLS playlist");
+  const text = source.body.toString("utf8");
+  const variants = variantEntries(text);
+  const playlists = variants.length
+    ? await Promise.all(
+        variants.map(async (variant) => {
+          const child = await fetchRemote(
+            new URL(variant.uri, source.url).href,
+            policy,
+            { maxBytes: 4 * 1024 * 1024 },
+          );
+          if (child.status !== 200)
+            throw new Error("Could not inspect HLS child playlist");
+          return child.body.toString("utf8");
+        }),
+      )
+    : [text];
+  const durations = playlists.flatMap((p) =>
+    mediaSegments(p).map((s) => s.duration),
+  );
+  if (!durations.length)
+    throw new Error("HLS source has no media segments to analyze");
   return {
-    master: masterLines.join('\n'),
-    variantMap,
-    mediaMap
+    segmentDurationMs: Math.round(
+      (durations.reduce((a, b) => a + b, 0) / durations.length) * 1000,
+    ),
+    bitrateLadder: variants
+      .map((v) => Number(v.attributes.BANDWIDTH))
+      .filter(Number.isFinite),
+    hasSCTE35: [text, ...playlists].some((p) =>
+      /SCTE35|scte35|CUE-OUT/.test(p),
+    ),
+    contentType: "mixed" as const,
   };
 }
 
-async function buildDummyManifestData(sampleAssets: HlsSampleAssets, options: { manifestUrl?: string; auth?: { token?: string; header?: string; file?: string }; preserve: boolean }): Promise<DummyManifestData> {
-  const targetSeconds = 10 * 60;
-  const variantSegments = parsePlaylistSegments(sampleAssets.variant);
-  const variantCycleDuration = variantSegments.reduce((sum, segment) => sum + segment.duration, 0);
-  const audioSegments = sampleAssets.audio ? parsePlaylistSegments(sampleAssets.audio) : undefined;
-  const audioCycleDuration = audioSegments?.reduce((sum, segment) => sum + segment.duration, 0) ?? 0;
-  const longestCycle = Math.max(variantCycleDuration, audioCycleDuration, 0.1);
-  const loops = Math.max(1, Math.ceil(targetSeconds / longestCycle));
-  const segmentBase = 'dummy/segments';
-  const variantLoop = buildLoopingPlaylist(sampleAssets.variant, loops, segmentBase);
-  const audioLoop = sampleAssets.audio ? buildLoopingPlaylist(sampleAssets.audio, loops, segmentBase) : undefined;
-
-  let parsed: ParsedMasterData | null = null;
-  if (options.manifestUrl && options.preserve) {
-    try {
-      const source = await fetchHLS(options.manifestUrl, options.auth);
-      parsed = parseMasterManifest(source);
-    } catch (err) {
-      console.info('Failed to preserve source manifest structure, falling back to bundled sample manifest.', err);
-    }
-  }
-
-  if (!parsed) {
-    parsed = parseMasterManifest(sampleAssets.master);
-  }
-
-  const manifestCore = buildManifestFromParsed(parsed, variantLoop, audioLoop);
-
-  const segmentMap = new Map<string, { buffer: Buffer; contentType: string }>();
-  sampleAssets.segments.forEach((value, key) => {
-    const normalized = key.replace(/\\/g, '/').replace(/^\/+/, '');
-    const fullPath = `/dummy/${normalized}`;
-    segmentMap.set(fullPath, value);
-  });
-
-  // Provide legacy aliases for sample access
-  const firstVariant = manifestCore.variantMap.keys().next().value as string | undefined;
-  if (firstVariant) {
-    manifestCore.variantMap.set('/variant.m3u8', manifestCore.variantMap.get(firstVariant)!);
-  }
-  if (audioLoop) {
-    const firstMedia = manifestCore.mediaMap.keys().next().value as string | undefined;
-    if (firstMedia) {
-      manifestCore.mediaMap.set('/audio.m3u8', manifestCore.mediaMap.get(firstMedia)!);
-    }
-  }
-
-  return {
-    master: manifestCore.master,
-    variantMap: manifestCore.variantMap,
-    mediaMap: manifestCore.mediaMap,
-    segments: segmentMap
-  };
-}
-
-async function fetchHLS(url: string, authOptions?: { token?: string; header?: string; file?: string; allowedOrigins?: string[] }): Promise<string> {
-  const result = await fetchRemote(url, new OriginPolicy(url, authOptions, authOptions?.allowedOrigins), { maxBytes: 4 * 1024 * 1024 });
-  if (result.status !== 200 || !result.body.toString('utf8').trimStart().startsWith('#EXTM3U')) throw new Error(`HLS fetch failed: ${result.status}`);
-  return result.body.toString('utf8');
-}
-
-function parseHLS(text: string, url: string): HLSInfo {
-  const info: HLSInfo = { url };
-  const lines = text.split(/\r?\n/);
-  let segDurSum = 0; let segDurCount = 0;
-  for (const line of lines) {
-    if (line.startsWith('#EXT-X-TARGETDURATION:')) info.targetDuration = parseFloat(line.split(':')[1]);
-    else if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) info.mediaSequence = parseInt(line.split(':')[1], 10);
-    else if (line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')) {
-      const ts = Date.parse(line.substring(line.indexOf(':') + 1).trim());
-      if (!Number.isNaN(ts) && info.firstPdtEpoch == null) info.firstPdtEpoch = Math.floor(ts / 1000);
-    } else if (line.startsWith('#EXT-X-ENDLIST')) info.hasEndList = true;
-    else if (line.startsWith('#EXT-X-DATERANGE:') || line.startsWith('#EXT-OATCLS-SCTE35')) info.scte35 = true;
-    else if (line.startsWith('#EXTINF:')) {
-      const dur = parseFloat(line.split(':')[1]);
-      if (!Number.isNaN(dur)) { segDurSum += dur; segDurCount++; }
-    }
-  }
-  if (segDurCount > 0) info.averageSegDur = segDurSum / segDurCount;
-  return info;
-}
-
-function checkDocker(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const docker = spawn(getDockerPath(), ['--version'], { stdio: 'pipe' });
-    docker.on('close', code => { if (code === 0) resolve(); else reject(new Error('Docker not available')); });
-  });
-}
-
-function checkImageExists(image: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const docker = spawn(getDockerPath(), ['images', '-q', image], { stdio: 'pipe' });
-    let out = '';
-    docker.stdout.on('data', (c) => { out += String(c).trim(); });
-    docker.on('close', (code) => { resolve(code === 0 && out.length > 0); });
-    docker.on('error', () => resolve(false));
-  });
-}
-
-function pullImageCached(image: string, forcePull = false): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const doPull = () => {
-      const d = spawn(getDockerPath(), ['pull', image], { stdio: 'inherit' });
-      d.on('close', code => { if (code === 0) resolve(); else reject(new Error(`Failed to pull ${image}`)); });
-    };
-    if (!forcePull) {
-      checkImageExists(image).then(exists => { if (exists) { console.info(`Using cached Docker image: ${image}`); resolve(); } else doPull(); }).catch(() => doPull());
-    } else doPull();
-  });
-}
-
-function runDocker(args: string[], detached = false): Promise<string | void> {
-  return new Promise((resolve, reject) => {
-    const docker = spawn(getDockerPath(), args, { stdio: detached ? 'pipe' : 'inherit', detached });
-    let id = ''; let err = '';
-    if (detached) {
-      docker.stdout?.on('data', c => { id += String(c).trim(); });
-      docker.stderr?.on('data', c => { err += String(c); });
-    }
-    docker.on('close', code => { if (code === 0) resolve(detached ? id : undefined); else reject(new Error(err || 'Docker failed')); });
-  });
-}
-
-function getLanRootUrl(port: number): string | undefined {
-  const nets = os.networkInterfaces();
-  const candidates: string[] = [];
-  Object.values(nets).forEach(list => {
-    (list || []).forEach(ni => {
-      const fam = (ni as unknown as { family: string | number }).family;
-      const famStr = typeof fam === 'number' ? String(fam) : fam;
-      if ((famStr === 'IPv4' || famStr === '4') && !ni.internal && ni.address) candidates.push(ni.address);
-    });
-  });
-  const ip = candidates.find(a => a.startsWith('192.168.')) || candidates.find(a => a.startsWith('10.')) || candidates.find(a => a.startsWith('172.')) || candidates[0];
-  return ip ? `http://${ip}:${port}/` : undefined;
-}
-
-function buildVodM3u8(port: number, sourceRelPath: string): string {
-  const cleaned = sourceRelPath.replace(/^\//, '');
-  return `http://localhost:${port}/vod/${cleaned}/index.m3u8`;
-}
-
-function generateHlsUrlForBase(baseUrl: string, hls: HLSInfo): string {
-  const params = new URLSearchParams();
-  if (hls.averageSegDur) params.set('hls_time', String(hls.averageSegDur));
-  if (!hls.hasEndList) {
-    const now = Math.floor(Date.now() / 1000);
-    const fallbackWindow = Math.max(30, Math.floor((hls.mediaSequence || 0) * (hls.targetDuration || 6)));
-    const startEpoch = hls.firstPdtEpoch ?? (now - fallbackWindow);
-    params.set('start', String(startEpoch));
-  }
-  const q = params.toString();
-  return q ? `${baseUrl}?${q}` : baseUrl;
-}
-
-function logCopy(url: string): void {
-  const b = '\x1b[1m', g = '\x1b[32m', c = '\x1b[36m', r = '\x1b[0m';
-  console.info(`  ${b}${g}Copy into Roku:${r} ${b}${c}${url}${r}`);
-}
-
-function absUrl(base: string, ref: string): string {
-  try { return new URL(ref, base).toString(); } catch { return ref; }
-}
-
-function rewriteM3U8(content: string, base: string): string {
-  return content.split(/\r?\n/).map(line => {
-    if (line.startsWith('#EXT-X-KEY:')) {
-      return line.replace(/URI="([^"]+)"/, (_m, u) => `URI="/key?u=${encodeURIComponent(absUrl(base, u))}"`);
-    }
-    if (line.startsWith('#') || line.trim() === '') return line;
-    const resolved = absUrl(base, line.trim());
-    return resolved.toLowerCase().endsWith('.m3u8')
-      ? `/pl?u=${encodeURIComponent(resolved)}`
-      : `/seg?u=${encodeURIComponent(resolved)}`;
-  }).join('\n');
-}
-
-function startHlsProxyServer(
-  port: number,
-  manifestUrl?: string,
-  auth?: { token?: string; header?: string; file?: string; },
-  options?: { dummyContent?: boolean; preserveManifest?: boolean; host?: string; allowedOrigins?: string[] }
-): Promise<string> {
-  const policy = manifestUrl ? new OriginPolicy(manifestUrl, auth, options?.allowedOrigins) : undefined;
-  const dummyMode = options?.dummyContent ?? false;
-  const sampleAssets = dummyMode ? getSampleAssets() : undefined;
-  let frozenManifest: string | null = null;
-  let cachedRemoteManifest: string | null = null;
-
-  return new Promise((resolve, reject) => {
-    let manifestDataPromise: Promise<DummyManifestData | null> | null = null;
-    if (dummyMode && sampleAssets) {
-      manifestDataPromise = buildDummyManifestData(sampleAssets, {
-        manifestUrl,
-        auth,
-        preserve: options?.preserveManifest ?? true
-      }).catch(err => {
-        console.error('Failed to build dummy manifest data:', err);
-        return null;
-      });
-    }
-
-    const server = http.createServer(async (req, res) => {
-      try {
-        if (preflight(req, res)) return;
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        const reqUrl = new URL(req.url || '/', `http://localhost:${port}`);
-        const configSnapshot = faultConfig;
-        const latencyMs = configSnapshot.segment?.latencyMs ?? 0;
-        const pathName = reqUrl.pathname;
-        if (configSnapshot.logging?.verbose) {
-          logHlsEvent('config-active', {
-            path: pathName,
-            segment: configSnapshot.segment,
-            manifest: configSnapshot.manifest,
-            drm: configSnapshot.drm,
-            latencyMs
-          });
-        }
-
-        if (dummyMode && sampleAssets) {
-          const manifestData = manifestDataPromise ? await manifestDataPromise : null;
-          if (manifestData) {
-            if (pathName === '/proxy.m3u8') {
-              const freeze = shouldTriggerFault(configSnapshot.manifest?.freeze, 'manifest.freeze');
-              const manifestBody = freeze ? (frozenManifest ?? manifestData.master) : manifestData.master;
-              if (freeze && !frozenManifest) frozenManifest = manifestData.master;
-              if (!freeze) frozenManifest = null;
-              await delay(latencyMs);
-              res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-              res.end(manifestBody);
-              logHlsEvent('manifest', { status: 200, path: pathName, freeze, source: 'dummy' });
-              return;
-            }
-            if (manifestData.variantMap.has(pathName)) {
-              await delay(latencyMs);
-              res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-              res.end(manifestData.variantMap.get(pathName));
-              logHlsEvent('variant', { status: 200, path: pathName, source: 'dummy' });
-              return;
-            }
-            if (manifestData.mediaMap.has(pathName)) {
-              await delay(latencyMs);
-              res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-              res.end(manifestData.mediaMap.get(pathName));
-              logHlsEvent('media', { status: 200, path: pathName, source: 'dummy' });
-              return;
-            }
-            const segmentEntry = manifestData.segments.get(pathName);
-            if (segmentEntry) {
-              const scopeBase = `dummy:${pathName}`;
-              if (shouldTriggerFault(configSnapshot.segment?.missing, `${scopeBase}:missing`)) {
-                await delay(latencyMs);
-                res.writeHead(404);
-                res.end('Segment missing (fault injection)');
-                logHlsEvent('segment', { status: 404, path: pathName, fault: 'missing', source: 'dummy' });
-                return;
-              }
-              if (shouldTriggerFault(configSnapshot.segment?.forbidden, `${scopeBase}:forbidden`)) {
-                await delay(latencyMs);
-                res.writeHead(403);
-                res.end('Forbidden segment (fault injection)');
-                logHlsEvent('segment', { status: 403, path: pathName, fault: 'forbidden', source: 'dummy' });
-                return;
-              }
-              await delay(latencyMs);
-              if (shouldTriggerFault(configSnapshot.segment?.malformed, `${scopeBase}:malformed`)) {
-                const corrupted = segmentEntry.buffer.subarray(0, Math.max(1, Math.floor(segmentEntry.buffer.length / 3)));
-                res.writeHead(200, { 'Content-Type': segmentEntry.contentType });
-                res.end(corrupted);
-                logHlsEvent('segment', { status: 200, path: pathName, fault: 'malformed', bytes: corrupted.length, source: 'dummy' });
-                return;
-              }
-              res.writeHead(200, { 'Content-Type': segmentEntry.contentType });
-              res.end(segmentEntry.buffer);
-              logHlsEvent('segment', { status: 200, path: pathName, bytes: segmentEntry.buffer.length, source: 'dummy' });
-              return;
-            }
-          } else {
-            if (pathName === '/proxy.m3u8') {
-              await delay(latencyMs);
-              res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-              res.end(sampleAssets.master);
-              logHlsEvent('manifest', { status: 200, path: pathName, source: 'dummy-fallback' });
-              return;
-            }
-            if (pathName === '/variant.m3u8') {
-              await delay(latencyMs);
-              res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-              res.end(sampleAssets.variant);
-              logHlsEvent('variant', { status: 200, path: pathName, source: 'dummy-fallback' });
-              return;
-            }
-            const legacyKey = pathName.startsWith('/') ? pathName.slice(1) : pathName;
-            if (legacyKey && sampleAssets.segments.has(legacyKey)) {
-              const segment = sampleAssets.segments.get(legacyKey)!;
-              await delay(latencyMs);
-              res.writeHead(200, { 'Content-Type': segment.contentType });
-              res.end(segment.buffer);
-              logHlsEvent('segment', { status: 200, path: pathName, bytes: segment.buffer.length, source: 'dummy-fallback' });
-              return;
-            }
-          }
-        }
-
-        if (!manifestUrl) {
-          res.writeHead(404);
-          res.end('No manifest configured');
-          logHlsEvent('error', { status: 404, path: pathName, reason: 'no-manifest' });
-          return;
-        }
-
-        if (pathName === '/proxy.m3u8') {
-          const freeze = shouldTriggerFault(configSnapshot.manifest?.freeze, 'manifest.freeze');
-          let upstream = cachedRemoteManifest;
-          if (!freeze || !cachedRemoteManifest) {
-            upstream = await fetchHLS(manifestUrl, auth);
-            cachedRemoteManifest = upstream;
-          }
-          const rewritten = rewriteM3U8(upstream!, manifestUrl);
-          await delay(latencyMs);
-          res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-          res.end(rewritten);
-          logHlsEvent('manifest', { status: 200, path: pathName, freeze, source: 'remote' });
-          return;
-        }
-        if (pathName === '/pl') {
-          const target = reqUrl.searchParams.get('u');
-          if (!target) { res.writeHead(400); res.end('Missing u'); logHlsEvent('error', { status: 400, path: pathName, reason: 'missing-target' }); return; }
-          const remote = await fetchRemote(target, policy, { maxBytes: 4 * 1024 * 1024 });
-          if (remote.status !== 200) throw new HttpError(502, 'Origin playlist request failed');
-          const text = remote.body.toString('utf8');
-          const rewritten = rewriteM3U8(text, target);
-          await delay(latencyMs);
-          res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
-          res.end(rewritten);
-          logHlsEvent('playlist', { status: 200, path: pathName, target, source: 'remote' });
-          return;
-        }
-        if (pathName === '/seg' || pathName === '/key') {
-          const target = reqUrl.searchParams.get('u');
-          if (!target) throw new HttpError(400, 'Missing target');
-          policy.check(target);
-          const isKey = pathName === '/key';
-          const scope = `${isKey ? 'key' : 'segment'}:${target}`;
-          const fault = isKey
-            ? (shouldTriggerFault(configSnapshot.drm?.licenseFailure, `${scope}:license`) ? 403 : 0)
-            : (shouldTriggerFault(configSnapshot.segment?.missing, `${scope}:missing`) ? 404 : shouldTriggerFault(configSnapshot.segment?.forbidden, `${scope}:forbidden`) ? 403 : 0);
-          await delay(latencyMs);
-          if (fault) { send(res, fault, 'Injected response failure', {}, req.method); return; }
-          const remote = await fetchRemote(target, policy, { range: req.headers.range, maxBytes: isKey ? 1024 * 1024 : 64 * 1024 * 1024 });
-          let body = remote.body;
-          if (isKey && shouldTriggerFault(configSnapshot.drm?.keyRotationMismatch, `${scope}:mismatch`)) body = Buffer.alloc(16, 0xff);
-          if (!isKey && shouldTriggerFault(configSnapshot.segment?.malformed, `${scope}:malformed`)) body = body.subarray(0, Math.max(1, Math.floor(body.length / 4)));
-          send(res, remote.status, body, remote.headers, req.method);
-          return;
-        }
-
-        res.writeHead(404);
-        res.end('Not found');
-        logHlsEvent('error', { status: 404, path: pathName, reason: 'not-found' });
-      } catch (err) {
-        send(res, err instanceof HttpError ? err.status : 502, err instanceof HttpError ? err.message : 'Origin request failed');
-        logHlsEvent('error', { status: 500, path: req?.url ?? 'unknown', reason: (err as Error).message });
-      }
-    });
-    listen(server, port, options?.host).then(() => resolve(`http://127.0.0.1:${port}/proxy.m3u8`), reject);
-  });
-}
-
-export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
-  const {
-    host = '127.0.0.1',
-    allowedOrigins = [],
-    image = 'kaltura/nginx-vod-module:latest',
-    port = 8899,
-    vodroot,
-    source,
-    detach = false,
-    name = 'hls-dash-hlsim',
-    open = false,
-    noPull = false,
-    forcePull = false,
-    manifestUrl,
-    proxy = true,
-    authToken,
-    authHeader,
-    authFile,
-    dummyContent = true,
-    preserveManifest = true,
-    faultConfigPath,
-    faultProfile
-  } = options;
-
-  portNumber(port); bindHost(host);
-  const configPathOverride = faultConfigPath ?? process.env.HLS_FAULT_CONFIG ?? path.resolve(process.cwd(), '.hls-dash-faults.json');
-  if (configPathOverride) {
-    setFaultConfigPath(configPathOverride);
-  }
-  const profileOverride = faultProfile ?? process.env.HLS_FAULT_PROFILE;
-  if (profileOverride) {
-    applyConfigOverride({ profile: profileOverride });
-  }
-
-  if (proxy && !dummyContent && !manifestUrl) {
-    throw new Error('Proxy mode with real origin requires --manifest-url when dummy-content is disabled.');
-  }
-
-  // Docker is only needed when running in VoD mode
-  if (!proxy) {
-    await checkDocker();
-    if (!noPull) await pullImageCached(image, forcePull);
-  }
-
-  let hlsInfo: HLSInfo | undefined;
-  if (manifestUrl) {
-    const text = await fetchHLS(manifestUrl, { token: authToken, header: authHeader, file: authFile });
-    hlsInfo = parseHLS(text, manifestUrl);
-  }
-
-  const args: string[] = ['run', '--name', name, '-p', `${host}:${port}:80`, '--rm'];
-  if (detach) args.push('-d');
-  if (vodroot) {
-    const abs = path.resolve(vodroot);
-    if (!fs.existsSync(abs)) throw new Error(`VoD root directory does not exist: ${abs}`);
-    args.push('-v', `${abs}:/vod:ro`);
-  }
-  args.push(...ownershipArgs(), image);
-
-  // Proxy mode branch
-  if (proxy) {
-    console.info(`Starting HLS proxy on port ${port}...`);
-    if (dummyContent) {
-      console.info('Serving bundled HLS sample assets (dummy media segments).');
-    }
-    const localManifest = await startHlsProxyServer(
-      port,
-      manifestUrl,
-      { token: authToken, header: authHeader, file: authFile },
-      { dummyContent, preserveManifest, host, allowedOrigins }
+export async function startHlsim(
+  options: HLSStartOptions = {},
+): Promise<HlsSession> {
+  const host = bindHost(options.host);
+  const port = portNumber(options.port ?? 8899);
+  const mode = options.mode ?? "live";
+  if (!["live", "event", "vod"].includes(mode))
+    throw new Error("mode must be live, event or vod");
+  setFaultConfigPath(
+    options.faultConfigPath ??
+      process.env.HLS_FAULT_CONFIG ??
+      path.resolve(process.cwd(), ".hls-dash-faults.json"),
+  );
+  if (options.faultProfile)
+    applyConfigOverride({ profile: options.faultProfile });
+  if (options.proxy === false) return startVod(options, host, port);
+  const dummy = options.dummyContent ?? !options.manifestUrl;
+  if (!dummy && !options.manifestUrl)
+    throw new Error("Remote proxy mode requires --manifest-url");
+  if (dummy && options.manifestUrl && options.preserveManifest)
+    throw new Error(
+      "Source manifest metadata cannot describe substituted sample media. Use --no-dummy-content to proxy the source faithfully.",
     );
-    const lan = host === '0.0.0.0' ? getLanRootUrl(port) : undefined;
-    const localhostUrl = hlsInfo ? generateHlsUrlForBase(localManifest, hlsInfo) : localManifest;
-    console.info(`Stream URL (localhost): ${localhostUrl}`);
-    if (lan) {
-      const lanM3u8 = `${lan.replace(/\/$/, '')}/proxy.m3u8`;
-      const lanUrl = hlsInfo ? generateHlsUrlForBase(lanM3u8, hlsInfo) : lanM3u8;
-      console.info(`Stream URL (LAN, for Roku): ${lanUrl}`);
-      logCopy(lanUrl);
+  const policy = options.manifestUrl
+    ? new OriginPolicy(
+        options.manifestUrl,
+        {
+          token: options.authToken,
+          header: options.authHeader,
+          file: options.authFile,
+        },
+        options.allowedOrigins,
+      )
+    : undefined;
+  const faults = new FaultRuntime();
+  const root = assetRoot();
+  let master = dummy
+    ? fs.readFileSync(path.join(root, "master.m3u8"), "utf8")
+    : undefined;
+  if (dummy && options.rendition && options.rendition !== "all")
+    master = [
+      "#EXTM3U",
+      ...variantEntries(master)
+        .filter((v) => v.uri.startsWith(options.rendition + "/"))
+        .flatMap((v) => [
+          "#EXT-X-STREAM-INF:" +
+            Object.entries(v.attributes)
+              .map(
+                ([key, value]) =>
+                  key +
+                  "=" +
+                  (/CODECS/.test(key) ? '\"' + value + '\"' : value),
+              )
+              .join(","),
+          v.uri,
+        ]),
+    ].join("\n");
+  const variants = dummy ? variantEntries(master) : [];
+  const startedAt = Date.now();
+  const timelines = new Map(
+    variants.map((v) => [
+      v.uri.split("/")[0],
+      new LiveHlsTimeline(
+        mediaSegments(fs.readFileSync(path.join(root, v.uri), "utf8")),
+        mode,
+        options.windowSegments,
+        Date.now,
+        startedAt,
+      ),
+    ]),
+  );
+  const resources = new Map<
+    string,
+    { url: string; kind: "playlist" | "segment" | "key" }
+  >();
+  const latest = new Map<string, string>();
+  let frozen = false;
+  let snapshots = new Map<string, string>();
+  function freezeState() {
+    const next = getFaultConfig().manifest?.freeze === "always";
+    if (next !== frozen) {
+      frozen = next;
+      snapshots = next ? new Map(latest) : new Map();
     }
-    if (hlsInfo) {
-      console.info(`  Extracted from HLS:`);
-      if (hlsInfo.targetDuration) console.info(`    targetDuration=${hlsInfo.targetDuration}`);
-      if (hlsInfo.mediaSequence != null) console.info(`    mediaSequence=${hlsInfo.mediaSequence}`);
-      if (hlsInfo.averageSegDur) console.info(`    avgSegDur=${hlsInfo.averageSegDur}`);
-      if (hlsInfo.firstPdtEpoch) console.info(`    firstPDT=${hlsInfo.firstPdtEpoch}`);
-      if (!hlsInfo.hasEndList) console.info(`    liveLike=true`);
-      if (hlsInfo.scte35) console.info(`    scte35=1`);
-    }
-    if (open) {
-      const opener = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'start' : 'xdg-open');
-      spawn(opener, [localManifest], { stdio: 'ignore', detached: true });
-    }
-    return;
+    for (const timeline of timelines.values()) timeline.setFrozen(next);
   }
-
-  console.info(`Starting new HLS sim container: ${name}`);
-  console.info(`URL: http://localhost:${port}/`);
-  const lan = host === '0.0.0.0' ? getLanRootUrl(port) : undefined;
-  if (lan) console.info(`LAN URL (use on Roku): ${lan}`);
-
-  if (source) {
-    const localhostBase = buildVodM3u8(port, source);
-    const localhostUrl = hlsInfo ? generateHlsUrlForBase(localhostBase, hlsInfo) : localhostBase;
-    console.info(`Stream URL (localhost): ${localhostUrl}`);
-    if (lan) {
-      const cleaned = source.replace(/^\//, '');
-      const lanBase = `${lan}vod/${cleaned}/index.m3u8`;
-      const lanUrl = hlsInfo ? generateHlsUrlForBase(lanBase, hlsInfo) : lanBase;
-      console.info(`Stream URL (LAN, for Roku): ${lanUrl}`);
-      logCopy(lanUrl);
+  const register = (
+    url: string,
+    kind: "playlist" | "segment" | "key",
+  ): string => {
+    policy.check(url);
+    const id = createHash("sha256")
+      .update(kind + ":" + url)
+      .digest("hex")
+      .slice(0, 32);
+    resources.set(id, { url, kind });
+    if (resources.size > 10000) resources.delete(resources.keys().next().value);
+    return `/r/${id}${kind === "playlist" ? ".m3u8" : kind === "key" ? ".key" : ".bin"}`;
+  };
+  const server = http.createServer(async (req, res) => {
+    try {
+      if (preflight(req, res, host)) return;
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (url.pathname === "/health") {
+        send(
+          res,
+          200,
+          JSON.stringify({
+            protocol: "hls",
+            mode: dummy ? mode : "proxy",
+            status: "ready",
+          }),
+          { "Content-Type": "application/json" },
+          req.method,
+        );
+        return;
+      }
+      freezeState();
+      await faultDelay();
+      if (dummy) {
+        if (url.pathname === "/proxy.m3u8") {
+          const rewritten = master.replace(
+            /^(low|main)\/stream.m3u8$/gm,
+            (_line, name) => `/live/${name}/stream.m3u8`,
+          );
+          send(
+            res,
+            200,
+            rewritten,
+            { "Content-Type": "application/vnd.apple.mpegurl" },
+            req.method,
+          );
+          return;
+        }
+        const match = url.pathname.match(
+          /^\/live\/(low|main)\/(stream\.m3u8|segment-(\d+)\.ts)$/,
+        );
+        if (!match) throw new HttpError(404, "Unknown stream resource");
+        const timeline = timelines.get(match[1]);
+        if (match[2] === "stream.m3u8") {
+          send(
+            res,
+            200,
+            timeline.playlist(match[1]),
+            { "Content-Type": "application/vnd.apple.mpegurl" },
+            req.method,
+          );
+          return;
+        }
+        const sequence = Number(match[3]);
+        const { first, end } = timeline.bounds();
+        if (sequence < first)
+          throw new HttpError(410, "Segment has left the live window");
+        if (sequence >= end || !Number.isSafeInteger(sequence))
+          throw new HttpError(404, "Segment is not available yet");
+        const status =
+          req.method === "HEAD" ? 0 : faults.segmentStatus(url.pathname);
+        if (status) {
+          send(res, status, "Injected segment failure", {}, req.method);
+          return;
+        }
+        const segment = timeline.segments[sequence % timeline.segments.length];
+        let body = fs.readFileSync(path.join(root, match[1], segment.uri));
+        if (req.method !== "HEAD") body = faults.corrupt(body, url.pathname);
+        const range = req.headers.range;
+        if (range) {
+          const parsed = /^bytes=(\d*)-(\d*)$/.exec(range);
+          if (!parsed || (!parsed[1] && !parsed[2]))
+            throw new HttpError(416, "Unsupported byte range");
+          const start = parsed[1]
+            ? Number(parsed[1])
+            : Math.max(0, body.length - Number(parsed[2]));
+          const finish =
+            parsed[1] && parsed[2]
+              ? Math.min(Number(parsed[2]), body.length - 1)
+              : body.length - 1;
+          if (start > finish || start >= body.length)
+            throw new HttpError(416, "Range is outside the segment");
+          send(
+            res,
+            206,
+            body.subarray(start, finish + 1),
+            {
+              "Content-Type": "video/mp2t",
+              "Content-Range": `bytes ${start}-${finish}/${body.length}`,
+              "Accept-Ranges": "bytes",
+            },
+            req.method,
+          );
+          return;
+        }
+        send(
+          res,
+          200,
+          body,
+          { "Content-Type": "video/mp2t", "Accept-Ranges": "bytes" },
+          req.method,
+        );
+        return;
+      }
+      let resource: { url: string; kind: "playlist" | "segment" | "key" };
+      if (url.pathname === "/proxy.m3u8")
+        resource = { url: options.manifestUrl, kind: "playlist" };
+      else if (["/pl", "/seg", "/key"].includes(url.pathname))
+        resource = {
+          url: url.searchParams.get("u") ?? "",
+          kind:
+            url.pathname === "/pl"
+              ? "playlist"
+              : url.pathname === "/key"
+                ? "key"
+                : "segment",
+        };
+      else
+        resource = resources.get(
+          url.pathname.match(/^\/r\/([a-f0-9]{32})\./)?.[1],
+        );
+      if (!resource) throw new HttpError(404, "Unknown proxy resource");
+      policy.check(resource.url);
+      if (
+        resource.kind === "playlist" &&
+        frozen &&
+        snapshots.has(resource.url)
+      ) {
+        send(
+          res,
+          200,
+          snapshots.get(resource.url),
+          { "Content-Type": "application/vnd.apple.mpegurl" },
+          req.method,
+        );
+        return;
+      }
+      const config = getFaultConfig();
+      const failure =
+        req.method === "HEAD"
+          ? 0
+          : resource.kind === "segment"
+            ? faults.segmentStatus(resource.url)
+            : resource.kind === "key" &&
+                faults.trigger(
+                  config.drm?.licenseFailure,
+                  "key-failure",
+                  resource.url,
+                )
+              ? 403
+              : 0;
+      if (failure) {
+        send(res, failure, "Injected response failure", {}, req.method);
+        return;
+      }
+      const controller = new AbortController();
+      res.once("close", () => {
+        if (!res.writableEnded) controller.abort();
+      });
+      const remote = await fetchRemote(resource.url, policy, {
+        range: req.headers.range,
+        maxBytes:
+          resource.kind === "playlist" ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
+        signal: controller.signal,
+      });
+      let body: Buffer | string = remote.body;
+      const headers = remote.headers;
+      if (resource.kind === "playlist" && remote.status === 200) {
+        body = rewritePlaylist(
+          remote.body.toString("utf8"),
+          remote.url,
+          register,
+        );
+        latest.set(resource.url, body);
+        if (frozen) snapshots.set(resource.url, body);
+        headers["Content-Type"] = "application/vnd.apple.mpegurl";
+        headers["cache-control"] = "no-store";
+      } else if (resource.kind === "segment" && req.method !== "HEAD")
+        body = faults.corrupt(remote.body, resource.url);
+      else if (
+        resource.kind === "key" &&
+        req.method !== "HEAD" &&
+        faults.trigger(
+          config.drm?.keyRotationMismatch,
+          "key-mismatch",
+          resource.url,
+        )
+      )
+        body = Buffer.alloc(16, 0xff);
+      send(res, remote.status, body, headers, req.method);
+    } catch (error) {
+      if (!res.destroyed && !res.headersSent)
+        send(
+          res,
+          error instanceof HttpError ? error.status : 502,
+          error instanceof HttpError ? error.message : "Origin request failed",
+          {},
+          req.method,
+        );
     }
-    if (hlsInfo) {
-      console.info(`  Extracted from HLS:`);
-      if (hlsInfo.targetDuration) console.info(`    targetDuration=${hlsInfo.targetDuration}`);
-      if (hlsInfo.mediaSequence != null) console.info(`    mediaSequence=${hlsInfo.mediaSequence}`);
-      if (hlsInfo.averageSegDur) console.info(`    avgSegDur=${hlsInfo.averageSegDur}`);
-      if (hlsInfo.firstPdtEpoch) console.info(`    firstPDT=${hlsInfo.firstPdtEpoch}`);
-      if (!hlsInfo.hasEndList) console.info(`    liveLike=true`);
-      if (hlsInfo.scte35) console.info(`    scte35=1`);
-    }
-  } else {
-    console.info(`Provide --source <relative-mp4-under-vodroot> to build a stream URL`);
-  }
-
-  const result = await runDocker(args, detach);
-  if (detach && result) console.info(`Container started in background: ${result.trim()}`);
-  if (open) {
-    const opener = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'start' : 'xdg-open');
-    spawn(opener, [`http://localhost:${port}/`], { stdio: 'ignore', detached: true });
-  }
-}
-
-export async function stopHlsim(options: HLSStopOptions = {}): Promise<void> {
-  const { name = 'hls-dash-hlsim' } = options;
-  if (!assertOwnedContainer(name, getDockerPath())) return;
+  });
   try {
-    await runDocker(['stop', name]);
-    console.info(`Container stopped: ${name}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (/No such container/i.test(message)) {
-      console.info(`Container ${name} is not running (nothing to stop).`);
-      return;
-    }
-    throw err;
+    await listen(server, port, host);
+  } catch (error) {
+    faults.close();
+    throw error;
   }
+  const url = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
+  console.info(`HLS ${dummy ? mode : "origin proxy"} ready: ${url}`);
+  if (!dummy)
+    console.info("Proxy credentials are scoped to the manifest origin.");
+  if (host === "0.0.0.0")
+    console.info(
+      `LAN streaming enabled on port ${port}; use this machine's LAN address.`,
+    );
+  if (options.open)
+    spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], {
+      stdio: "ignore",
+    }).on("error", () => {});
+  return {
+    url,
+    close: () => {
+      faults.close();
+      return closeServer(server);
+    },
+  };
 }
 
+async function startVod(
+  options: HLSStartOptions,
+  host: string,
+  port: number,
+): Promise<HlsSession> {
+  if (!options.vodroot || !options.source)
+    throw new Error("MP4 VoD mode requires --vodroot and --source");
+  const name = options.name ?? "hls-dash-hlsim";
+  const root = path.resolve(options.vodroot);
+  const source = path.resolve(root, options.source);
+  if (!source.startsWith(root + path.sep) || !fs.existsSync(source))
+    throw new Error("source must be an existing file within vodroot");
+  const image = options.image ?? "kaltura/nginx-vod-module:latest";
+  execFileSync("docker", ["info"], { stdio: "pipe" });
+  if (options.forcePull)
+    execFileSync("docker", ["pull", image], { stdio: "inherit" });
+  execFileSync(
+    "docker",
+    [
+      "run",
+      "--rm",
+      "-d",
+      "--name",
+      name,
+      ...ownershipArgs(),
+      "-p",
+      `${host}:${port}:80`,
+      "-v",
+      `${root}:/vod:ro`,
+      ...(options.noPull ? ["--pull=never"] : []),
+      image,
+    ],
+    { stdio: "pipe" },
+  );
+  const url = `http://127.0.0.1:${port}/vod/${options.source.split("/").map(encodeURIComponent).join("/")}/index.m3u8`;
+  console.info(`HLS VoD ready: ${url}`);
+  return { url, close: () => stopHlsim({ name }) };
+}
+export async function stopHlsim(options: HLSStopOptions = {}): Promise<void> {
+  const name = options.name ?? "hls-dash-hlsim";
+  if (assertOwnedContainer(name))
+    execFileSync("docker", ["stop", name], { stdio: "pipe" });
+}
 export async function logsHlsim(options: HLSLogsOptions = {}): Promise<void> {
-  const { name = 'hls-dash-hlsim' } = options;
-  await runDocker(['logs', '-f', name]);
+  const name = options.name ?? "hls-dash-hlsim";
+  if (assertOwnedContainer(name))
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("docker", ["logs", "-f", name], { stdio: "inherit" });
+      child.once("error", reject);
+      child.once("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error("Docker logs failed")),
+      );
+    });
 }

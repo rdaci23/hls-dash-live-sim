@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-28",
+  "players": {
+    "hls.js": "1.7.3",
+    "dash.js": "5.2.1"
+  },
+  "browser": "Google Chrome via Playwright CLI",
+  "backend": "livesim2 v1.7.0 in Docker Desktop",
+  "observed": {
+    "hlsErrors": [],
+    "dashErrors": [],
+    "hlsFragments": 161,
+    "dashPeriods": [
+      "P29886260",
+      "P29886261",
+      "P29886262",
+      "P29886263",
+      "P29886264",
+      "P29886265"
+    ],
+    "samples": [
+      {
+        "at": 1793175929421,
+        "hlsTime": 323.927159,
+        "hlsReady": 4,
+        "hlsFrames": 7566,
+        "dashTime": 1793175921.318072,
+        "dashReady": 4,
+        "dashFrames": 7586
+      },
+      {
+        "at": 1793175930419,
+        "hlsTime": 324.924971,
+        "hlsReady": 4,
+        "hlsFrames": 7590,
+        "dashTime": 1793175922.318103,
+        "dashReady": 4,
+        "dashFrames": 7610
+      },
+      {
+        "at": 1793175931421,
+        "hlsTime": 325.926223,
+        "hlsReady": 4,
+        "hlsFrames": 7614,
+        "dashTime": 1793175923.316991,
+        "dashReady": 4,
+        "dashFrames": 7634
+      }
+    ]
+  }
+}

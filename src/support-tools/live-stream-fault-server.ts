@@ -1,14 +1,14 @@
-import express from 'express';
-import path from 'path';
-import { timingSafeEqual } from 'node:crypto';
-import { bindHost, loopback, portNumber } from './safe-http.js';
+import express from "express";
+import path from "path";
+import { timingSafeEqual } from "node:crypto";
+import { bindHost, loopback, portNumber } from "./safe-http.js";
 import {
   applyConfigOverride,
   getFaultConfig,
   getFaultConfigPath,
   persistFaultConfig,
-  setFaultConfigPath
-} from './live-stream-fault-config.js';
+  setFaultConfigPath,
+} from "./live-stream-fault-config.js";
 
 export interface FaultServerOptions {
   port?: number;
@@ -19,7 +19,7 @@ export interface FaultServerOptions {
 }
 
 const DEFAULT_PORT = 19090;
-const SERVER_LOG_PREFIX = '[fault-server]';
+const SERVER_LOG_PREFIX = "[fault-server]";
 
 function logServer(message: string, payload?: unknown): void {
   if (payload !== undefined) {
@@ -64,26 +64,26 @@ function renderPage(): string {
     <p class="status" id="action-status"></p>
 
     <section>
-      <h2>Profiles</h2>
+      <h2>Session label</h2>
       <div class="card">
         <label>
-          Profile name
+          Label
           <input type="text" id="profile-input" placeholder="default" />
         </label>
-        <button id="apply-profile">Apply Profile</button>
+        <button id="apply-profile">Apply Label</button>
       </div>
     </section>
 
     <section>
       <h2>Quick Inject</h2>
       <div class="card">
-        <p style="margin-top:0; margin-bottom:12px; font-size:0.9rem; color:#475569;">Fire a one-off fault against the currently running stream without editing the base configuration.</p>
+        <p style="margin-top:0; margin-bottom:12px; font-size:0.9rem; color:#475569;">Updates the shared configuration. Once applies to one matching request until reset. HLS key faults require a remote encrypted stream and do not apply to clear samples or DASH.</p>
         <div class="quick-grid">
           <button class="warning" data-inject="segment.malformed">Inject Malformed Segment</button>
           <button class="warning" data-inject="segment.forbidden">Inject 403 Segment</button>
           <button class="warning" data-inject="segment.missing">Inject 404 Segment</button>
-          <button class="warning" data-inject="drm.licenseFailure">Trigger License Failure</button>
-          <button class="warning" data-inject="drm.keyRotationMismatch">Trigger Key Mismatch</button>
+          <button class="warning" data-inject="drm.licenseFailure">HLS Key HTTP Failure</button>
+          <button class="warning" data-inject="drm.keyRotationMismatch">HLS Key Response Mismatch</button>
           <button class="warning" data-inject="segment.latencySpike" data-value="5000">Add 5s Latency</button>
           <button class="secondary" data-inject="segment.latencyReset">Clear Latency</button>
         </div>
@@ -132,7 +132,7 @@ function renderPage(): string {
               <option value="always">Always</option>
             </select>
           </label>
-          <label>License Failure (keys)
+          <label>HLS key HTTP failure
             <select data-key="drm.licenseFailure">
               <option value="off">Off</option>
               <option value="once">Once</option>
@@ -166,7 +166,10 @@ function renderPage(): string {
     const apiFetch = window.fetch.bind(window);
     function fetch(url, options = {}) {
       const token = document.getElementById('control-token').value;
-      return apiFetch(url, { ...options, headers: { ...options.headers, ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+      return apiFetch(url, { ...options, headers: { ...options.headers, ...(token ? { Authorization: 'Bearer ' + token } : {}) } }).then(async response => {
+        if (!response.ok) { const error = await response.json().catch(() => ({})); throw new Error(error.error || 'Control request failed'); }
+        return response;
+      });
     }
     const selects = Array.from(document.querySelectorAll('select[data-key]'));
     const inputs = Array.from(document.querySelectorAll('input[data-key]'));
@@ -178,6 +181,7 @@ function renderPage(): string {
       actionStatusEl.textContent = message || '';
       actionStatusEl.style.color = isError ? '#dc2626' : '#475569';
     }
+    window.addEventListener('unhandledrejection', event => { event.preventDefault(); setActionStatus(event.reason?.message || 'Control request failed', true); });
 
     async function fetchConfig() {
       const res = await fetch('/config');
@@ -304,92 +308,132 @@ function renderPage(): string {
 </html>`;
 }
 
-export async function startFaultServer(options: FaultServerOptions = {}): Promise<void> {
+export async function startFaultServer(
+  options: FaultServerOptions = {},
+): Promise<void> {
   const host = bindHost(options.host);
   const port = portNumber(options.port ?? DEFAULT_PORT);
   const token = options.controlToken ?? process.env.HLS_DASH_CONTROL_TOKEN;
-  if (!loopback(host) && (!token || token.length < 16)) throw new Error('LAN fault control requires a --control-token of at least 16 characters');
+  if (!loopback(host) && (!token || token.length < 16))
+    throw new Error(
+      "LAN fault control requires a --control-token of at least 16 characters",
+    );
   setFaultConfigPath(options.configPath ?? getFaultConfigPath());
   if (options.configPath) {
     const resolved = path.resolve(options.configPath);
-    logServer('override path via options', resolved);
+    logServer("override path via options", resolved);
     setFaultConfigPath(resolved);
   }
   if (options.profile) {
-    logServer('override profile via options', options.profile);
+    logServer("override profile via options", options.profile);
     applyConfigOverride({ profile: options.profile });
   }
 
   const app = express();
   app.use((req, res, next) => {
+    let requestHost: string;
+    try {
+      requestHost = new URL("http://" + req.headers.host).hostname;
+    } catch {
+      res.status(400).json({ error: "Invalid control host" });
+      return;
+    }
+    if (
+      loopback(host) &&
+      !["localhost", "127.0.0.1", "[::1]"].includes(requestHost)
+    ) {
+      res.status(403).json({ error: "Control host is not allowed" });
+      return;
+    }
     // The public shell contains no configuration or credential. API access is protected.
-    if (req.path === '/' && req.method === 'GET') return next();
+    if (req.path === "/" && req.method === "GET") return next();
     const origin = req.headers.origin;
-    if (origin && new URL(origin).host !== req.headers.host) { res.status(403).json({ error: 'Cross-origin control requests are not allowed' }); return; }
+    if (origin) {
+      try {
+        if (new URL(origin).host !== req.headers.host) throw new Error();
+      } catch {
+        res
+          .status(403)
+          .json({ error: "Cross-origin control requests are not allowed" });
+        return;
+      }
+    }
     if (token) {
-      const provided = Buffer.from(String(req.headers.authorization ?? ''));
+      const provided = Buffer.from(String(req.headers.authorization ?? ""));
       const expected = Buffer.from(`Bearer ${token}`);
-      if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) { res.status(401).json({ error: 'Control token required' }); return; }
+      if (
+        provided.length !== expected.length ||
+        !timingSafeEqual(provided, expected)
+      ) {
+        res.status(401).json({ error: "Control token required" });
+        return;
+      }
     }
     next();
   });
   app.use(express.json());
 
-  app.get('/', (_req, res) => {
-    res.setHeader('Content-Type', 'text/html');
+  app.get("/", (_req, res) => {
+    res.setHeader("Content-Type", "text/html");
     res.send(renderPage());
   });
 
-  app.get('/config', (_req, res) => {
+  app.get("/config", (_req, res) => {
     res.json({ path: getFaultConfigPath(), config: getFaultConfig() });
   });
 
-  app.post('/config', (req, res) => {
-    const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : {};
-    logServer('POST /config', body);
+  app.post("/config", (req, res) => {
+    const body =
+      req.body && typeof req.body === "object"
+        ? (req.body as Record<string, unknown>)
+        : {};
+    logServer("POST /config", body);
     const updated = persistFaultConfig(body);
-    logServer('config persisted', updated);
+    logServer("config persisted", updated);
     res.json({ ok: true, config: updated });
   });
 
-  app.post('/inject', (req, res) => {
-    const type = typeof req.body?.type === 'string' ? req.body.type as string : undefined;
+  app.post("/inject", (req, res) => {
+    const type =
+      typeof req.body?.type === "string"
+        ? (req.body.type as string)
+        : undefined;
     const rawValue = req.body?.value;
-    logServer('POST /inject', { type, value: rawValue });
+    logServer("POST /inject", { type, value: rawValue });
     let message: string | undefined;
     let handled = true;
 
     switch (type) {
-      case 'segment.malformed':
-        persistFaultConfig({ segment: { malformed: 'once' } });
-        message = 'Queued malformed segment injection';
+      case "segment.malformed":
+        persistFaultConfig({ segment: { malformed: "once" } });
+        message = "Queued malformed segment injection";
         break;
-      case 'segment.forbidden':
-        persistFaultConfig({ segment: { forbidden: 'once' } });
-        message = 'Queued 403 segment injection';
+      case "segment.forbidden":
+        persistFaultConfig({ segment: { forbidden: "once" } });
+        message = "Queued 403 segment injection";
         break;
-      case 'segment.missing':
-        persistFaultConfig({ segment: { missing: 'once' } });
-        message = 'Queued 404 segment injection';
+      case "segment.missing":
+        persistFaultConfig({ segment: { missing: "once" } });
+        message = "Queued 404 segment injection";
         break;
-      case 'drm.licenseFailure':
-        persistFaultConfig({ drm: { licenseFailure: 'once' } });
-        message = 'Queued license failure';
+      case "drm.licenseFailure":
+        persistFaultConfig({ drm: { licenseFailure: "once" } });
+        message = "Queued license failure";
         break;
-      case 'drm.keyRotationMismatch':
-        persistFaultConfig({ drm: { keyRotationMismatch: 'once' } });
-        message = 'Queued key rotation mismatch';
+      case "drm.keyRotationMismatch":
+        persistFaultConfig({ drm: { keyRotationMismatch: "once" } });
+        message = "Queued key rotation mismatch";
         break;
-      case 'segment.latencySpike': {
+      case "segment.latencySpike": {
         const value = Number(rawValue);
         const latencyMs = Number.isFinite(value) && value > 0 ? value : 3000;
         persistFaultConfig({ segment: { latencyMs } });
         message = `Applied latency spike (${latencyMs} ms)`;
         break;
       }
-      case 'segment.latencyReset':
+      case "segment.latencyReset":
         persistFaultConfig({ segment: { latencyMs: 0 } });
-        message = 'Cleared latency override';
+        message = "Cleared latency override";
         break;
       default:
         handled = false;
@@ -397,48 +441,65 @@ export async function startFaultServer(options: FaultServerOptions = {}): Promis
     }
 
     if (!handled) {
-      logServer('POST /inject rejected', { type, value: rawValue });
-      res.status(400).json({ ok: false, error: 'Unknown injection type' });
+      logServer("POST /inject rejected", { type, value: rawValue });
+      res.status(400).json({ ok: false, error: "Unknown injection type" });
       return;
     }
 
     const result = getFaultConfig();
-    logServer('POST /inject applied', { type, message, config: result });
+    logServer("POST /inject applied", { type, message, config: result });
     res.json({ ok: true, message, config: result });
   });
 
-  app.post('/profile', (req, res) => {
-    const profile = typeof req.body?.profile === 'string' ? req.body.profile : undefined;
-    logServer('POST /profile', profile);
+  app.post("/profile", (req, res) => {
+    const profile =
+      typeof req.body?.profile === "string" ? req.body.profile : undefined;
+    logServer("POST /profile", profile);
     if (profile) {
       const updated = persistFaultConfig({ profile });
       res.json({ ok: true, profile: updated.profile });
     } else {
-      res.status(400).json({ ok: false, error: 'profile missing' });
+      res.status(400).json({ ok: false, error: "profile missing" });
     }
   });
 
-  app.post('/reset', (_req, res) => {
-    logServer('POST /reset');
+  app.post("/reset", (_req, res) => {
+    logServer("POST /reset");
     const reset = persistFaultConfig({
-      segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 },
-      drm: { licenseFailure: 'off', keyRotationMismatch: 'off' },
-      manifest: { freeze: 'off' }
+      segment: {
+        malformed: "off",
+        forbidden: "off",
+        missing: "off",
+        latencyMs: 0,
+      },
+      drm: { licenseFailure: "off", keyRotationMismatch: "off" },
+      manifest: { freeze: "off" },
     });
     res.json({ ok: true, config: reset });
   });
 
   app.use((error, _req, res, _next) => {
-    const invalid = error?.name === 'SyntaxError' || error?.constructor?.name === 'ConfigValidationError';
-    res.status(invalid ? 400 : 500).json({ ok: false, error: invalid ? error.message : 'Configuration could not be saved' });
+    const invalid =
+      error?.name === "SyntaxError" ||
+      error?.constructor?.name === "ConfigValidationError";
+    res
+      .status(invalid ? 400 : 500)
+      .json({
+        ok: false,
+        error: invalid ? error.message : "Configuration could not be saved",
+      });
   });
   const listenPort = port;
   const listenHost = host;
 
   await new Promise<void>((resolve, reject) => {
-    app.listen(listenPort, listenHost, () => resolve()).on('error', reject);
+    app.listen(listenPort, listenHost, () => resolve()).on("error", reject);
   });
 
-  const prettyHost = listenHost === '0.0.0.0' ? 'localhost' : listenHost;
-  logServer('listening', { url: `http://${prettyHost}:${listenPort}/`, host: listenHost, port: listenPort });
+  const prettyHost = listenHost === "0.0.0.0" ? "localhost" : listenHost;
+  logServer("listening", {
+    url: `http://${prettyHost}:${listenPort}/`,
+    host: listenHost,
+    port: listenPort,
+  });
 }

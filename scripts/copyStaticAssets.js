@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-const fs = require('fs');
-const path = require('path');
+const fs = require("fs");
+const path = require("path");
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, "..");
 const SOURCE_DIRS = [
-  path.join(ROOT, 'src', 'support-tools', 'assets'),
-  path.join(ROOT, 'assets')
+  path.join(ROOT, "src", "support-tools", "assets"),
+  path.join(ROOT, "assets"),
 ];
-const DEST_DIR = path.join(ROOT, 'dist', 'support-tools', 'assets');
+const DEST_DIR = path.join(ROOT, "dist", "support-tools", "assets");
 
 function copyAssets() {
   fs.rmSync(DEST_DIR, { recursive: true, force: true });
@@ -26,13 +26,14 @@ function copyAssets() {
 }
 
 try {
+  fs.chmodSync(path.join(ROOT, "dist", "cli.js"), 0o755);
   const didCopy = copyAssets();
   if (didCopy) {
     console.info(`Copied static assets to ${DEST_DIR}`);
   } else {
-    console.info('No static asset directories found to copy.');
+    console.info("No static asset directories found to copy.");
   }
 } catch (err) {
-  console.error('Failed to copy static assets:', err);
+  console.error("Failed to copy static assets:", err);
   process.exitCode = 1;
 }

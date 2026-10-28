@@ -6,6 +6,8 @@ The recovered implementation proves parts of that workflow, but several advertis
 stream characteristics are metadata or placeholders. It needs correctness and
 process-safety work before a public release can be trusted.
 
+Historical baseline review. See [implementation status](implementation.md) for the fixes and current verification.
+
 Review date: 28 October 2026. Reviewed commit: `55952e9`.
 The repository remains private. No simulator implementation was changed in this
 review. The attached [observations](research-evidence.json) distinguish measured
@@ -37,7 +39,7 @@ whether its evidence is a runtime reproduction or source inspection.
 
 ### Priority 0 Port cleanup can kill unrelated processes
 
-**Source inspection.** [dash-sim-runner.ts](../src/support-tools/dash-sim-runner.ts#L1351)
+**Source inspection.** [dash-sim-runner.ts](https://github.com/rdaci23/hls-dash-live-sim/blob/55952e9712d6386e6bca6f3366bcf7d203fd1897/src/support-tools/dash-sim-runner.ts#L1351)
 finds processes using the requested port with `lsof` and executes `kill -9` against
 all returned PIDs. A second aggressive-cleanup path repeats it after bind failure.
 There is no ownership check. Starting a test tool can terminate a developer's other
@@ -64,7 +66,7 @@ undeclared origin receives neither a request nor a configured authorization head
 
 ### Priority 1 Bundled HLS does not advance as live content
 
-**Reproduced.** [buildLoopingPlaylist](../src/support-tools/hls-sim-runner.ts#L264)
+**Reproduced.** [buildLoopingPlaylist](https://github.com/rdaci23/hls-dash-live-sim/blob/55952e9712d6386e6bca6f3366bcf7d203fd1897/src/support-tools/hls-sim-runner.ts#L264)
 returns `MEDIA-SEQUENCE:0`, 100 entries referring to only two unique video URLs,
 and `EXT-X-ENDLIST`. The response remains identical after a target-duration
 interval. Thus live edge, DVR-window, stale-playlist and live-recovery behavior
@@ -107,7 +109,7 @@ are visibly unavailable rather than silently accepted.
 
 ### Priority 1 HLS import does not analyze the source
 
-**Reproduced.** [createTemplateFromHls](../src/support-tools/stream-templates.ts#L184)
+**Reproduced.** [createTemplateFromHls](https://github.com/rdaci23/hls-dash-live-sim/blob/55952e9712d6386e6bca6f3366bcf7d203fd1897/src/support-tools/stream-templates.ts#L184)
 made zero requests to a local HLS source and returned a hardcoded 6-second duration
 and bitrate ladder. It reports success even though its options and origin are not
 analyzed. HLS template startup also discards its saved source URL.
@@ -121,7 +123,7 @@ different imported configurations and validation failures are explicit.
 ### Priority 1 DASH duration conversion is wrong by the timescale
 
 **Reproduced.** A SegmentTemplate with `duration="2000" timescale="1000"`
-describes 2 seconds, but [template import](../src/support-tools/stream-templates.ts#L126)
+describes 2 seconds, but [template import](https://github.com/rdaci23/hls-dash-live-sim/blob/55952e9712d6386e6bca6f3366bcf7d203fd1897/src/support-tools/stream-templates.ts#L126)
 stores `2000000` milliseconds, meaning 2,000 seconds. The parser returns duration
 ticks; the importer treats them as seconds. Template startup introduces another
 inconsistent duration conversion when building mock MPD information.
@@ -146,7 +148,7 @@ fractional durations and audio/video variants have fixtures and consistent outpu
 
 **Reproduced with the proxy in isolation.** The generated multi-period MPD uses
 `1/$Number$.m4s`, producing `/__dash__/1/1.m4s`. The
-[proxy handler](../src/support-tools/dash-fault-proxy.ts#L290) accepts only
+[proxy handler](https://github.com/rdaci23/hls-dash-live-sim/blob/55952e9712d6386e6bca6f3366bcf7d203fd1897/src/support-tools/dash-fault-proxy.ts#L290) accepts only
 `segment-<number>.m4s`. The generated-style path returned 404; the handler-style
 path reached the fixture upstream. Alias paths also lack the leading slash used
 when concatenating them with the upstream host. Several preserved MPDs hardcode
@@ -161,7 +163,7 @@ at least two periods.
 ### Priority 1 DASH configuration mixes URL generator fields with stream options
 
 **Source comparison with pinned livesim2 v1.7.0.**
-[generateLivesimUrlForBase](../src/support-tools/dash-sim-runner.ts#L459) attaches
+[generateLivesimUrlForBase](https://github.com/rdaci23/hls-dash-live-sim/blob/55952e9712d6386e6bca6f3366bcf7d203fd1897/src/support-tools/dash-sim-runner.ts#L459) attaches
 `?tsbd=...&stl=...&ato=...` to media URLs. livesim2's
 [pinned configuration parser](https://raw.githubusercontent.com/Dash-Industry-Forum/livesim2/v1.7.0/cmd/livesim2/app/configurl.go)
 reads options as path components. Its
@@ -340,15 +342,15 @@ Run from the repository root:
 
 ```sh
 npm run build
-node scripts/research-audit.cjs
+npm run test:docker
 npm test
 ```
 
-The research script is observational: its JSON includes current defects rather
+The archived prototype research script is observational: its JSON includes current defects rather
 than treating them as passing functionality. It uses temporary configuration,
 local HTTP fixtures and a dummy authorization value, then stops its own servers.
 The recorded [evidence](research-evidence.json) belongs to the reviewed commit;
-update it as the corresponding fixes are implemented.
+retain it as a historical record; current results belong in implementation.md.
 
 The Docker daemon was unavailable, so full livesim2 backend startup and playback
 remain unverified. Preserved-path behavior was reproduced directly against the

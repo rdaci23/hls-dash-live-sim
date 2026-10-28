@@ -1,6 +1,6 @@
 {
   "name": "hls-dash-live-sim",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Standalone HLS and DASH live manifest simulation and fault injection",
   "type": "commonjs",
@@ -15,7 +15,7 @@
     "url": "git+https://github.com/rdaci23/hls-dash-live-sim.git"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json && node scripts/copyStaticAssets.js && chmod +x dist/cli.js",
+    "build": "tsc --project tsconfig.json && node scripts/copyStaticAssets.js",
     "typecheck": "tsc --noEmit",
     "start": "node dist/cli.js",
     "livesim": "node dist/cli.js livesim",
@@ -23,16 +23,27 @@
     "dash": "node dist/cli.js livesim start --sim-type dash --detach",
     "templates": "node dist/cli.js list-manifest-templates",
     "fault-control": "node dist/cli.js fault-control",
-    "test": "npm run build && node --test test/*.test.cjs"
+    "test": "npm run build && node --test test/*.test.cjs",
+    "test:docker": "npm run build && node scripts/run-docker-tests.cjs",
+    "fixtures": "node scripts/generate-fixtures.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
+    "fast-xml-parser": "^5.11.2",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^24.5.2",
     "@types/yargs": "^17.0.33",
+    "dashjs": "^5.2.1",
+    "hls.js": "^1.7.3",
     "typescript": "5.2.2"
-  }
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md",
+    "docs/implementation.md"
+  ]
 }

@@ -8,7 +8,8 @@ const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 // Observational audit of the recovered prototype; does not modify source files.
 // Build first, then run: node scripts/research-audit.cjs
-const root = path.resolve(__dirname, '..');
+const root = path.resolve(__dirname, '../..');
+if (fs.existsSync(path.join(root, 'src/support-tools/live-hls.ts'))) throw new Error('Historical prototype audit: run against baseline 55952e9, not the corrected engine. Use npm test and npm run test:docker here.');
 const children = [], servers = [], proxies = [];
 const info = console.info;
 console.info = () => {};
