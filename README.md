@@ -89,6 +89,24 @@ control API rejects cross-origin writes. HLS key-response faults require a remot
 AES-encrypted stream; they do not implement commercial DRM or apply to clear
 samples or DASH. [Fault details](docs/fault-injection-guide.md).
 
+## Request and fault diagnostics
+
+Record redacted events to a new file:
+
+```sh
+mkdir -p output
+npm start -- livesim --sim-type hls --diagnostics-file output/requests.jsonl
+# Use --sim-type dash for the same tracing on DASH.
+```
+
+Responses include session/request IDs and the IDs of selected faults. Quick Inject
+returns a one-shot fault ID that matches the affected response and log events.
+The log distinguishes selection, consumption, application and cancellation.
+URLs, credentials and media/key bodies are omitted; resources have opaque IDs.
+Use `--verbose` for structured stderr events, or download recent events from the
+stream server's `/diagnostics` endpoint. History retains 2000 events; optional
+files stop at 10 MiB with an explicit marker. [Format and limits](docs/diagnostics.md).
+
 ## Streaming commands
 
 ```sh

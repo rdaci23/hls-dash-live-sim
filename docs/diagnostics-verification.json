@@ -1,0 +1,41 @@
+{
+  "checkedAt": "2026-10-28T12:54:25Z",
+  "baseRevision": "bd5550b",
+  "scope": "Request/fault diagnostics for HLS Node and DASH fault proxies",
+  "regularTests": { "passed": 46, "failed": 0, "dockerTestsSkipped": 1 },
+  "dockerIntegration": {
+    "passed": 1,
+    "failed": 0,
+    "engine": "livesim2 v1.7.0",
+    "checks": [
+      "Manifest response IDs match JSONL request and origin events",
+      "Real audio/video resource requests appear as completed livesim2 segment events",
+      "Normal close records session.closed and removes the owned container",
+      "An existing diagnostic file is preserved and failed startup cleans up its owned container"
+    ]
+  },
+  "buildAndTypecheck": "passed",
+  "productionDependencyAudit": { "vulnerabilities": 0 },
+  "regressions": [
+    "Cross-process Quick Inject IDs match affected HTTP responses and events",
+    "HEAD does not consume one-shot segment faults and records zero response body bytes",
+    "Cancellation during delay and shutdown records terminal reasons without consuming later faults",
+    "Completed latency, manifest hold and ranged corruption have distinct fault actions",
+    "Freeze diagnostics report the response actually selected when settings change in flight",
+    "Origin cancellation and rejected resources have safe diagnostic records",
+    "Signed URL paths/queries, credentials, bodies, profiles and custom arm labels are absent from all diagnostic sinks",
+    "Memory/file limits report incomplete captures and preserve existing files",
+    "File write failures do not stop HTTP serving",
+    "Template CLI captures JSONL and closes the recording on shutdown",
+    "Shared fault configuration still updates when native filesystem notifications are lost"
+  ],
+  "knownLimits": [
+    "Recent history retains 2000 events and reports evictions",
+    "File recording stops at 10 MiB with an explicit marker",
+    "Synchronous file writes and verbose output can add timing overhead",
+    "Resource IDs do not yet normalize logical tracks, segments or retry attempts",
+    "These events describe server behavior; browser/Roku recovery remains unverified",
+    "Previously recorded DASH console exceptions and default/offline UTC synchronization remain release checks"
+  ],
+  "repositoryPrivate": true
+}

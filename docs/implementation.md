@@ -30,7 +30,9 @@ alongside timed actions) is still an open design decision.
   acknowledge, then selects a unique session label and verifies workspace ownership
   before removing the exact container ID, including when no ID was printed.
 - Fault settings use schema validation, deep defaults, atomic writes, directory
-  watching and retention of the last valid config. UI errors no longer claim that
+  watching with a 250 ms polling fallback, and retention of the last valid config.
+  Unchanged file text preserves in-memory overrides; repeated identical invalid
+  edits do not flood logs. UI errors no longer claim that
   invalid or failed writes succeeded.
 
 ## Correct stream behavior
@@ -81,6 +83,27 @@ return HTTP 503 for a new stream when the frozen snapshot cache is full. Corrupt
 206 responses preserve their range length; client disconnect and session shutdown
 cancel latency and upstream work and drain pending handlers.
 
+## Traceable requests and faults
+
+The next roadmap step adds session/request/fault IDs, one-shot consumption events,
+fault application and cancellation records, upstream response status/size and
+request completion/cancellation. Quick Inject's generated one-shot ID correlates
+across the separate control and simulator processes. Response headers expose the
+IDs to allowed browser clients. `logging.verbose` now controls structured stderr
+events, `--diagnostics-file` captures JSONL to a new private file, and the stream
+server's `/diagnostics` exports recent history.
+
+Resource identities use a per-session keyed hash; raw URLs, headers, key/media
+bytes, profile labels and error messages are omitted. A 2000-event history reports
+eviction counts; file output stops at 10 MiB with an explicit marker. File write
+failures are reported without stopping streaming. This is observation infrastructure;
+logical track/segment/attempt targeting, seeded randomness and playback recovery
+assertions remain later work. See [diagnostics.md](diagnostics.md).
+The expanded suite passes 46 regular tests plus the separate real livesim2 Docker
+integration; [diagnostics-verification.json](diagnostics-verification.json) records
+the checks, including redaction, cross-process IDs, bounded capture, disk failure,
+cancellation and a deliberately suppressed filesystem watcher.
+
 ## Verification
 
 The baseline suite and protocol/security regressions cover port collision survival,
@@ -127,7 +150,7 @@ playback has not been verified.
   synchronization and physical Roku playback/recovery need verification before release.
 - Sports/news/OTT/mobile presets report actual sample properties. Mobile selects
   the small rendition; news extends the window. They no longer promise 4K or ads.
-- Random failures remain unseeded. Timed rules, explicit counters, session APIs and
+- Random failures remain unseeded. Timed rules, scenario counters, session control APIs and
   recovery assertions are the next milestone. Independently controlled sessions
   should run as separate processes with separate fault files.
 - Saved source URLs may contain secrets. Templates and auth files remain ignored;

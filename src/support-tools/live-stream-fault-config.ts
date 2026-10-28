@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 
 export type FaultMode = "off" | "always" | "random" | "once";
 export interface SegmentFaultConfig {
@@ -18,6 +18,24 @@ export interface ManifestFaultConfig {
 }
 export type FaultCategory =
   "missing" | "forbidden" | "malformed" | "key-failure" | "key-mismatch";
+/** Correlate generated one-shot arms across the control and simulator processes. */
+export function oneShotFaultId(
+  category: FaultCategory,
+  arm?: string,
+): string | undefined {
+  if (
+    !arm ||
+    !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(arm)
+  )
+    return undefined;
+  return (
+    "fault_" +
+    createHash("sha256")
+      .update(`one-shot:${category}:${arm}`)
+      .digest("hex")
+      .slice(0, 32)
+  );
+}
 export interface FaultConfig {
   profile?: string;
   segment?: SegmentFaultConfig;
@@ -148,6 +166,7 @@ let activeConfig = merge(DEFAULT_CONFIG, {});
 let activePath = path.resolve(process.cwd(), ".hls-dash-faults.json");
 let watcher: fs.FSWatcher | undefined;
 let debounce: ReturnType<typeof setTimeout> | undefined;
+let poller: ReturnType<typeof setInterval> | undefined;
 const listeners = new Set<(config: FaultConfig) => void>();
 function update(config: FaultConfig) {
   if (JSON.stringify(config) === JSON.stringify(activeConfig)) return;
@@ -180,32 +199,52 @@ export function setFaultConfigPath(file: string): void {
   const next = read(resolved, text); // Fail startup instead of replacing an invalid file.
   watcher?.close();
   clearTimeout(debounce);
+  clearInterval(poller);
   activePath = resolved;
   lastDiskText = text;
   update(next);
+  let rejectedText: string | undefined;
+  let readError = "";
+  const refresh = () => {
+    let text: string | undefined;
+    try {
+      text = fs.readFileSync(resolved, "utf8");
+      readError = "";
+      if (text === lastDiskText) {
+        rejectedText = undefined;
+        return;
+      }
+      if (text === rejectedText) return;
+      const next = read(resolved, text);
+      lastDiskText = text;
+      rejectedText = undefined;
+      update(next);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (text !== undefined) rejectedText = text;
+      else {
+        if (message === readError) return;
+        readError = message;
+      }
+      console.error(
+        "[fault-config] Keeping last valid configuration:",
+        message,
+      );
+    }
+  };
   watcher = fs.watch(
     path.dirname(resolved),
     { persistent: false },
     (_event, filename) => {
       if (filename && filename.toString() !== path.basename(resolved)) return;
       clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        try {
-          const text = fs.readFileSync(resolved, "utf8");
-          if (text === lastDiskText) return;
-          const next = read(resolved, text);
-          lastDiskText = text;
-          update(next);
-        } catch (error) {
-          console.error(
-            "[fault-config] Keeping last valid configuration:",
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      }, 25);
+      debounce = setTimeout(refresh, 25);
       debounce.unref();
     },
   );
+  // Native directory watches can coalesce or miss atomic rename events.
+  poller = setInterval(refresh, 250);
+  poller.unref();
 }
 export function getFaultConfig(): FaultConfig {
   return structuredClone(activeConfig);

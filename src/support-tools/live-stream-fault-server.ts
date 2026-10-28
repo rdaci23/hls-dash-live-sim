@@ -8,6 +8,8 @@ import {
   getFaultConfigPath,
   persistFaultConfig,
   setFaultConfigPath,
+  oneShotFaultId,
+  FaultCategory,
 } from "./live-stream-fault-config.js";
 
 export interface FaultServerOptions {
@@ -254,7 +256,7 @@ function renderPage(): string {
           throw new Error(text || 'Failed to inject fault');
         }
         const data = await res.json().catch(() => ({}));
-        setActionStatus(data.message || 'Injection queued');
+        setActionStatus((data.message || 'Injection queued') + (data.faultId ? ' — Fault ID: ' + data.faultId : ''));
         await fetchConfig();
       } catch (err) {
         setActionStatus(err instanceof Error ? err.message : 'Failed to inject fault', true);
@@ -445,8 +447,19 @@ export async function startFaultServer(
     }
 
     const result = getFaultConfig();
+    const categories: Record<string, FaultCategory> = {
+      "segment.missing": "missing",
+      "segment.forbidden": "forbidden",
+      "segment.malformed": "malformed",
+      "drm.licenseFailure": "key-failure",
+      "drm.keyRotationMismatch": "key-mismatch",
+    };
+    const category = categories[type];
+    const faultId = category
+      ? oneShotFaultId(category, result._oneShot?.[category])
+      : undefined;
     logServer("POST /inject applied", { type, message, config: result });
-    res.json({ ok: true, message, config: result });
+    res.json({ ok: true, message, faultId, config: result });
   });
 
   app.post("/profile", (req, res) => {

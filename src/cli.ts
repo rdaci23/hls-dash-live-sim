@@ -118,6 +118,15 @@ const startOptions = (builder) =>
       default: "127.0.0.1",
       description: "Use 0.0.0.0 explicitly for LAN streaming",
     })
+    .option("diagnostics-file", {
+      type: "string",
+      description:
+        "Write redacted JSONL diagnostics to a new file (10 MiB limit)",
+    })
+    .option("verbose", {
+      type: "boolean",
+      description: "Emit redacted request/fault diagnostic events to stderr",
+    })
     .option("showManifest", {
       alias: "show-manifest",
       type: "boolean",
@@ -144,6 +153,8 @@ async function runTemplate(name: string, args) {
       await starting((signal) =>
         startLivesim2({
           signal,
+          diagnosticsFile: args["diagnostics-file"],
+          verbose: args.verbose,
           port: args.port,
           host: args.host,
           asset: template.isDynamic ? undefined : template.asset,
@@ -158,6 +169,8 @@ async function runTemplate(name: string, args) {
       await starting((signal) =>
         startHlsim({
           signal,
+          diagnosticsFile: args["diagnostics-file"],
+          verbose: args.verbose,
           port: args.port,
           host: args.host,
           mode: args.mode,
@@ -308,6 +321,8 @@ const program = yargs(hideBin(process.argv))
         preserveManifest: args["preserve-manifest"],
         faultConfigPath: args["fault-config"],
         faultProfile: args["fault-profile"],
+        diagnosticsFile: args["diagnostics-file"],
+        verbose: args.verbose,
         ...auth(args),
       };
       const session = await starting(async (signal) =>

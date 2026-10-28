@@ -39,8 +39,16 @@ test(
         noPull: true,
         periodsPerHour: 60,
         faultConfigPath: path.join(directory, "faults.json"),
+        diagnosticsFile: path.join(directory, "requests.jsonl"),
       });
-      const body = await (await fetch(session.url)).text();
+      const initial = await fetch(session.url);
+      const initialRequestId = initial.headers.get("x-sim-request-id");
+      assert.ok(initialRequestId);
+      assert.equal(
+        initial.headers.get("x-sim-session-id"),
+        session.diagnostics.sessionId,
+      );
+      const body = await initial.text();
       assert.match(body, /type="dynamic"/);
       assert.doesNotMatch(body, /localhost|__dash__/);
       const inspect = JSON.parse(
@@ -106,6 +114,29 @@ test(
       const response = await fetch(session.url);
       assert.equal(response.headers.get("access-control-allow-origin"), "*");
       await session.close();
+      const diagnostics = (
+        await fs.readFile(path.join(directory, "requests.jsonl"), "utf8")
+      )
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      assert.ok(
+        diagnostics.some(
+          (event) =>
+            event.requestId === initialRequestId &&
+            event.event === "origin.completed" &&
+            event.status === 200,
+        ),
+      );
+      assert.ok(
+        diagnostics.some(
+          (event) =>
+            event.resourceSource === "livesim2" &&
+            event.resourceKind === "segment" &&
+            event.event === "request.completed",
+        ),
+      );
+      assert.equal(diagnostics.at(-1).event, "session.closed");
       session = undefined;
       const remaining = execFileSync("docker", [
         "ps",
@@ -116,6 +147,39 @@ test(
         "{{.ID}}",
       ]).toString();
       assert.equal(remaining.trim(), "");
+      const preserved = await fs.readFile(
+        path.join(directory, "requests.jsonl"),
+        "utf8",
+      );
+      const failedName = name + "-diagnostics-failure";
+      await assert.rejects(
+        startLivesim2({
+          port: await unusedPort(),
+          name: failedName,
+          noPull: true,
+          faultConfigPath: path.join(directory, "faults.json"),
+          diagnosticsFile: path.join(directory, "requests.jsonl"),
+        }),
+        /never overwritten/,
+      );
+      assert.equal(
+        await fs.readFile(path.join(directory, "requests.jsonl"), "utf8"),
+        preserved,
+      );
+      assert.equal(
+        execFileSync("docker", [
+          "ps",
+          "-a",
+          "--filter",
+          `name=^/${failedName}$`,
+          "--format",
+          "{{.ID}}",
+        ])
+          .toString()
+          .trim(),
+        "",
+        "a diagnostic initialization failure also cleans up the owned engine",
+      );
     } finally {
       if (session) await session.close();
       process.chdir(cwd);

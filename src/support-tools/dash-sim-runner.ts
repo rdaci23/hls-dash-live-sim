@@ -6,6 +6,7 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { validateDashAsset } from "./dash-asset.js";
+import type { SessionDiagnostics } from "./session-diagnostics.js";
 import {
   OriginPolicy,
   fetchRemote,
@@ -52,6 +53,8 @@ export interface LivesimStartOptions {
   periodStartTimes?: number[];
   periodsPerHour?: number;
   signal?: AbortSignal;
+  diagnosticsFile?: string;
+  verbose?: boolean;
 }
 export interface LivesimStopOptions {
   name?: string;
@@ -61,6 +64,7 @@ export interface LivesimLogsOptions {
 }
 export interface DashSession {
   url: string;
+  diagnostics?: SessionDiagnostics;
   close(): Promise<void>;
 }
 export async function fetchMPD(
@@ -175,6 +179,13 @@ export async function startLivesim2(
 ): Promise<DashSession> {
   const signal = options.signal;
   signal?.throwIfAborted();
+  if (
+    options.faultProxy === false &&
+    (options.diagnosticsFile || options.verbose)
+  )
+    throw new Error(
+      "Request diagnostics require the DASH fault proxy; enable --fault-proxy",
+    );
   const port = portNumber(options.port ?? 8888);
   const host = bindHost(options.host);
   await assertPortAvailable(port, host);
@@ -226,6 +237,8 @@ export async function startLivesim2(
   );
   if (options.faultProfile)
     applyConfigOverride({ profile: options.faultProfile });
+  if (options.verbose !== undefined)
+    applyConfigOverride({ logging: { verbose: options.verbose } });
   try {
     await exec("docker", ["info"], { timeout: 15000, signal });
   } catch {
@@ -368,6 +381,7 @@ export async function startLivesim2(
         upstreamPort: internalPort,
         host,
         manifestPath,
+        diagnosticsFile: options.diagnosticsFile,
       });
     signal?.throwIfAborted();
     const displayHost =
@@ -388,7 +402,7 @@ export async function startLivesim2(
       spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], {
         stdio: "ignore",
       }).on("error", () => {});
-    return { url, close };
+    return { url, close, diagnostics: proxy?.diagnostics };
   } catch (error) {
     await close();
     throw error;

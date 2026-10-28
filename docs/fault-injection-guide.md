@@ -54,7 +54,14 @@ requires a bearer token of at least 16 characters, configured with
 Tokens are not embedded in the page. Use a separate fault-config path for each
 independent simulator process.
 
+One-shot `POST /inject` responses include a `faultId`. It matches the affected
+response's `X-Sim-Fault-Ids` header and the stream server's recorded fault events.
+Use `X-Sim-Request-Id` to find the exact request. Both protocols support redacted
+JSONL capture with `--diagnostics-file` and recent-history export at `/diagnostics`
+on the stream port. See [event meanings, redaction and limits](diagnostics.md).
+
 Players buffer ahead. A queued fault takes effect when the matching resource is
 requested, not when previously buffered media plays. Freeze can expose this delay
-as the player drains its buffer. Deterministic timed rules, consumption events and
-player recovery assertions are the next roadmap milestone.
+as the player drains its buffer. Recorded consumption/application/cancellation
+events show what the simulator did. Deterministic timed rules and player recovery
+assertions remain later roadmap work.

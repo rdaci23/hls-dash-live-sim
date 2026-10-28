@@ -8,14 +8,17 @@ import {
   HttpError,
 } from "./safe-http.js";
 import { getFaultConfig } from "./live-stream-fault-config.js";
-import { FaultRuntime, faultDelay } from "./fault-runtime.js";
+import { FaultRuntime } from "./fault-runtime.js";
+import { SessionDiagnostics } from "./session-diagnostics.js";
 export interface DashFaultProxyOptions {
   listenPort: number;
   upstreamPort: number;
   host?: string;
   manifestPath?: string;
+  diagnosticsFile?: string;
 }
 export interface DashFaultProxy {
+  diagnostics: SessionDiagnostics;
   close(): Promise<void>;
   upstreamBase: string;
 }
@@ -24,6 +27,10 @@ export async function startDashFaultProxy(
 ): Promise<DashFaultProxy> {
   const upstreamBase = `http://127.0.0.1:${options.upstreamPort}`;
   const policy = new OriginPolicy(upstreamBase);
+  const diagnostics = new SessionDiagnostics("dash", {
+    file: options.diagnosticsFile,
+    verbose: () => getFaultConfig().logging?.verbose,
+  });
   const faults = new FaultRuntime();
   const latest = new Map<
     string,
@@ -34,7 +41,7 @@ export async function startDashFaultProxy(
     string,
     { body: Buffer; headers: Record<string, string>; status: number }
   >();
-  const transport = sessionServer(async (req, res, signal) => {
+  const transport = sessionServer(async (req, res, signal, trace) => {
     try {
       if (preflight(req, res, options.host)) return;
       const request = new URL(req.url ?? "/", "http://localhost");
@@ -44,6 +51,19 @@ export async function startDashFaultProxy(
           200,
           JSON.stringify({ protocol: "dash", status: "ready" }),
           { "Content-Type": "application/json" },
+          req.method,
+        );
+        return;
+      }
+      if (request.pathname === "/diagnostics") {
+        send(
+          res,
+          200,
+          diagnostics.exportJsonl(),
+          {
+            "Content-Type": "application/x-ndjson",
+            "Content-Disposition": `attachment; filename="diagnostics-${diagnostics.sessionId}.jsonl"`,
+          },
           req.method,
         );
         return;
@@ -61,14 +81,20 @@ export async function startDashFaultProxy(
       const segment = /\.(m4s|mp4|cmfv|cmfa|m4v|m4a|m4i)$/i.test(
         request.pathname,
       );
+      trace.resource(
+        upstreamBase + request.pathname + request.search,
+        manifest ? "manifest" : segment ? "segment" : "other",
+        "livesim2",
+      );
       const shouldFreeze = getFaultConfig().manifest?.freeze === "always";
       if (shouldFreeze !== frozen) {
         frozen = shouldFreeze;
         snapshots = frozen ? new Map(latest) : new Map();
       }
-      await faultDelay(signal);
+      await faults.delay(signal, trace);
       if (manifest && frozen && snapshots.has(manifestKey)) {
         const cached = snapshots.get(manifestKey);
+        faults.frozen(trace);
         send(res, cached.status, cached.body, cached.headers, req.method);
         return;
       }
@@ -79,7 +105,7 @@ export async function startDashFaultProxy(
         );
       const failure =
         segment && req.method !== "HEAD"
-          ? faults.segmentStatus(request.pathname)
+          ? faults.segmentStatus(request.pathname, trace)
           : 0;
       if (failure) {
         send(res, failure, "Injected DASH segment failure", {}, req.method);
@@ -94,6 +120,10 @@ export async function startDashFaultProxy(
           maxBytes: manifest ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
         },
       );
+      trace.record("origin.completed", {
+        status: remote.status,
+        bodyBytes: remote.body.length,
+      });
       if (manifest) {
         remote.headers["cache-control"] = "no-store";
         // A relative BaseURL remains valid on localhost and a separate player device.
@@ -102,16 +132,30 @@ export async function startDashFaultProxy(
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
           latest.set(manifestKey, remote);
-          if (frozen) snapshots.set(manifestKey, remote);
+          if (frozen) {
+            snapshots.set(manifestKey, remote);
+            faults.frozen(trace, true);
+          }
           if (latest.size > 128) latest.delete(latest.keys().next().value);
         }
       }
       const body =
         segment && req.method !== "HEAD"
-          ? faults.corrupt(remote.body, request.pathname, remote.status === 206)
+          ? faults.corrupt(
+              remote.body,
+              request.pathname,
+              remote.status === 206,
+              trace,
+            )
           : remote.body;
       send(res, remote.status, body, remote.headers, req.method);
     } catch (error) {
+      if (!signal.aborted)
+        trace.record("request.error", {
+          reason:
+            error instanceof HttpError ? "resource_rejected" : "origin_failure",
+          status: error instanceof HttpError ? error.status : 502,
+        });
       if (!res.destroyed && !res.headersSent)
         send(
           res,
@@ -123,19 +167,23 @@ export async function startDashFaultProxy(
           req.method,
         );
     }
-  });
+  }, diagnostics);
   const server = transport.server;
   try {
     await listen(server, options.listenPort, options.host);
   } catch (error) {
     faults.close();
+    await transport.close();
+    diagnostics.close();
     throw error;
   }
   return {
     upstreamBase,
-    close: () => {
+    diagnostics,
+    close: async () => {
       faults.close();
-      return transport.close();
+      await transport.close();
+      diagnostics.close();
     },
   };
 }

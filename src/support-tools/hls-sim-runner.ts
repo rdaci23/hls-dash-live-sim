@@ -26,7 +26,8 @@ import {
   validateSupportedHls,
 } from "./hls-playlist.js";
 import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
-import { FaultRuntime, faultDelay } from "./fault-runtime.js";
+import { FaultRuntime } from "./fault-runtime.js";
+import { SessionDiagnostics } from "./session-diagnostics.js";
 
 export interface HLSStartOptions {
   rendition?: "all" | "low" | "main";
@@ -53,6 +54,8 @@ export interface HLSStartOptions {
   noPull?: boolean;
   forcePull?: boolean;
   signal?: AbortSignal;
+  diagnosticsFile?: string;
+  verbose?: boolean;
 }
 export interface HLSStopOptions {
   name?: string;
@@ -62,6 +65,7 @@ export interface HLSLogsOptions {
 }
 export interface HlsSession {
   url: string;
+  diagnostics?: SessionDiagnostics;
   close(): Promise<void>;
 }
 
@@ -122,6 +126,10 @@ export async function startHlsim(
   options: HLSStartOptions = {},
 ): Promise<HlsSession> {
   options.signal?.throwIfAborted();
+  if (options.proxy === false && (options.diagnosticsFile || options.verbose))
+    throw new Error(
+      "Request diagnostics require the HLS Node proxy; MP4 VoD bypasses it",
+    );
   const host = bindHost(options.host);
   const port = portNumber(options.port ?? 8899);
   const mode = options.mode ?? "live";
@@ -134,6 +142,8 @@ export async function startHlsim(
   );
   if (options.faultProfile)
     applyConfigOverride({ profile: options.faultProfile });
+  if (options.verbose !== undefined)
+    applyConfigOverride({ logging: { verbose: options.verbose } });
   if (options.proxy === false) return startVod(options, host, port);
   const dummy = options.dummyContent ?? !options.manifestUrl;
   if (!dummy && !options.manifestUrl)
@@ -153,7 +163,6 @@ export async function startHlsim(
         options.allowedOrigins,
       )
     : undefined;
-  const faults = new FaultRuntime();
   const root = assetRoot();
   let master = dummy
     ? fs.readFileSync(path.join(root, "master.m3u8"), "utf8")
@@ -204,7 +213,30 @@ export async function startHlsim(
     }
     for (const timeline of timelines.values()) timeline.setFrozen(next);
   }
-  const transport = sessionServer(async (req, res, signal) => {
+  function lookupResource(
+    url: URL,
+  ): { url: string; kind: "playlist" | "segment" | "key" } | undefined {
+    if (url.pathname === "/proxy.m3u8")
+      return { url: options.manifestUrl, kind: "playlist" };
+    else if (["/pl", "/seg", "/key"].includes(url.pathname))
+      return {
+        url: url.searchParams.get("u") ?? "",
+        kind:
+          url.pathname === "/pl"
+            ? "playlist"
+            : url.pathname === "/key"
+              ? "key"
+              : "segment",
+      };
+    else
+      return resources.get(url.pathname.match(/^\/r\/([a-f0-9]{32})\./)?.[1]);
+  }
+  const diagnostics = new SessionDiagnostics("hls", {
+    file: options.diagnosticsFile,
+    verbose: () => getFaultConfig().logging?.verbose,
+  });
+  const faults = new FaultRuntime();
+  const transport = sessionServer(async (req, res, signal, trace) => {
     try {
       if (preflight(req, res, host)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -222,8 +254,40 @@ export async function startHlsim(
         );
         return;
       }
+      if (url.pathname === "/diagnostics") {
+        send(
+          res,
+          200,
+          diagnostics.exportJsonl(),
+          {
+            "Content-Type": "application/x-ndjson",
+            "Content-Disposition": `attachment; filename="diagnostics-${diagnostics.sessionId}.jsonl"`,
+          },
+          req.method,
+        );
+        return;
+      }
+      if (dummy)
+        trace.resource(
+          url.pathname,
+          url.pathname.endsWith(".m3u8")
+            ? "manifest"
+            : url.pathname.endsWith(".ts")
+              ? "segment"
+              : "other",
+          "sample",
+        );
+      else {
+        const known = lookupResource(url);
+        if (known)
+          trace.resource(
+            known.url,
+            known.kind === "playlist" ? "manifest" : known.kind,
+            "origin",
+          );
+      }
       freezeState();
-      await faultDelay(signal);
+      await faults.delay(signal, trace);
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
           const rewritten = master.replace(
@@ -246,6 +310,7 @@ export async function startHlsim(
         const timeline = timelines.get(match[1]);
         if (!timeline) throw new HttpError(404, "Unknown rendition");
         if (match[2] === "stream.m3u8") {
+          if (frozen) faults.frozen(trace);
           send(
             res,
             200,
@@ -262,7 +327,7 @@ export async function startHlsim(
         if (sequence >= end || !Number.isSafeInteger(sequence))
           throw new HttpError(404, "Segment is not available yet");
         const status =
-          req.method === "HEAD" ? 0 : faults.segmentStatus(url.pathname);
+          req.method === "HEAD" ? 0 : faults.segmentStatus(url.pathname, trace);
         if (status) {
           send(res, status, "Injected segment failure", {}, req.method);
           return;
@@ -292,6 +357,7 @@ export async function startHlsim(
                   body.subarray(start, finish + 1),
                   url.pathname,
                   true,
+                  trace,
                 ),
             {
               "Content-Type": "video/mp2t",
@@ -302,7 +368,8 @@ export async function startHlsim(
           );
           return;
         }
-        if (req.method !== "HEAD") body = faults.corrupt(body, url.pathname);
+        if (req.method !== "HEAD")
+          body = faults.corrupt(body, url.pathname, false, trace);
         send(
           res,
           200,
@@ -312,23 +379,7 @@ export async function startHlsim(
         );
         return;
       }
-      let resource: { url: string; kind: "playlist" | "segment" | "key" };
-      if (url.pathname === "/proxy.m3u8")
-        resource = { url: options.manifestUrl, kind: "playlist" };
-      else if (["/pl", "/seg", "/key"].includes(url.pathname))
-        resource = {
-          url: url.searchParams.get("u") ?? "",
-          kind:
-            url.pathname === "/pl"
-              ? "playlist"
-              : url.pathname === "/key"
-                ? "key"
-                : "segment",
-        };
-      else
-        resource = resources.get(
-          url.pathname.match(/^\/r\/([a-f0-9]{32})\./)?.[1],
-        );
+      const resource = lookupResource(url);
       if (!resource) throw new HttpError(404, "Unknown proxy resource");
       policy.check(resource.url);
       if (
@@ -336,6 +387,7 @@ export async function startHlsim(
         frozen &&
         snapshots.has(resource.url)
       ) {
+        faults.frozen(trace);
         send(
           res,
           200,
@@ -350,12 +402,13 @@ export async function startHlsim(
         req.method === "HEAD"
           ? 0
           : resource.kind === "segment"
-            ? faults.segmentStatus(resource.url)
+            ? faults.segmentStatus(resource.url, trace)
             : resource.kind === "key" &&
                 faults.trigger(
                   config.drm?.licenseFailure,
                   "key-failure",
                   resource.url,
+                  trace,
                 )
               ? 403
               : 0;
@@ -368,6 +421,10 @@ export async function startHlsim(
         maxBytes:
           resource.kind === "playlist" ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
         signal,
+      });
+      trace.record("origin.completed", {
+        status: remote.status,
+        bodyBytes: remote.body.length,
       });
       let body: Buffer | string = remote.body;
       const headers = remote.headers;
@@ -385,11 +442,19 @@ export async function startHlsim(
         );
         latest.set(resource.url, body);
         if (latest.size > 128) latest.delete(latest.keys().next().value);
-        if (frozen) snapshots.set(resource.url, body);
+        if (frozen) {
+          snapshots.set(resource.url, body);
+          faults.frozen(trace, true);
+        }
         headers["Content-Type"] = "application/vnd.apple.mpegurl";
         headers["cache-control"] = "no-store";
       } else if (resource.kind === "segment" && req.method !== "HEAD")
-        body = faults.corrupt(remote.body, resource.url, remote.status === 206);
+        body = faults.corrupt(
+          remote.body,
+          resource.url,
+          remote.status === 206,
+          trace,
+        );
       else if (
         resource.kind === "key" &&
         req.method !== "HEAD" &&
@@ -397,11 +462,19 @@ export async function startHlsim(
           config.drm?.keyRotationMismatch,
           "key-mismatch",
           resource.url,
+          trace,
+          "corrupt_body",
         )
       )
         body = Buffer.alloc(16, 0xff);
       send(res, remote.status, body, headers, req.method);
     } catch (error) {
+      if (!signal.aborted)
+        trace.record("request.error", {
+          reason:
+            error instanceof HttpError ? "resource_rejected" : "origin_failure",
+          status: error instanceof HttpError ? error.status : 502,
+        });
       if (!res.destroyed && !res.headersSent)
         send(
           res,
@@ -411,7 +484,7 @@ export async function startHlsim(
           req.method,
         );
     }
-  });
+  }, diagnostics);
   const server = transport.server;
   try {
     await listen(server, port, host);
@@ -419,6 +492,7 @@ export async function startHlsim(
   } catch (error) {
     faults.close();
     await transport.close();
+    diagnostics.close();
     throw error;
   }
   const url = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
@@ -435,9 +509,11 @@ export async function startHlsim(
     }).on("error", () => {});
   return {
     url,
-    close: () => {
+    diagnostics,
+    close: async () => {
       faults.close();
-      return transport.close();
+      await transport.close();
+      diagnostics.close();
     },
   };
 }

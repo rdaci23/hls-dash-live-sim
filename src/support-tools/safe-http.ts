@@ -2,6 +2,11 @@ import http from "node:http";
 import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
+import {
+  SessionDiagnostics,
+  RequestTrace,
+  TRACE_HEADERS,
+} from "./session-diagnostics.js";
 
 export class HttpError extends Error {
   constructor(
@@ -238,7 +243,9 @@ export function sessionServer(
     req: http.IncomingMessage,
     res: http.ServerResponse,
     signal: AbortSignal,
+    trace?: RequestTrace,
   ) => Promise<void>,
+  diagnostics?: SessionDiagnostics,
 ): { server: http.Server; close(): Promise<void> } {
   const controllers = new Set<AbortController>();
   const pending = new Set<Promise<void>>();
@@ -246,22 +253,41 @@ export function sessionServer(
   const server = http.createServer((req, res) => {
     const controller = new AbortController();
     controllers.add(controller);
+    const trace = diagnostics?.request(req, res);
+    const abort = () =>
+      trace?.cancel(
+        controller.signal.reason === "session_shutdown"
+          ? "session_shutdown"
+          : "client_disconnect",
+      );
+    controller.signal.addEventListener("abort", abort, { once: true });
+    const cleanup = () => {
+      res.removeListener("finish", finish);
+      res.removeListener("close", disconnect);
+      controller.signal.removeEventListener("abort", abort);
+      controllers.delete(controller);
+    };
+    const finish = () => {
+      trace?.finish();
+      cleanup();
+    };
     const disconnect = () => {
-      if (!res.writableEnded) controller.abort();
+      if (!res.writableFinished) controller.abort("client_disconnect");
+      cleanup();
     };
     res.once("close", disconnect);
-    if (closing) controller.abort();
+    res.once("finish", finish);
+    if (closing) controller.abort("session_shutdown");
     const work = Promise.resolve()
       .then(() => {
         controller.signal.throwIfAborted();
-        return handler(req, res, controller.signal);
+        return handler(req, res, controller.signal, trace);
       })
       .catch(() => {
+        trace?.cancel("handler_error");
         if (!res.destroyed) res.destroy();
       })
       .finally(() => {
-        res.removeListener("close", disconnect);
-        controllers.delete(controller);
         pending.delete(work);
       });
     pending.add(work);
@@ -271,7 +297,8 @@ export function sessionServer(
     close() {
       if (!closing)
         closing = (async () => {
-          for (const controller of controllers) controller.abort();
+          for (const controller of controllers)
+            controller.abort("session_shutdown");
           await closeServer(server);
           await Promise.allSettled([...pending]);
         })();
@@ -291,8 +318,7 @@ export function send(
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Expose-Headers":
-      "Content-Length, Content-Range, Accept-Ranges",
+    "Access-Control-Expose-Headers": `Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
     "Cache-Control": "no-store",
     ...headers,
     "Content-Length": String(buffer.length),
@@ -334,8 +360,7 @@ export function preflight(
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
       "Access-Control-Allow-Headers": "Range",
-      "Access-Control-Expose-Headers":
-        "Content-Length, Content-Range, Accept-Ranges",
+      "Access-Control-Expose-Headers": `Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
     });
     res.end();
     return true;

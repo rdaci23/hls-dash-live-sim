@@ -108,7 +108,17 @@ test("HLS sample, control UI and cross-process live fault changes", async (t) =>
     body: JSON.stringify({ type: "segment.missing" }),
   });
   assert.equal(response.status, 200);
-  await waitFor(async () => (await fetch(segmentUrl)).status === 404, logs);
+  const firstInjection = await response.json();
+  let affected;
+  await waitFor(async () => {
+    affected = await fetch(segmentUrl);
+    return affected.status === 404;
+  }, logs);
+  assert.equal(
+    affected.headers.get("x-sim-fault-ids"),
+    firstInjection.faultId,
+    "control API ID matches the consumed fault in another process",
+  );
   assert.equal(
     (await fetch(segmentUrl)).status,
     200,
@@ -123,8 +133,17 @@ test("HLS sample, control UI and cross-process live fault changes", async (t) =>
     body: JSON.stringify({ type: "segment.missing" }),
   });
   assert.equal(response.status, 200);
-  assert.notEqual((await response.json()).config._oneShot.missing, previousArm);
-  await waitFor(async () => (await fetch(segmentUrl)).status === 404, logs);
+  const secondInjection = await response.json();
+  assert.notEqual(secondInjection.config._oneShot.missing, previousArm);
+  assert.notEqual(secondInjection.faultId, firstInjection.faultId);
+  await waitFor(async () => {
+    affected = await fetch(segmentUrl);
+    return affected.status === 404;
+  }, logs);
+  assert.equal(
+    affected.headers.get("x-sim-fault-ids"),
+    secondInjection.faultId,
+  );
   assert.equal(
     (await fetch(segmentUrl)).status,
     200,

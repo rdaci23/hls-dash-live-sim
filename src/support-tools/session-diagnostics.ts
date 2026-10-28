@@ -1,0 +1,416 @@
+import fs from "node:fs";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+
+export type DiagnosticFault =
+  | "segment.missing"
+  | "segment.forbidden"
+  | "segment.malformed"
+  | "hls.keyFailure"
+  | "hls.keyMismatch"
+  | "response.latency"
+  | "manifest.freeze";
+type EventType =
+  | "session.started"
+  | "session.closed"
+  | "request.started"
+  | "request.resource"
+  | "request.completed"
+  | "request.cancelled"
+  | "request.error"
+  | "origin.completed"
+  | "fault.selected"
+  | "fault.consumed"
+  | "fault.applied"
+  | "fault.cancelled"
+  | "diagnostics.file_limit"
+  | "diagnostics.file_error";
+type ResourceKind = "manifest" | "segment" | "key" | "other";
+type ResourceSource = "sample" | "origin" | "livesim2" | "local";
+type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error";
+export interface DiagnosticFields {
+  requestId?: string;
+  method?: string;
+  resourceId?: string;
+  resourceKind?: ResourceKind;
+  resourceSource?: ResourceSource;
+  faultId?: string;
+  fault?: DiagnosticFault;
+  mode?: "once" | "random" | "always";
+  status?: number;
+  bodyBytes?: number;
+  durationMs?: number;
+  delayMs?: number;
+  reason?: CancelReason | "resource_rejected" | "origin_failure";
+  action?:
+    | "response"
+    | "delay"
+    | "corrupt_body"
+    | "corrupt_range"
+    | "capture_manifest"
+    | "hold_manifest";
+}
+export interface DiagnosticEvent extends DiagnosticFields {
+  schemaVersion: 1;
+  event: EventType;
+  eventId: number;
+  sessionId: string;
+  protocol: "hls" | "dash";
+  timestamp: string;
+  elapsedMs: number;
+}
+export interface DiagnosticsOptions {
+  file?: string;
+  maxEvents?: number;
+  maxFileBytes?: number;
+  verbose?: () => boolean;
+}
+export const TRACE_HEADERS =
+  "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids";
+const values = {
+  method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
+  resourceKind: ["manifest", "segment", "key", "other"],
+  resourceSource: ["sample", "origin", "livesim2", "local"],
+  fault: [
+    "segment.missing",
+    "segment.forbidden",
+    "segment.malformed",
+    "hls.keyFailure",
+    "hls.keyMismatch",
+    "response.latency",
+    "manifest.freeze",
+  ],
+  mode: ["once", "random", "always"],
+  reason: [
+    "client_disconnect",
+    "session_shutdown",
+    "handler_error",
+    "resource_rejected",
+    "origin_failure",
+  ],
+  action: [
+    "response",
+    "delay",
+    "corrupt_body",
+    "corrupt_range",
+    "capture_manifest",
+    "hold_manifest",
+  ],
+};
+function allowedField(key: string, value: unknown): boolean {
+  if (values[key]) return values[key].includes(value);
+  if (key === "requestId")
+    return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
+  if (key === "faultId")
+    return (
+      typeof value === "string" &&
+      /^fault_(?:[a-f0-9]{32}|[a-f0-9-]{36})$/.test(value)
+    );
+  if (key === "resourceId")
+    return typeof value === "string" && /^resource_[a-f0-9]{24}$/.test(value);
+  if (key === "status")
+    return (
+      Number.isInteger(value) && Number(value) >= 100 && Number(value) <= 599
+    );
+  return (
+    ["bodyBytes", "durationMs", "delayMs"].includes(key) &&
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0
+  );
+}
+
+/** Allowlisted metadata only: never accept URLs, headers, bodies or error messages. */
+export class SessionDiagnostics {
+  readonly sessionId = randomUUID();
+  private secret = randomBytes(32);
+  private started = performance.now();
+  private sequence = 0;
+  private events: DiagnosticEvent[] = [];
+  private offset = 0;
+  private capacity: number;
+  private fileLimit: number;
+  private fd?: number;
+  private fileBytes = 0;
+  private fileLimitReached = false;
+  private fileWriteFailed = false;
+  private closed = false;
+  constructor(
+    readonly protocol: "hls" | "dash",
+    private options: DiagnosticsOptions = {},
+  ) {
+    this.capacity = options.maxEvents ?? 2000;
+    this.fileLimit = options.maxFileBytes ?? 10 * 1024 * 1024;
+    if (
+      !Number.isInteger(this.capacity) ||
+      this.capacity < 1 ||
+      this.capacity > 100000
+    )
+      throw new Error(
+        "Diagnostics maxEvents must be an integer from 1 to 100000",
+      );
+    if (
+      !Number.isInteger(this.fileLimit) ||
+      this.fileLimit < 1024 ||
+      this.fileLimit > 1024 * 1024 * 1024
+    )
+      throw new Error(
+        "Diagnostics maxFileBytes must be an integer from 1024 to 1073741824",
+      );
+    if (options.file) {
+      try {
+        this.fd = fs.openSync(options.file, "wx", 0o600);
+      } catch {
+        throw new Error(
+          "Could not create diagnostics file; choose a new file in an existing writable directory. Existing files are never overwritten.",
+        );
+      }
+    }
+    this.record("session.started");
+  }
+  resourceId(value: string): string {
+    return (
+      "resource_" +
+      createHmac("sha256", this.secret).update(value).digest("hex").slice(0, 24)
+    );
+  }
+  private fileWrite(line: string): void {
+    if (this.fd === undefined) return;
+    const bytes = Buffer.from(line);
+    const before = this.fileBytes;
+    try {
+      let written = 0;
+      while (written < bytes.length) {
+        const count = fs.writeSync(
+          this.fd,
+          bytes,
+          written,
+          bytes.length - written,
+        );
+        if (!count) throw new Error("No diagnostic bytes written");
+        written += count;
+      }
+      this.fileBytes += written;
+    } catch {
+      this.fileWriteFailed = true;
+      try {
+        fs.ftruncateSync(this.fd, before);
+      } catch {}
+      try {
+        fs.closeSync(this.fd);
+      } catch {}
+      this.fd = undefined;
+      console.error(
+        "[diagnostics] File recording failed; streaming continues and recent events remain available at /diagnostics.",
+      );
+      this.record("diagnostics.file_error");
+    }
+  }
+  record(event: EventType, fields: DiagnosticFields = {}): void {
+    if (this.closed) return;
+    const value: DiagnosticEvent = {
+      schemaVersion: 1,
+      event,
+      eventId: ++this.sequence,
+      sessionId: this.sessionId,
+      protocol: this.protocol,
+      timestamp: new Date().toISOString(),
+      elapsedMs: Math.round((performance.now() - this.started) * 1000) / 1000,
+    };
+    // Copy a fixed set of fields even when called from plain JS with extra data.
+    for (const key of [
+      "requestId",
+      "method",
+      "resourceId",
+      "resourceKind",
+      "resourceSource",
+      "faultId",
+      "fault",
+      "mode",
+      "status",
+      "bodyBytes",
+      "durationMs",
+      "delayMs",
+      "reason",
+      "action",
+    ])
+      if (allowedField(key, fields[key])) value[key] = fields[key];
+    if (this.events.length < this.capacity) this.events.push(value);
+    else {
+      this.events[this.offset] = value;
+      this.offset = (this.offset + 1) % this.capacity;
+    }
+    const line = JSON.stringify(value) + "\n";
+    if (this.options.verbose?.()) console.error(line.trimEnd());
+    if (this.fd !== undefined && !this.fileLimitReached) {
+      // Reserve room for a final, valid JSONL truncation marker.
+      if (
+        event !== "diagnostics.file_limit" &&
+        this.fileBytes + Buffer.byteLength(line) > this.fileLimit - 512
+      ) {
+        this.fileLimitReached = true;
+        this.record("diagnostics.file_limit");
+        console.error(
+          "[diagnostics] File size limit reached; recent events remain available at /diagnostics.",
+        );
+      } else this.fileWrite(line);
+    } else if (this.fd !== undefined && event === "diagnostics.file_limit")
+      this.fileWrite(line);
+  }
+  snapshot() {
+    const events =
+      this.events.length < this.capacity
+        ? this.events
+        : [
+            ...this.events.slice(this.offset),
+            ...this.events.slice(0, this.offset),
+          ];
+    return structuredClone({
+      schemaVersion: 1,
+      sessionId: this.sessionId,
+      protocol: this.protocol,
+      eventsRecorded: this.sequence,
+      droppedEvents: this.sequence - this.events.length,
+      fileEnabled: Boolean(this.options.file),
+      fileLimitReached: this.fileLimitReached,
+      fileWriteFailed: this.fileWriteFailed,
+      events,
+    });
+  }
+  exportJsonl(): string {
+    const { events, ...metadata } = this.snapshot();
+    return (
+      [
+        JSON.stringify({ event: "diagnostics.snapshot", ...metadata }),
+        ...events.map((event) => JSON.stringify(event)),
+      ].join("\n") + "\n"
+    );
+  }
+  close(): void {
+    if (this.closed) return;
+    this.record("session.closed");
+    this.closed = true;
+    if (this.fd !== undefined) {
+      fs.closeSync(this.fd);
+      this.fd = undefined;
+    }
+  }
+  request(req: IncomingMessage, res: ServerResponse): RequestTrace {
+    return new RequestTrace(this, req, res);
+  }
+}
+
+export class FaultEffect {
+  private state: "selected" | "prepared" | "applied" | "cancelled" = "selected";
+  constructor(
+    private trace: RequestTrace,
+    readonly fields: DiagnosticFields,
+  ) {
+    trace.record("fault.selected", fields);
+  }
+  consumed(): void {
+    this.trace.record("fault.consumed", this.fields);
+  }
+  prepare(): void {
+    if (this.state === "selected") this.state = "prepared";
+  }
+  apply(): void {
+    if (this.state === "applied" || this.state === "cancelled") return;
+    this.state = "applied";
+    this.trace.record("fault.applied", this.fields);
+  }
+  finish(): void {
+    if (this.state === "prepared") this.apply();
+    else if (this.state === "selected") this.cancel("handler_error");
+  }
+  cancel(reason: CancelReason): void {
+    if (this.state === "applied" || this.state === "cancelled") return;
+    this.state = "cancelled";
+    this.trace.record("fault.cancelled", { ...this.fields, reason });
+  }
+}
+
+export class RequestTrace {
+  readonly requestId = randomUUID();
+  private started = performance.now();
+  private terminal = false;
+  private effects: FaultEffect[] = [];
+  private resourceFields: DiagnosticFields;
+  private method: string;
+  constructor(
+    private diagnostics: SessionDiagnostics,
+    req: IncomingMessage,
+    private res: ServerResponse,
+  ) {
+    this.method = [
+      "GET",
+      "HEAD",
+      "OPTIONS",
+      "POST",
+      "PUT",
+      "DELETE",
+      "PATCH",
+    ].includes(req.method)
+      ? req.method
+      : "OTHER";
+    this.resourceFields = {
+      resourceId: diagnostics.resourceId(req.url ?? "/"),
+      resourceKind: "other",
+      resourceSource: "local",
+    };
+    res.setHeader("X-Sim-Session-Id", diagnostics.sessionId);
+    res.setHeader("X-Sim-Request-Id", this.requestId);
+    this.record("request.started");
+  }
+  resource(value: string, kind: ResourceKind, source: ResourceSource): void {
+    this.resourceFields = {
+      resourceId: this.diagnostics.resourceId(value),
+      resourceKind: kind,
+      resourceSource: source,
+    };
+    this.record("request.resource");
+  }
+  record(event: EventType, fields: DiagnosticFields = {}): void {
+    this.diagnostics.record(event, {
+      ...this.resourceFields,
+      ...fields,
+      requestId: this.requestId,
+      method: this.method,
+    });
+  }
+  select(fields: DiagnosticFields): FaultEffect {
+    const effect = new FaultEffect(this, fields);
+    this.effects.push(effect);
+    if (!this.res.headersSent)
+      this.res.setHeader(
+        "X-Sim-Fault-Ids",
+        [...new Set(this.effects.map((effect) => effect.fields.faultId))].join(
+          ", ",
+        ),
+      );
+    return effect;
+  }
+  finish(): void {
+    if (this.terminal) return;
+    this.terminal = true;
+    for (const effect of this.effects) effect.finish();
+    this.record("request.completed", {
+      status: this.res.statusCode,
+      bodyBytes:
+        this.method === "HEAD"
+          ? 0
+          : Number(this.res.getHeader("content-length") ?? 0),
+      durationMs: Math.round((performance.now() - this.started) * 1000) / 1000,
+    });
+  }
+  cancel(reason: CancelReason): void {
+    if (this.terminal) return;
+    this.terminal = true;
+    for (const effect of this.effects) effect.cancel(reason);
+    this.record("request.cancelled", {
+      reason,
+      ...(this.res.headersSent ? { status: this.res.statusCode } : {}),
+      durationMs: Math.round((performance.now() - this.started) * 1000) / 1000,
+    });
+  }
+}
