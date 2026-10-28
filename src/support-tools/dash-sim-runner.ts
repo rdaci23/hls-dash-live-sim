@@ -1,3 +1,5 @@
+import { ownershipArgs, assertOwnedContainer } from './container-ownership.js';
+import { assertPortAvailable, portNumber, bindHost } from './safe-http.js';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -32,6 +34,7 @@ function getDockerPath(): string {
 }
 
 export interface LivesimStartOptions {
+  host?: string;
   image?: string;
   port?: number;
   vodroot?: string;
@@ -1068,6 +1071,7 @@ function logExtractedParams(mpdInfo: MPDInfo): void {
 
 export async function startLivesim2(options: LivesimStartOptions = {}): Promise<void> {
   const {
+    host = '127.0.0.1',
     image = DEFAULT_IMAGE,
     port = DEFAULT_PORT,
     vodroot,
@@ -1094,9 +1098,11 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
     periodStartTimes
   } = options;
 
+  portNumber(port); bindHost(host);
+  await assertPortAvailable(port, host);
   // Validate multi-period configuration
   if (periodCount !== undefined) {
-    if (periodCount < 1) {
+    if (!Number.isInteger(periodCount) || periodCount < 1 || periodCount > 60) {
       throw new Error('periodCount must be at least 1');
     }
     if (periodDurations !== undefined) {
@@ -1105,7 +1111,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
       }
       // Validate all durations are positive
       for (let i = 0; i < periodDurations.length; i++) {
-        if (periodDurations[i] <= 0) {
+        if (!Number.isFinite(periodDurations[i]) || periodDurations[i] <= 0) {
           throw new Error(`periodDurations[${i}] must be a positive number, got ${periodDurations[i]}`);
         }
       }
@@ -1127,7 +1133,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
     throw new Error('Preserve manifest requires --detach so the DASH proxy can run in the background.');
   }
 
-  const configPathOverride = faultConfigPath ?? process.env.DASH_FAULT_CONFIG ?? process.env.HLS_FAULT_CONFIG;
+  const configPathOverride = faultConfigPath ?? process.env.DASH_FAULT_CONFIG ?? process.env.HLS_FAULT_CONFIG ?? path.resolve(process.cwd(), '.hls-dash-faults.json');
   if (configPathOverride) {
     setFaultConfigPath(configPathOverride);
   }
@@ -1197,6 +1203,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
   if (containerExists && containerRunning) {
     console.info(`Reusing existing running container: ${name}`);
 
+    assertOwnedContainer(name, getDockerPath());
     // Get the container's port mapping
     try {
       const portResult = spawnSync(getDockerPath(), ['port', name, '8888/tcp'], { stdio: 'pipe' });
@@ -1254,7 +1261,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
   args.push('--name', name);
 
   // Port mapping
-  args.push('-p', `${hostPortForContainer}:8888`);
+  args.push('-p', `${host}:${hostPortForContainer}:8888`);
 
   // Volume mounts
   if (vodroot) {
@@ -1284,7 +1291,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
   }
 
   // Image and command
-  args.push(image);
+  args.push(...ownershipArgs(), image);
 
   // Extra args to pass to livesim2
   if (extraArgs.length > 0) {
@@ -1334,7 +1341,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
   }
 
   // Stop and clean up existing fault proxy FIRST (before port cleanup)
-  // This ensures the proxy releases the port before we try to kill other processes
+  // Release only a proxy tracked by this process
   const existingProxy = dashProxyRegistry.get(name);
   if (existingProxy) {
     try {
@@ -1346,26 +1353,6 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
     } catch (err) {
       console.warn(`Failed to stop existing proxy: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
-
-  // Also check for any process using the port and kill it (including orphaned proxy processes)
-  try {
-    const lsofResult = spawnSync('lsof', ['-ti', `:${port}`], { stdio: 'pipe' });
-    if (lsofResult.stdout && lsofResult.stdout.toString().trim()) {
-      const pids = lsofResult.stdout.toString().trim().split('\n').filter(Boolean);
-      for (const pid of pids) {
-        try {
-          spawnSync('kill', ['-9', pid], { stdio: 'pipe' });
-          console.info(`Killed process ${pid} using port ${port}`);
-        } catch {
-          // Process might have already exited
-        }
-      }
-      // Wait for OS to release the port after killing processes
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-  } catch {
-    // lsof might not be available or port might be free
   }
 
   // Only create new container if we're not reusing an existing one
@@ -1564,50 +1551,14 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
       const proxy = await startDashFaultProxy({
         listenPort: port,
         upstreamPort: hostPortForContainer,
+        host,
         preserve
       });
       dashProxyRegistry.set(name, proxy);
       console.info(`Fault proxy active: http://localhost:${port}/ → ${proxy.upstreamBase}/`);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      if (errorMsg.includes('EADDRINUSE') || errorMsg.includes('address already in use')) {
-        // Port still in use - try one more time after aggressive cleanup
-        console.warn(`⚠️  Port ${port} still in use, attempting aggressive cleanup and retry...`);
-        try {
-          // Kill all processes on the port again
-          const lsofResult = spawnSync('lsof', ['-ti', `:${port}`], { stdio: 'pipe' });
-          if (lsofResult.stdout && lsofResult.stdout.toString().trim()) {
-            const pids = lsofResult.stdout.toString().trim().split('\n').filter(Boolean);
-            for (const pid of pids) {
-              try {
-                spawnSync('kill', ['-9', pid], { stdio: 'pipe' });
-                console.info(`Killed process ${pid} using port ${port} (retry)`);
-              } catch {
-                // Process might have already exited
-              }
-            }
-          }
-          // Wait longer for OS to release the port
-          await new Promise(resolve => setTimeout(resolve, 1500));
-
-          // Retry once
-          const proxy = await startDashFaultProxy({
-            listenPort: port,
-            upstreamPort: hostPortForContainer,
-            preserve
-          });
-          dashProxyRegistry.set(name, proxy);
-          console.info(`Fault proxy active (after retry): http://localhost:${port}/ → ${proxy.upstreamBase}/`);
-        } catch (retryError) {
-          console.warn(`⚠️  Failed to start fault proxy on port ${port} after retry:`, retryError instanceof Error ? retryError.message : String(retryError));
-          console.info(`Direct container access available on port ${hostPortForContainer}`);
-          console.info(`Stream URL (direct): http://localhost:${hostPortForContainer}/livesim2/${asset}/${getMpdNameForAsset(asset)}`);
-        }
-      } else {
-        console.warn(`⚠️  Failed to start fault proxy on port ${port}:`, errorMsg);
-        console.info(`Direct container access available on port ${hostPortForContainer}`);
-        console.info(`Stream URL (direct): http://localhost:${hostPortForContainer}/livesim2/${asset}/${getMpdNameForAsset(asset)}`);
-      }
+      throw new Error(`Could not start DASH proxy: ${errorMsg}. No unrelated process was stopped.`);
     }
   }
 }
@@ -1615,6 +1566,7 @@ export async function startLivesim2(options: LivesimStartOptions = {}): Promise<
 export async function stopLivesim2(options: LivesimStopOptions = {}): Promise<void> {
   const { name = DEFAULT_NAME } = options;
 
+  if (!assertOwnedContainer(name, getDockerPath())) return;
   console.info(`Stopping livesim2 container: ${name}`);
 
   try {

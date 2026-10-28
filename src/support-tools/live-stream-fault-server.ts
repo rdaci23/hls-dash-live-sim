@@ -1,5 +1,7 @@
 import express from 'express';
 import path from 'path';
+import { timingSafeEqual } from 'node:crypto';
+import { bindHost, loopback, portNumber } from './safe-http.js';
 import {
   applyConfigOverride,
   getFaultConfig,
@@ -13,6 +15,7 @@ export interface FaultServerOptions {
   host?: string;
   configPath?: string;
   profile?: string;
+  controlToken?: string;
 }
 
 const DEFAULT_PORT = 19090;
@@ -54,6 +57,8 @@ function renderPage(): string {
 </head>
 <body>
   <div class="container">
+    <label>Control token (only for protected sessions) <input type="password" id="control-token" autocomplete="off" /></label>
+    <button id="connect-control">Connect</button>
     <h1>HLS / DASH Fault Control</h1>
     <p class="status">Active config path: <span id="config-path">loading…</span></p>
     <p class="status" id="action-status"></p>
@@ -158,6 +163,11 @@ function renderPage(): string {
   </div>
 
   <script>
+    const apiFetch = window.fetch.bind(window);
+    function fetch(url, options = {}) {
+      const token = document.getElementById('control-token').value;
+      return apiFetch(url, { ...options, headers: { ...options.headers, ...(token ? { Authorization: 'Bearer ' + token } : {}) } });
+    }
     const selects = Array.from(document.querySelectorAll('select[data-key]'));
     const inputs = Array.from(document.querySelectorAll('input[data-key]'));
     const injectButtons = Array.from(document.querySelectorAll('[data-inject]'));
@@ -286,7 +296,8 @@ function renderPage(): string {
       });
     });
 
-    fetchConfig();
+    document.getElementById('connect-control').addEventListener('click', () => fetchConfig().catch(error => setActionStatus(error.message, true)));
+    fetchConfig().catch(error => setActionStatus(error.message, true));
     setActionStatus('Ready');
   </script>
 </body>
@@ -294,6 +305,11 @@ function renderPage(): string {
 }
 
 export async function startFaultServer(options: FaultServerOptions = {}): Promise<void> {
+  const host = bindHost(options.host);
+  const port = portNumber(options.port ?? DEFAULT_PORT);
+  const token = options.controlToken ?? process.env.HLS_DASH_CONTROL_TOKEN;
+  if (!loopback(host) && (!token || token.length < 16)) throw new Error('LAN fault control requires a --control-token of at least 16 characters');
+  setFaultConfigPath(options.configPath ?? getFaultConfigPath());
   if (options.configPath) {
     const resolved = path.resolve(options.configPath);
     logServer('override path via options', resolved);
@@ -305,6 +321,18 @@ export async function startFaultServer(options: FaultServerOptions = {}): Promis
   }
 
   const app = express();
+  app.use((req, res, next) => {
+    // The public shell contains no configuration or credential. API access is protected.
+    if (req.path === '/' && req.method === 'GET') return next();
+    const origin = req.headers.origin;
+    if (origin && new URL(origin).host !== req.headers.host) { res.status(403).json({ error: 'Cross-origin control requests are not allowed' }); return; }
+    if (token) {
+      const provided = Buffer.from(String(req.headers.authorization ?? ''));
+      const expected = Buffer.from(`Bearer ${token}`);
+      if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) { res.status(401).json({ error: 'Control token required' }); return; }
+    }
+    next();
+  });
   app.use(express.json());
 
   app.get('/', (_req, res) => {
@@ -400,8 +428,12 @@ export async function startFaultServer(options: FaultServerOptions = {}): Promis
     res.json({ ok: true, config: reset });
   });
 
-  const listenPort = options.port ?? DEFAULT_PORT;
-  const listenHost = options.host ?? '0.0.0.0';
+  app.use((error, _req, res, _next) => {
+    const invalid = error?.name === 'SyntaxError' || error?.constructor?.name === 'ConfigValidationError';
+    res.status(invalid ? 400 : 500).json({ ok: false, error: invalid ? error.message : 'Configuration could not be saved' });
+  });
+  const listenPort = port;
+  const listenHost = host;
 
   await new Promise<void>((resolve, reject) => {
     app.listen(listenPort, listenHost, () => resolve()).on('error', reject);

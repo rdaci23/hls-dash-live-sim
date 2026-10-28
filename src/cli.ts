@@ -2,8 +2,10 @@
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import type { StreamTemplate } from './support-tools/stream-templates.js';
+import { portNumber, bindHost } from './support-tools/safe-http.js';
 
 yargs(hideBin(process.argv))
+  .parserConfiguration({ 'populate--': true })
   .scriptName('hls-dash-live-sim')
   .usage('$0 <command> [options]')
   .version('0.1.0')
@@ -13,10 +15,11 @@ yargs(hideBin(process.argv))
     'Start the fault injection control web UI for HLS/DASH simulators',
     yargs => yargs
       .option('port', { type: 'number', description: 'Port for the control server', default: 19090 })
-      .option('host', { type: 'string', description: 'Host/IP binding for the control server', default: '0.0.0.0' })
+      .option('host', { type: 'string', description: 'Bind address; LAN access requires a control token', default: '127.0.0.1' })
+      .option('control-token', { type: 'string', description: 'Token required for LAN control API access (env HLS_DASH_CONTROL_TOKEN)' })
       .option('fault-config', { type: 'string', description: 'Path to fault injection configuration JSON' })
       .option('fault-profile', { type: 'string', description: 'Fault profile name to apply on startup' })
-      .strict(false),
+      .strict(),
     async args => {
       if (args.verbose) {
         process.env.STANDALONE_VERBOSE = '1';
@@ -28,7 +31,8 @@ yargs(hideBin(process.argv))
           port: args.port as number | undefined,
           host: args.host as string | undefined,
           configPath: args['fault-config'] as string | undefined,
-          profile: args['fault-profile'] as string | undefined
+          profile: args['fault-profile'] as string | undefined,
+          controlToken: args['control-token'] as string | undefined
         });
       } catch (err) {
         console.error('❌ Failed to start fault-control server:', err);
@@ -50,6 +54,8 @@ yargs(hideBin(process.argv))
       .option('sim-type', { type: 'string', choices: ['dash', 'hls'] as const, describe: 'Explicit simulator selection (defaults to HLS if not provided)' })
       .option('image', { type: 'string', description: 'Docker image tag/path (defaults vary by simulator)' })
       .option('port', { type: 'number', description: 'Host port for simulator (defaults to 8899 for HLS, 8888 for DASH)' })
+      .option('host', { type: 'string', default: '127.0.0.1', description: 'Bind address; use 0.0.0.0 explicitly for LAN streaming' })
+      .option('allow-origin', { type: 'array', string: true, description: 'Additional permitted proxy origin; credentials remain scoped to the manifest origin' })
       .option('vodroot', { type: 'string', description: 'Host folder for VoD/assets (mounted for the selected simulator)' })
       .option('source', { type: 'string', description: 'HLS: Relative MP4 path under vodroot to serve (e.g. samples/bbb.mp4)' })
       .option('persist-repdata', { type: 'boolean', description: 'DASH: Mount ~/.hls-dash-live-sim/livesim2/repdata to /repdata and pass --repdataroot=/repdata' })
@@ -72,7 +78,7 @@ yargs(hideBin(process.argv))
       .option('showManifest', { type: 'boolean', description: 'Display the generated manifest after starting the simulator', default: false })
       .option('periods', { type: 'number', description: 'DASH: Number of periods to generate (default: 1)' })
       .option('period-durations', { type: 'string', description: 'DASH: Comma-separated durations in seconds for each period (e.g., "60,120,180")' })
-      .strict(false),
+      .strict(),
     async args => {
       if (args.verbose) {
         process.env.STANDALONE_VERBOSE = '1';
@@ -127,7 +133,7 @@ yargs(hideBin(process.argv))
           const { startLivesim2, stopLivesim2, logsLivesim2 } = await import('./support-tools/dash-sim-runner.js');
           switch (action) {
             case 'start': {
-              const argvRest = ((args as unknown as { _: unknown[] })._ || []).slice(1);
+              const argvRest = (args['--'] as unknown[] | undefined) ?? [];
               const extraArgs = argvRest.map(String);
 
               // Parse period-durations string to array
@@ -139,7 +145,7 @@ yargs(hideBin(process.argv))
                   .map(s => s.trim())
                   .filter(s => s.length > 0)
                   .map(s => {
-                    const num = parseFloat(s);
+                    const num = Number(s);
                     if (isNaN(num) || num <= 0) {
                       throw new Error(`Invalid period duration: "${s}". Must be a positive number.`);
                     }
@@ -148,6 +154,7 @@ yargs(hideBin(process.argv))
               }
 
               await startLivesim2({
+                host: args.host as string,
                 image: args.image as string | undefined,
                 port: args.port as number | undefined,
                 vodroot: args.vodroot as string | undefined,
@@ -190,6 +197,8 @@ yargs(hideBin(process.argv))
           switch (action) {
             case 'start':
               await startHlsim({
+                host: args.host as string,
+                allowedOrigins: args['allow-origin'] as string[],
                 image: args.image as string | undefined,
                 port: args.port as number | undefined,
                 vodroot: args.vodroot as string | undefined,
@@ -426,6 +435,12 @@ yargs(hideBin(process.argv))
   )
 
   .help('help', 'View help information about this tool.')
+  .check(args => {
+    if (args.port !== undefined) portNumber(args.port as number);
+    if (args.host !== undefined) bindHost(args.host as string);
+    if (args.periods !== undefined && (!Number.isInteger(args.periods) || Number(args.periods) < 1 || Number(args.periods) > 60)) throw new Error('periods must be an integer between 1 and 60');
+    return true;
+  })
   .demandCommand(1)
   .strict()
   .parseAsync().catch(error => {

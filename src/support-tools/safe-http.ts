@@ -1,0 +1,137 @@
+import http from 'node:http';
+import net from 'node:net';
+import fs from 'node:fs';
+
+export class HttpError extends Error {
+  constructor(public status: number, message: string) { super(message); }
+}
+
+export function portNumber(value: number, label = 'port'): number {
+  if (!Number.isInteger(value) || value < 1 || value > 65535) throw new Error(`${label} must be an integer from 1 to 65535`);
+  return value;
+}
+
+export function bindHost(host = '127.0.0.1'): string {
+  if (host !== 'localhost' && !net.isIP(host)) throw new Error('host must be localhost or an IP address');
+  return host;
+}
+
+export function loopback(host: string): boolean {
+  return host === 'localhost' || host === '::1' || /^127\./.test(host);
+}
+
+export function httpUrl(value: string): URL {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new HttpError(400, 'Invalid HTTP URL'); }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new HttpError(400, 'Only HTTP(S) URLs without embedded credentials are supported');
+  return url;
+}
+
+export interface OriginAuth { token?: string; header?: string; file?: string; }
+
+export class OriginPolicy {
+  private origins: Set<string>;
+  private credentialOrigin: string;
+  private credentials: Record<string, string> = {};
+  constructor(root: string, auth: OriginAuth = {}, allowed: string[] = []) {
+    this.credentialOrigin = httpUrl(root).origin;
+    this.origins = new Set([this.credentialOrigin, ...allowed.map(value => {
+      const url = httpUrl(value);
+      if (url.pathname !== '/' || url.search || url.hash) throw new Error('allow-origin must contain only scheme, host and port');
+      return url.origin;
+    })]);
+    if ([auth.token, auth.header, auth.file].filter(Boolean).length > 1) throw new Error('Choose one authentication method');
+    if (auth.token) this.credentials.Authorization = `Bearer ${auth.token}`;
+    if (auth.header) {
+      const colon = auth.header.indexOf(':');
+      if (colon < 1) throw new Error('auth-header must be Header-Name: value');
+      this.credentials[auth.header.slice(0, colon).trim()] = auth.header.slice(colon + 1).trim();
+    }
+    if (auth.file) this.credentials = JSON.parse(fs.readFileSync(auth.file, 'utf8'));
+    if (!this.credentials || typeof this.credentials !== 'object' || Array.isArray(this.credentials)) throw new Error('Auth file must contain a header object');
+    for (const [key, value] of Object.entries(this.credentials)) {
+      if (!/^[!#$%&'*+.^_`|~\w-]+$/.test(key) || /^(host|connection|content-length|transfer-encoding|proxy-.*)$/i.test(key) || typeof value !== 'string' || /[\r\n]/.test(value)) throw new Error('Invalid origin authentication header');
+    }
+  }
+  check(value: string): URL {
+    const url = httpUrl(value);
+    if (!this.origins.has(url.origin)) throw new HttpError(403, 'Origin is not allowed; declare it with --allow-origin');
+    return url;
+  }
+  headers(value: string): Record<string, string> {
+    return this.check(value).origin === this.credentialOrigin ? { ...this.credentials } : {};
+  }
+}
+
+export interface RemoteResponse { status: number; headers: Record<string, string>; body: Buffer; url: string; }
+export async function fetchRemote(value: string, policy: OriginPolicy, options: { range?: string; maxBytes?: number; signal?: AbortSignal } = {}): Promise<RemoteResponse> {
+  let url = value;
+  const signal = (AbortSignal as typeof AbortSignal & { any(signals: AbortSignal[]): AbortSignal }).any([AbortSignal.timeout(10000), ...(options.signal ? [options.signal] : [])]);
+  for (let redirects = 0; redirects <= 5; redirects++) {
+    policy.check(url);
+    const response = await fetch(url, { redirect: 'manual', signal, headers: { ...policy.headers(url), ...(options.range ? { Range: options.range } : {}) } });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      await response.body?.cancel();
+      const location = response.headers.get('location');
+      if (!location || redirects === 5) throw new HttpError(502, 'Invalid or excessive origin redirects');
+      url = new URL(location, url).href;
+      continue;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const reader = response.body?.getReader();
+    try {
+      if (reader) while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        size += next.value.byteLength;
+        if (size > (options.maxBytes ?? 64 * 1024 * 1024)) throw new HttpError(502, 'Origin response exceeds the size limit');
+        chunks.push(Buffer.from(next.value));
+      }
+    } catch (error) { await reader?.cancel().catch(() => {}); throw error; }
+    const headers: Record<string, string> = {};
+    for (const key of ['content-type', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'cache-control']) {
+      const header = response.headers.get(key);
+      if (header) headers[key] = header;
+    }
+    return { status: response.status, headers, body: Buffer.concat(chunks), url };
+  }
+  throw new HttpError(502, 'Too many origin redirects');
+}
+
+export async function listen(server: http.Server, port: number, host = '127.0.0.1'): Promise<void> {
+  portNumber(port); bindHost(host);
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: NodeJS.ErrnoException) => {
+      reject(error.code === 'EADDRINUSE' ? new Error(`Port ${port} is already in use; choose another --port. No process was stopped.`) : error);
+    };
+    server.once('error', onError);
+    server.listen(port, host, () => { server.removeListener('error', onError); resolve(); });
+  });
+}
+
+export async function assertPortAvailable(port: number, host = '127.0.0.1'): Promise<void> {
+  const server = http.createServer();
+  await listen(server, port, host);
+  await closeServer(server);
+}
+
+export function closeServer(server: http.Server): Promise<void> {
+  server.closeAllConnections();
+  return new Promise(resolve => server.close(() => resolve()));
+}
+
+export function send(res: http.ServerResponse, status: number, body: Buffer | string, headers: Record<string, string> = {}, method = 'GET'): void {
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  res.writeHead(status, { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store', ...headers, 'Content-Length': String(buffer.length) });
+  res.end(method === 'HEAD' ? undefined : buffer);
+}
+
+export function preflight(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS', 'Access-Control-Allow-Headers': 'Range', 'Access-Control-Expose-Headers': 'Content-Length, Content-Range, Accept-Ranges' });
+    res.end(); return true;
+  }
+  if (!['GET', 'HEAD'].includes(req.method ?? '')) { send(res, 405, 'Method not allowed', { Allow: 'GET, HEAD, OPTIONS' }); return true; }
+  return false;
+}

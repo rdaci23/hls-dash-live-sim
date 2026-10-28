@@ -1,3 +1,5 @@
+import { ownershipArgs, assertOwnedContainer } from './container-ownership.js';
+import { OriginPolicy, fetchRemote, send, preflight, HttpError, listen, bindHost, portNumber } from './safe-http.js';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
@@ -29,6 +31,8 @@ function getDockerPath(): string {
 }
 
 export interface HLSStartOptions {
+  host?: string;
+  allowedOrigins?: string[];
   image?: string;
   port?: number;
   vodroot?: string;
@@ -475,38 +479,10 @@ async function buildDummyManifestData(sampleAssets: HlsSampleAssets, options: { 
   };
 }
 
-function fetchHLS(url: string, authOptions?: { token?: string; header?: string; file?: string; }): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let processedUrl = url;
-    if (processedUrl.includes('\\')) {
-      processedUrl = processedUrl.replace(/\\([()&?=])/g, '$1');
-    }
-    const client = processedUrl.startsWith('https:') ? https : http;
-    const headers: Record<string, string> = { 'Accept': '*/*', 'User-Agent': 'curl/7.88.1' };
-    if (authOptions?.token) headers['Authorization'] = `Bearer ${authOptions.token}`;
-    else if (authOptions?.header) {
-      const [key, value] = authOptions.header.split(': ', 2);
-      if (key && value) headers[key.trim()] = value.trim();
-    } else if (authOptions?.file) {
-      try {
-        const data = JSON.parse(fs.readFileSync(authOptions.file, 'utf8')) as Record<string, string>;
-        Object.assign(headers, data);
-      } catch {
-        reject(new Error(`Failed to read auth file: ${authOptions.file}`));
-        return;
-      }
-    }
-    const req = client.get(processedUrl, { headers }, (res) => {
-      let data = '';
-      res.on('data', c => { data += c; });
-      res.on('end', () => {
-        if (res.statusCode === 200 && data.startsWith('#EXTM3U')) resolve(data);
-        else reject(new Error(`HLS fetch failed: ${res.statusCode}`));
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(10000, () => { req.destroy(new Error('timeout')); });
-  });
+async function fetchHLS(url: string, authOptions?: { token?: string; header?: string; file?: string; allowedOrigins?: string[] }): Promise<string> {
+  const result = await fetchRemote(url, new OriginPolicy(url, authOptions, authOptions?.allowedOrigins), { maxBytes: 4 * 1024 * 1024 });
+  if (result.status !== 200 || !result.body.toString('utf8').trimStart().startsWith('#EXTM3U')) throw new Error(`HLS fetch failed: ${result.status}`);
+  return result.body.toString('utf8');
 }
 
 function parseHLS(text: string, url: string): HLSInfo {
@@ -629,8 +605,9 @@ function startHlsProxyServer(
   port: number,
   manifestUrl?: string,
   auth?: { token?: string; header?: string; file?: string; },
-  options?: { dummyContent?: boolean; preserveManifest?: boolean }
+  options?: { dummyContent?: boolean; preserveManifest?: boolean; host?: string; allowedOrigins?: string[] }
 ): Promise<string> {
+  const policy = manifestUrl ? new OriginPolicy(manifestUrl, auth, options?.allowedOrigins) : undefined;
   const dummyMode = options?.dummyContent ?? false;
   const sampleAssets = dummyMode ? getSampleAssets() : undefined;
   let frozenManifest: string | null = null;
@@ -651,6 +628,7 @@ function startHlsProxyServer(
 
     const server = http.createServer(async (req, res) => {
       try {
+        if (preflight(req, res)) return;
         res.setHeader('Access-Control-Allow-Origin', '*');
         const reqUrl = new URL(req.url || '/', `http://localhost:${port}`);
         const configSnapshot = faultConfig;
@@ -775,7 +753,9 @@ function startHlsProxyServer(
         if (pathName === '/pl') {
           const target = reqUrl.searchParams.get('u');
           if (!target) { res.writeHead(400); res.end('Missing u'); logHlsEvent('error', { status: 400, path: pathName, reason: 'missing-target' }); return; }
-          const text = await fetchHLS(target, auth);
+          const remote = await fetchRemote(target, policy, { maxBytes: 4 * 1024 * 1024 });
+          if (remote.status !== 200) throw new HttpError(502, 'Origin playlist request failed');
+          const text = remote.body.toString('utf8');
           const rewritten = rewriteM3U8(text, target);
           await delay(latencyMs);
           res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
@@ -783,102 +763,22 @@ function startHlsProxyServer(
           logHlsEvent('playlist', { status: 200, path: pathName, target, source: 'remote' });
           return;
         }
-        if (pathName === '/seg') {
+        if (pathName === '/seg' || pathName === '/key') {
           const target = reqUrl.searchParams.get('u');
-          if (!target) { res.writeHead(400); res.end('Missing u'); logHlsEvent('error', { status: 400, path: pathName, reason: 'missing-target' }); return; }
-          const client = target.startsWith('https:') ? https : http;
-          const headers: Record<string, string> = {};
-          const range = req.headers['range']; if (range) headers['Range'] = String(range);
-          if (auth?.token) headers['Authorization'] = `Bearer ${auth.token}`;
-          else if (auth?.header) {
-            const [k, v] = auth.header.split(': ', 2); if (k && v) headers[k.trim()] = v.trim();
-          } else if (auth?.file) {
-            try { const data = JSON.parse(fs.readFileSync(auth.file, 'utf8')) as Record<string, string>; Object.assign(headers, data); } catch { void 0; }
-          }
-          const scopeBase = `segment:${target}`;
-          if (shouldTriggerFault(configSnapshot.segment?.missing, `${scopeBase}:missing`)) {
-            await delay(latencyMs);
-            res.writeHead(404);
-            res.end('Segment missing (fault injection)');
-            logHlsEvent('segment', { status: 404, path: pathName, target, fault: 'missing', source: 'remote' });
-            return;
-          }
-          if (shouldTriggerFault(configSnapshot.segment?.forbidden, `${scopeBase}:forbidden`)) {
-            await delay(latencyMs);
-            res.writeHead(403);
-            res.end('Forbidden segment (fault injection)');
-            logHlsEvent('segment', { status: 403, path: pathName, target, fault: 'forbidden', source: 'remote' });
-            return;
-          }
-          client.get(target, { headers }, (prox) => {
-            const statusCode = prox.statusCode || 200;
-            const chunks: Buffer[] = [];
-            res.writeHead(statusCode, prox.headers as Record<string, string>);
-            prox.on('data', chunk => {
-              const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-              chunks.push(buf);
-            });
-            prox.on('end', async () => {
-              await delay(latencyMs);
-              let payload = Buffer.concat(chunks);
-              if (shouldTriggerFault(configSnapshot.segment?.malformed, `${scopeBase}:malformed`)) {
-                payload = payload.subarray(0, Math.max(1, Math.floor(payload.length / 4)));
-                logHlsEvent('segment', { status: statusCode, path: pathName, target, fault: 'malformed', bytes: payload.length, source: 'remote' });
-              } else {
-                logHlsEvent('segment', { status: statusCode, path: pathName, target, bytes: payload.length, source: 'remote' });
-              }
-              res.end(payload);
-            });
-          }).on('error', () => {
-            res.writeHead(502);
-            res.end('Bad Gateway');
-            logHlsEvent('segment', { status: 502, path: pathName, target, fault: 'proxy-error', source: 'remote' });
-          });
-          return;
-        }
-
-        if (pathName === '/key') {
-          const target = reqUrl.searchParams.get('u');
-          if (!target) { res.writeHead(400); res.end('Missing u'); logHlsEvent('error', { status: 400, path: pathName, reason: 'missing-target' }); return; }
-          if (shouldTriggerFault(configSnapshot.drm?.licenseFailure, `key:${target}:license`)) {
-            await delay(latencyMs);
-            res.writeHead(403);
-            res.end('License failure (fault injection)');
-            logHlsEvent('key', { status: 403, path: pathName, target, fault: 'licenseFailure' });
-            return;
-          }
-          const client = target.startsWith('https:') ? https : http;
-          const headers: Record<string, string> = {};
-          if (auth?.token) headers['Authorization'] = `Bearer ${auth.token}`;
-          else if (auth?.header) {
-            const [k, v] = auth.header.split(': ', 2); if (k && v) headers[k.trim()] = v.trim();
-          } else if (auth?.file) {
-            try { const data = JSON.parse(fs.readFileSync(auth.file, 'utf8')) as Record<string, string>; Object.assign(headers, data); } catch { void 0; }
-          }
-          client.get(target, { headers }, (prox) => {
-            const statusCode = prox.statusCode || 200;
-            const chunks: Buffer[] = [];
-            res.writeHead(statusCode, prox.headers as Record<string, string>);
-            prox.on('data', chunk => {
-              const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-              chunks.push(buf);
-            });
-            prox.on('end', async () => {
-              await delay(latencyMs);
-              let payload = Buffer.concat(chunks);
-              if (shouldTriggerFault(configSnapshot.drm?.keyRotationMismatch, `key:${target}:mismatch`)) {
-                payload = Buffer.alloc(16, 0xff);
-                logHlsEvent('key', { status: statusCode, path: pathName, target, fault: 'keyRotationMismatch', bytes: payload.length });
-              } else {
-                logHlsEvent('key', { status: statusCode, path: pathName, target, bytes: payload.length });
-              }
-              res.end(payload);
-            });
-          }).on('error', () => {
-            res.writeHead(502);
-            res.end('Bad Gateway');
-            logHlsEvent('key', { status: 502, path: pathName, target, fault: 'proxy-error' });
-          });
+          if (!target) throw new HttpError(400, 'Missing target');
+          policy.check(target);
+          const isKey = pathName === '/key';
+          const scope = `${isKey ? 'key' : 'segment'}:${target}`;
+          const fault = isKey
+            ? (shouldTriggerFault(configSnapshot.drm?.licenseFailure, `${scope}:license`) ? 403 : 0)
+            : (shouldTriggerFault(configSnapshot.segment?.missing, `${scope}:missing`) ? 404 : shouldTriggerFault(configSnapshot.segment?.forbidden, `${scope}:forbidden`) ? 403 : 0);
+          await delay(latencyMs);
+          if (fault) { send(res, fault, 'Injected response failure', {}, req.method); return; }
+          const remote = await fetchRemote(target, policy, { range: req.headers.range, maxBytes: isKey ? 1024 * 1024 : 64 * 1024 * 1024 });
+          let body = remote.body;
+          if (isKey && shouldTriggerFault(configSnapshot.drm?.keyRotationMismatch, `${scope}:mismatch`)) body = Buffer.alloc(16, 0xff);
+          if (!isKey && shouldTriggerFault(configSnapshot.segment?.malformed, `${scope}:malformed`)) body = body.subarray(0, Math.max(1, Math.floor(body.length / 4)));
+          send(res, remote.status, body, remote.headers, req.method);
           return;
         }
 
@@ -886,18 +786,18 @@ function startHlsProxyServer(
         res.end('Not found');
         logHlsEvent('error', { status: 404, path: pathName, reason: 'not-found' });
       } catch (err) {
-        res.writeHead(500);
-        res.end(`Internal Error: ${(err as Error).message}`);
+        send(res, err instanceof HttpError ? err.status : 502, err instanceof HttpError ? err.message : 'Origin request failed');
         logHlsEvent('error', { status: 500, path: req?.url ?? 'unknown', reason: (err as Error).message });
       }
     });
-    server.listen(port, () => resolve(`http://localhost:${port}/proxy.m3u8`));
-    server.on('error', reject);
+    listen(server, port, options?.host).then(() => resolve(`http://127.0.0.1:${port}/proxy.m3u8`), reject);
   });
 }
 
 export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
   const {
+    host = '127.0.0.1',
+    allowedOrigins = [],
     image = 'kaltura/nginx-vod-module:latest',
     port = 8899,
     vodroot,
@@ -918,7 +818,8 @@ export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
     faultProfile
   } = options;
 
-  const configPathOverride = faultConfigPath ?? process.env.HLS_FAULT_CONFIG;
+  portNumber(port); bindHost(host);
+  const configPathOverride = faultConfigPath ?? process.env.HLS_FAULT_CONFIG ?? path.resolve(process.cwd(), '.hls-dash-faults.json');
   if (configPathOverride) {
     setFaultConfigPath(configPathOverride);
   }
@@ -943,14 +844,14 @@ export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
     hlsInfo = parseHLS(text, manifestUrl);
   }
 
-  const args: string[] = ['run', '--name', name, '-p', `${port}:80`, '--rm'];
+  const args: string[] = ['run', '--name', name, '-p', `${host}:${port}:80`, '--rm'];
   if (detach) args.push('-d');
   if (vodroot) {
     const abs = path.resolve(vodroot);
     if (!fs.existsSync(abs)) throw new Error(`VoD root directory does not exist: ${abs}`);
     args.push('-v', `${abs}:/vod:ro`);
   }
-  args.push(image);
+  args.push(...ownershipArgs(), image);
 
   // Proxy mode branch
   if (proxy) {
@@ -962,9 +863,9 @@ export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
       port,
       manifestUrl,
       { token: authToken, header: authHeader, file: authFile },
-      { dummyContent, preserveManifest }
+      { dummyContent, preserveManifest, host, allowedOrigins }
     );
-    const lan = getLanRootUrl(port);
+    const lan = host === '0.0.0.0' ? getLanRootUrl(port) : undefined;
     const localhostUrl = hlsInfo ? generateHlsUrlForBase(localManifest, hlsInfo) : localManifest;
     console.info(`Stream URL (localhost): ${localhostUrl}`);
     if (lan) {
@@ -991,7 +892,7 @@ export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
 
   console.info(`Starting new HLS sim container: ${name}`);
   console.info(`URL: http://localhost:${port}/`);
-  const lan = getLanRootUrl(port);
+  const lan = host === '0.0.0.0' ? getLanRootUrl(port) : undefined;
   if (lan) console.info(`LAN URL (use on Roku): ${lan}`);
 
   if (source) {
@@ -1028,6 +929,7 @@ export async function startHlsim(options: HLSStartOptions = {}): Promise<void> {
 
 export async function stopHlsim(options: HLSStopOptions = {}): Promise<void> {
   const { name = 'hls-dash-hlsim' } = options;
+  if (!assertOwnedContainer(name, getDockerPath())) return;
   try {
     await runDocker(['stop', name]);
     console.info(`Container stopped: ${name}`);

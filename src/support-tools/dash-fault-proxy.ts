@@ -1,3 +1,4 @@
+import { listen, closeServer } from './safe-http.js';
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
@@ -25,6 +26,7 @@ interface SegmentTimelineEntry {
 }
 
 export interface DashFaultProxyOptions {
+  host?: string;
   listenPort: number;
   upstreamPort: number;
   preserve?: {
@@ -217,7 +219,7 @@ export async function startDashFaultProxy(options: DashFaultProxyOptions): Promi
 
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.listenPort, '0.0.0.0', resolve);
+    listen(server, options.listenPort, options.host).then(resolve, reject);
   });
 
   logDashEvent('proxy-start', { listenPort: options.listenPort, upstreamPort: options.upstreamPort, preserve: Boolean(preserveConfig) });
