@@ -121,7 +121,8 @@ export async function startDashFaultProxy(
         frozen = shouldFreeze;
         snapshots = frozen ? new Map(latest) : new Map();
       }
-      if (!scenario) await faults.delay(signal, trace);
+      // Media/manifest latency faults must not skew the UTC reference itself.
+      if (!scenario && (manifest || segment)) await faults.delay(signal, trace);
       if (manifest && frozen && snapshots.has(manifestKey)) {
         const cached = snapshots.get(manifestKey);
         faults.frozen(trace);

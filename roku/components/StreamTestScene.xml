@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="StreamTestScene" extends="Scene">
+  <interface><field id="runConfig" type="assocarray" alwaysNotify="true" onChange="startRun" /></interface>
+  <script type="text/brightscript" uri="pkg:/components/StreamTestScene.brs" />
+  <children>
+    <Video id="video" width="1280" height="720" translation="[0,0]" />
+    <Label id="status" translation="[30,30]" width="1220" height="100" text="Launch with streamUrl, protocol and runId parameters." />
+    <Timer id="sampler" duration="0.25" repeat="true" />
+  </children>
+</component>

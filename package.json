@@ -26,7 +26,12 @@
     "test": "npm run build && node --test test/*.test.cjs",
     "test:docker": "npm run build && node scripts/run-docker-tests.cjs",
     "fixtures": "node scripts/generate-fixtures.cjs",
-    "scenario:verify": "npm run build && node scripts/verify-scenarios.cjs"
+    "scenario:verify": "npm run build && node scripts/verify-scenarios.cjs",
+    "browser:verify": "npm run build && node scripts/verify-browser.cjs",
+    "roku:build": "bsc --project roku/bsconfig.json",
+    "roku:verify": "npm run build && node scripts/verify-roku.cjs",
+    "roku:deploy": "npm run roku:build && node scripts/deploy-roku.cjs",
+    "roku:suite": "npm run build && node scripts/verify-roku-suite.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
@@ -37,8 +42,11 @@
     "@types/express": "^4.17.21",
     "@types/node": "^24.5.2",
     "@types/yargs": "^17.0.33",
-    "dashjs": "^5.2.1",
-    "hls.js": "^1.7.3",
+    "brighterscript": "0.73.8",
+    "dashjs": "5.2.1",
+    "hls.js": "1.7.3",
+    "playwright": "1.64.1",
+    "roku-deploy": "3.18.4",
     "typescript": "5.2.2"
   },
   "files": [

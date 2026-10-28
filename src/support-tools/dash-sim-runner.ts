@@ -24,7 +24,8 @@ import { startDashFaultProxy } from "./dash-fault-proxy.js";
 import { parseMPD, MPDInfo } from "./mpd.js";
 export { parseMPD, MPDInfo } from "./mpd.js";
 const exec = promisify(execFile);
-const DEFAULT_IMAGE = "ghcr.io/dash-industry-forum/livesim2/livesim2:v1.7.0";
+export const DEFAULT_IMAGE =
+  "ghcr.io/dash-industry-forum/livesim2/livesim2:v1.15.3@sha256:800acefece3ea6d59b4fa04d657ea8081d5c710c07359cfddbaaa4dbf2bf2d9c";
 export interface LivesimStartOptions {
   host?: string;
   image?: string;
@@ -53,6 +54,7 @@ export interface LivesimStartOptions {
   periodDurations?: number[];
   periodStartTimes?: number[];
   periodsPerHour?: number;
+  utc?: "local" | "external";
   signal?: AbortSignal;
   diagnosticsFile?: string;
   scenarioFile?: string;
@@ -94,12 +96,15 @@ export async function analyzeMPD(
   return parseMPD(await fetchMPD(url, auth, allowed, signal), url);
 }
 
-/** v1.7 uses path options; arbitrary segment duration cannot change encoded media. */
+/** Path options cannot change the duration of already encoded media. */
 export function buildLivesimPath(
   asset = "sample",
   info?: MPDInfo,
   periodsPerHour?: number,
+  utc: "local" | "external" = "local",
 ): string {
+  if (utc !== "local" && utc !== "external")
+    throw new Error("utc must be local or external");
   if (
     !/^[\w./-]+$/.test(asset) ||
     asset.split("/").some((p) => p === ".." || !p)
@@ -107,6 +112,9 @@ export function buildLivesimPath(
     throw new Error("asset must be a relative media directory");
   const parts = [
     "livesim2",
+    // The engine serves this clock itself, from the same real-time clock used
+    // for MPD and segment availability. No external service is needed.
+    ...(utc === "local" ? ["utc_head"] : []),
     info?.segmentTemplateType === "number"
       ? "segtimelinenr_1"
       : "segtimeline_1",
@@ -219,7 +227,7 @@ export async function startLivesim2(
         )
       : undefined);
   const asset = options.asset ?? "sample";
-  const manifestPath = buildLivesimPath(asset, info, periods);
+  const manifestPath = buildLivesimPath(asset, info, periods, options.utc);
   const sourceFixture = path.resolve(__dirname, "../../assets/dash-sample");
   const vodroot = options.vodroot
     ? path.resolve(options.vodroot)
@@ -272,14 +280,18 @@ export async function startLivesim2(
   const sessionId = randomUUID();
   const sessionLabel = "io.hls-dash-live-sim.session";
   const image = options.image ?? DEFAULT_IMAGE;
+  // This official release is AMD64-only. Be explicit on ARM Docker hosts;
+  // custom images retain their own platform selection.
+  const platform = options.image ? [] : ["--platform", "linux/amd64"];
   if (options.forcePull)
-    await exec("docker", ["pull", image], { timeout: 120000, signal });
+    await exec("docker", ["pull", ...platform, image], { timeout: 120000, signal });
   const internalPort =
     options.faultProxy === false ? port : await freeInternalPort();
   const args = [
     "run",
     "-d",
     "--rm",
+    ...platform,
     "--name",
     name,
     ...ownershipArgs(),

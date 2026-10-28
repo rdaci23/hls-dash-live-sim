@@ -1,0 +1,612 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-28T19:12:15.693Z",
+  "baseCommit": "1e2c2c5a164165ef3b4ccb5a4fd3fc0e4fd96025",
+  "workingTreeChangesIncluded": true,
+  "repository": {
+    "name": "rdaci23/hls-dash-live-sim",
+    "visibility": "PRIVATE",
+    "verifiedWith": "gh repo view",
+    "npmPrivate": true
+  },
+  "engine": {
+    "image": "ghcr.io/dash-industry-forum/livesim2/livesim2:v1.15.3@sha256:800acefece3ea6d59b4fa04d657ea8081d5c710c07359cfddbaaa4dbf2bf2d9c",
+    "periodBoundaryChecks": {
+      "passed": true,
+      "addressing": [
+        "Time",
+        "Number"
+      ],
+      "minuteBoundaries": 3,
+      "offsetsMs": [
+        -1,
+        0,
+        500,
+        1999,
+        2000,
+        2500,
+        5000
+      ],
+      "mpdProbes": 42,
+      "requirement": "Every emitted audio/video SegmentTimeline contains S entries"
+    }
+  },
+  "clock": {
+    "mode": "engine real time",
+    "default": "local HTTP HEAD /static/time.txt",
+    "engineDateForwarded": true,
+    "dateExposedViaCors": true,
+    "normalDashJsUtcSynchronization": true,
+    "playerExternalRequests": 0,
+    "nowMS": "per-request diagnostic only; coherent fixed-time playback remains unsupported"
+  },
+  "checks": {
+    "regularTests": {
+      "passed": 72,
+      "failed": 0,
+      "dockerSkipped": 1
+    },
+    "realDockerIntegration": {
+      "passed": 1,
+      "failed": 0
+    },
+    "typecheck": "passed",
+    "productionAuditVulnerabilities": 0
+  },
+  "acceptanceGates": {
+    "startupMs": 10000,
+    "healthyMs": 180000,
+    "healthyStallMs": 4000,
+    "recoveryMs": 10000,
+    "beforeFaultMs": 30000,
+    "afterRecoveryMs": 60000,
+    "dashTransitions": 2
+  },
+  "browser": {
+    "passed": true,
+    "caseCount": 6,
+    "originalRecordedAt": "2026-10-28T17:22:22.039Z",
+    "recheckedWithCurrentEvaluator": true,
+    "reports": [
+      {
+        "protocol": "hls",
+        "test": "healthy",
+        "browser": "Chrome",
+        "browserVersion": "156.0.8078.48",
+        "playerVersion": "1.7.3",
+        "fixture": "180p/360p H.264/AAC ladder",
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameMs": 314.39999997615814,
+        "renderedDurationMs": 180276,
+        "renderedMediaProgressSeconds": 180.271666,
+        "frames": 4316,
+        "droppedFrames": 0,
+        "playedPeriods": [],
+        "longestFrameGapMs": 0,
+        "stalls": [],
+        "faultMs": null,
+        "retryMs": null,
+        "recoveredAtMs": null,
+        "postRecoveryMs": null,
+        "preFaultMs": null,
+        "localUtcRequests": 0,
+        "externalRequests": 0,
+        "expectedHttp404": 0,
+        "unexpectedResponses": [],
+        "expectedRecoveryObservations": [],
+        "unexpectedPlayerErrors": [],
+        "unexpectedConsole": []
+      },
+      {
+        "protocol": "dash",
+        "test": "healthy",
+        "browser": "Chrome",
+        "browserVersion": "156.0.8078.48",
+        "playerVersion": "5.2.1",
+        "fixture": "360p H.264 + AAC",
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameMs": 283.10000002384186,
+        "renderedDurationMs": 180558.89999997616,
+        "renderedMediaProgressSeconds": 180.5416669845581,
+        "frames": 4334,
+        "droppedFrames": 0,
+        "playedPeriods": [
+          {
+            "id": "P29886796",
+            "start": 1793207760,
+            "duration": null,
+            "eventMs": 58.800000071525574,
+            "firstFrameMs": 283.10000002384186,
+            "renderedMediaTime": 1793207762.958333
+          },
+          {
+            "id": "P29886797",
+            "start": 1793207820,
+            "duration": null,
+            "eventMs": 57455.60000002384,
+            "firstFrameMs": 57463.40000009537,
+            "renderedMediaTime": 1793207820.125
+          },
+          {
+            "id": "P29886798",
+            "start": 1793207880,
+            "duration": null,
+            "eventMs": 117455.20000004768,
+            "firstFrameMs": 117494.70000004768,
+            "renderedMediaTime": 1793207880.166666
+          },
+          {
+            "id": "P29886799",
+            "start": 1793207940,
+            "duration": null,
+            "eventMs": 177454.90000009537,
+            "firstFrameMs": 177458.70000004768,
+            "renderedMediaTime": 1793207940.125
+          }
+        ],
+        "longestFrameGapMs": 0,
+        "stalls": [],
+        "faultMs": null,
+        "retryMs": null,
+        "recoveredAtMs": null,
+        "postRecoveryMs": null,
+        "preFaultMs": null,
+        "localUtcRequests": 12,
+        "utcEnabled": true,
+        "externalRequests": 0,
+        "expectedHttp404": 0,
+        "unexpectedResponses": [],
+        "expectedRecoveryObservations": [],
+        "unexpectedPlayerErrors": [],
+        "unexpectedConsole": []
+      },
+      {
+        "protocol": "hls",
+        "test": "startup",
+        "browser": "Chrome",
+        "browserVersion": "156.0.8078.48",
+        "playerVersion": "1.7.3",
+        "fixture": "180p H.264/AAC single rendition",
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameMs": 279.10000002384186,
+        "renderedDurationMs": 60330,
+        "renderedMediaProgressSeconds": 60.326667,
+        "frames": 1445,
+        "droppedFrames": 0,
+        "playedPeriods": [],
+        "longestFrameGapMs": 0,
+        "stalls": [],
+        "faultMs": 26,
+        "retryMs": 67,
+        "recoveredAtMs": 279.10000002384186,
+        "postRecoveryMs": 60330,
+        "preFaultMs": -253.10000002384186,
+        "localUtcRequests": 0,
+        "externalRequests": 0,
+        "expectedHttp404": 1,
+        "unexpectedResponses": [],
+        "expectedRecoveryObservations": [
+          {
+            "atMs": 28,
+            "type": "networkError",
+            "details": "fragLoadError",
+            "fatal": false,
+            "status": 404,
+            "mediaTime": 0
+          },
+          {
+            "atMs": 59.89999997615814,
+            "type": "networkError",
+            "details": "aborted",
+            "fatal": false,
+            "mediaTime": 6.003
+          },
+          {
+            "atMs": 209,
+            "type": "mediaError",
+            "details": "bufferSeekOverHole",
+            "fatal": false,
+            "mediaTime": 6.116,
+            "reason": "fragment loaded with buffer holes, seeking from 6.003 to 6.116",
+            "bufferInfo": {
+              "len": 0,
+              "start": 6.003,
+              "end": 6.003,
+              "nextStart": 6.016,
+              "buffered": [
+                {
+                  "start": 6.016,
+                  "end": 11.999999
+                }
+              ],
+              "bufferedIndex": -1
+            }
+          }
+        ],
+        "unexpectedPlayerErrors": [],
+        "unexpectedConsole": [],
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_368008fa89e473d9a8cb7ff45bf4182d",
+          "sessionId": "8e4e21b3-b338-44c1-96de-79d4ffc54ad9",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 61676.975916,
+          "result": "passed",
+          "trackedDownloads": 2,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 0,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_0d3d082d3dbdac97432c925c11ba4603",
+              "targetOrdinal": 1,
+              "result": "passed"
+            }
+          ]
+        }
+      },
+      {
+        "protocol": "dash",
+        "test": "startup",
+        "browser": "Chrome",
+        "browserVersion": "156.0.8078.48",
+        "playerVersion": "5.2.1",
+        "fixture": "360p H.264 + AAC",
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameMs": 1204.6000000238419,
+        "renderedDurationMs": 60447.59999990463,
+        "renderedMediaProgressSeconds": 60.458333015441895,
+        "frames": 1452,
+        "droppedFrames": 0,
+        "playedPeriods": [
+          {
+            "id": "P29886799",
+            "start": 1793207940,
+            "duration": null,
+            "eventMs": 64.5,
+            "firstFrameMs": 1204.6000000238419,
+            "renderedMediaTime": 1793207945.958333
+          },
+          {
+            "id": "P29886800",
+            "start": 1793208000,
+            "duration": null,
+            "eventMs": 55260.5,
+            "firstFrameMs": 55301.60000002384,
+            "renderedMediaTime": 1793208000.041666
+          }
+        ],
+        "longestFrameGapMs": 0,
+        "stalls": [],
+        "faultMs": 102,
+        "retryMs": 1117,
+        "recoveredAtMs": 1204.6000000238419,
+        "postRecoveryMs": 60447.59999990463,
+        "preFaultMs": -1102.6000000238419,
+        "localUtcRequests": 5,
+        "utcEnabled": true,
+        "externalRequests": 0,
+        "expectedHttp404": 1,
+        "unexpectedResponses": [],
+        "expectedRecoveryObservations": [],
+        "unexpectedPlayerErrors": [],
+        "unexpectedConsole": [],
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_368008fa89e473d9a8cb7ff45bf4182d",
+          "sessionId": "3df646d5-1fe7-4f30-a0f6-577aff0455d6",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 62984.628834,
+          "result": "passed",
+          "trackedDownloads": 1,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "audio:0",
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 0,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_e959be0c861c4a8edce69fb47c62ccb6",
+              "targetOrdinal": 1,
+              "result": "passed"
+            }
+          ]
+        }
+      },
+      {
+        "protocol": "hls",
+        "test": "during",
+        "browser": "Chrome",
+        "browserVersion": "156.0.8078.48",
+        "playerVersion": "1.7.3",
+        "fixture": "180p H.264/AAC single rendition",
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameMs": 311.5,
+        "renderedDurationMs": 121545.39999997616,
+        "renderedMediaProgressSeconds": 121.528333,
+        "frames": 2910,
+        "droppedFrames": 0,
+        "playedPeriods": [],
+        "longestFrameGapMs": 0,
+        "stalls": [],
+        "faultMs": 60024,
+        "retryMs": 61121,
+        "recoveredAtMs": 61121,
+        "postRecoveryMs": 60735.89999997616,
+        "preFaultMs": 59712.5,
+        "localUtcRequests": 0,
+        "externalRequests": 0,
+        "expectedHttp404": 1,
+        "unexpectedResponses": [],
+        "expectedRecoveryObservations": [
+          {
+            "atMs": 60025.5,
+            "type": "networkError",
+            "details": "fragLoadError",
+            "fatal": false,
+            "status": 404,
+            "mediaTime": 65.689305
+          }
+        ],
+        "unexpectedPlayerErrors": [],
+        "unexpectedConsole": [],
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_b67a055e5d61576a994471c687e62d9c",
+          "sessionId": "178dfd9d-a5e3-4900-9ca7-3e613fcdedba",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 123030.304375,
+          "result": "passed",
+          "trackedDownloads": 33,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 60000,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_5b5c50abeb1c06e0f2b2487082da902a",
+              "targetOrdinal": 33,
+              "result": "passed"
+            }
+          ]
+        }
+      },
+      {
+        "protocol": "dash",
+        "test": "during",
+        "browser": "Chrome",
+        "browserVersion": "156.0.8078.48",
+        "playerVersion": "5.2.1",
+        "fixture": "360p H.264 + AAC",
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameMs": 316.59999990463257,
+        "renderedDurationMs": 122161.90000009537,
+        "renderedMediaProgressSeconds": 122.1666669845581,
+        "frames": 2933,
+        "droppedFrames": 0,
+        "playedPeriods": [
+          {
+            "id": "P29886800",
+            "start": 1793208000,
+            "duration": null,
+            "eventMs": 66,
+            "firstFrameMs": 316.59999990463257,
+            "renderedMediaTime": 1793208010.958333
+          },
+          {
+            "id": "P29886801",
+            "start": 1793208060,
+            "duration": null,
+            "eventMs": 49462.89999997616,
+            "firstFrameMs": 49464.5,
+            "renderedMediaTime": 1793208060.083333
+          },
+          {
+            "id": "P29886802",
+            "start": 1793208120,
+            "duration": null,
+            "eventMs": 109462.09999990463,
+            "firstFrameMs": 109462.29999995232,
+            "renderedMediaTime": 1793208120.083333
+          }
+        ],
+        "longestFrameGapMs": 0,
+        "stalls": [],
+        "faultMs": 60569,
+        "retryMs": 61581,
+        "recoveredAtMs": 61581,
+        "postRecoveryMs": 60897.5,
+        "preFaultMs": 60252.40000009537,
+        "localUtcRequests": 11,
+        "utcEnabled": true,
+        "externalRequests": 0,
+        "expectedHttp404": 1,
+        "unexpectedResponses": [],
+        "expectedRecoveryObservations": [],
+        "unexpectedPlayerErrors": [],
+        "unexpectedConsole": [],
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_b67a055e5d61576a994471c687e62d9c",
+          "sessionId": "8041f929-b1e6-418e-8e12-daef6f9fa606",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 123613.858041,
+          "result": "passed",
+          "trackedDownloads": 34,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "audio:0",
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 60000,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_eead1ff0b7e9aec84f32b48a02e62a80",
+              "targetOrdinal": 34,
+              "result": "passed"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "roku": {
+    "status": "blocked",
+    "matrixPassed": false,
+    "target": {
+      "modelNumber": "4850X",
+      "modelName": "Ultra",
+      "softwareVersion": "15.3.4",
+      "softwareBuild": 2402
+    },
+    "reason": "Roku debug console is already in use by another debugger",
+    "guardedAttempt": {
+      "engineStarted": false,
+      "channelLaunched": false,
+      "nativePlaybackVerified": false
+    },
+    "requiredCases": [
+      "hls/healthy",
+      "dash/healthy",
+      "hls/startup",
+      "dash/startup",
+      "hls/during",
+      "dash/during"
+    ],
+    "priorDifferentDeviceObservation": {
+      "countsTowardSelectedTargetMatrix": false,
+      "identity": {
+        "modelNumber": "3940EU",
+        "modelName": "Roku Express 4K",
+        "softwareVersion": "16.0.4",
+        "softwareBuild": 842
+      },
+      "protocol": "hls",
+      "test": "healthy",
+      "passed": true,
+      "firstFrameUpperBoundMs": 772,
+      "renderedDurationMs": 194247,
+      "videoProgressSeconds": 193.5329999923706,
+      "audioProgressSeconds": 1793208151.068,
+      "note": "DASH was interrupted at the user pause; no complete recovery matrix was established on that model."
+    }
+  },
+  "provenance": {
+    "implementation": {
+      "sha256": "3ff1ef1ad2be5a2b46fb8f1e0df251a0c05f6571a0c5713617b8367bb7644a69",
+      "files": 37
+    },
+    "hlsFixture": {
+      "sha256": "eef392b9642c4864f75ba266877fbc7a0c62ca35022db8a92b3999974d6c6bac",
+      "files": 15
+    },
+    "dashFixture": {
+      "sha256": "b051c982e9729a3539ac01ebfa6d20b6fd33a2c0658ef61b2e42a18bbb9e71bb",
+      "files": 15
+    },
+    "testerZipSha256": "f2886b0a30f1d061029e5edc15e546b21d5553fab1d29d4f1c34e4becf42ad44",
+    "browserReportSha256": "b49a4bb96bdc9e0f3d3c56ab16db14bcb1ff533670d70e29689ef0b09c25149f",
+    "nativeReportSha256": "e59ab3f66882a0321105cf989ea81a7c0e630e1c75f0eb3f4c9e1905c0255d3a",
+    "browserEvaluatorSha256": "02057adef44c4008ee3d443ec1e1567c80c3fa272a7b3e47d60872aaaeb4afe6",
+    "nativeEvaluatorSha256": "9eb32e720a80ad718049c352f14e6a9dd5655ead268aa018451baf14fed36187",
+    "nodeVersion": "v26.8.1",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "releaseReady": false,
+  "remaining": [
+    "Complete all six physical Roku cases on one identified model/OS after the exclusive debug console is available.",
+    "Public packaging, license/notices and CI coverage remain separate release work."
+  ],
+  "unverified": [
+    "Apple players",
+    "Android players",
+    "Additional Roku hardware/OS combinations",
+    "ABR fallback recovery with multiple HLS renditions",
+    "Shared virtual-clock playback"
+  ]
+}

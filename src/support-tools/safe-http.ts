@@ -184,6 +184,7 @@ export async function fetchRemote(
       "etag",
       "last-modified",
       "cache-control",
+      "date",
     ]) {
       const header = response.headers.get(key);
       if (header) headers[key] = header;
@@ -318,7 +319,7 @@ export function send(
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Expose-Headers": `Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
+    "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
     "Cache-Control": "no-store",
     ...headers,
     "Content-Length": String(buffer.length),
@@ -360,7 +361,7 @@ export function preflight(
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
       "Access-Control-Allow-Headers": "Range",
-      "Access-Control-Expose-Headers": `Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
+      "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
     });
     res.end();
     return true;

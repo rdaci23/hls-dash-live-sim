@@ -9,7 +9,9 @@ private.
 ## Start a live stream
 
 Node.js 20.3 or newer is required. HLS runs directly in Node. DASH requires a
-running Docker daemon; its first start downloads the pinned livesim2 v1.7.0 image.
+running Docker daemon; its first start downloads livesim2 v1.15.3 at a pinned
+image digest. The official image is AMD64-only; Docker emulation is used on ARM
+hosts.
 
 ```sh
 npm ci
@@ -35,6 +37,16 @@ Ctrl+C stops the session, proxy and its owned container, including during startu
 An in-progress Docker creation is allowed to finish acknowledging its container
 before cleanup; cancellation can wait for that Docker operation. `--detach` is a legacy
 flag: the Node session always remains supervised in the foreground.
+
+DASH advertises the simulator's local UTC clock by default. Normal player time
+synchronization stays enabled; playback needs no external clock service. The proxy
+preserves the engine's `Date` header and exposes it to browser players. Clock
+requests are excluded from artificial media/manifest latency. Use `--utc external`
+only to test the engine's external clock source (internet required).
+
+`nowMS` is an engine diagnostic override for individual MPD/media requests. It
+does **not** move the UTC clock or create a coherent fixed-time playback session.
+Real-time playback is the supported baseline; a shared virtual clock is deferred.
 
 ## Network access
 
@@ -164,7 +176,7 @@ Source URLs may themselves contain secrets, so local templates remain ignored.
 DASH source import analyzes supported timing metadata and uses validated local
 media. It does not replicate arbitrary source encodings. Custom DASH assets require
 `--vodroot` with an asset directory containing `manifest.mpd`. The current adapter
-checks the livesim2 v1.7 input subset before starting Docker: a static MPD with one
+checks the validated livesim2 input subset before starting Docker: a static MPD with one
 source Period, AdaptationSet SegmentTemplates, plain `$Number$` without a timeline
 or `$Time$` with a finite timeline, and local relative media paths. Representation
 templates, BaseURL/Location, SegmentList/SegmentBase and formatted identifiers fail
@@ -191,7 +203,11 @@ npm run fixtures
 ```
 
 The regular suite uses local fixtures and does not require Docker. The Docker suite
-requires the pinned image locally (`docker pull ghcr.io/dash-industry-forum/livesim2/livesim2:v1.7.0`).
+requires the pinned image locally :
+
+```sh
+docker pull --platform linux/amd64 ghcr.io/dash-industry-forum/livesim2/livesim2:v1.15.3@sha256:800acefece3ea6d59b4fa04d657ea8081d5c710c07359cfddbaaa4dbf2bf2d9c
+```
 Fixture regeneration requires FFmpeg and replaces only the procedural sample files.
 It is not needed to use the tool. [Fixture provenance](assets/README.md).
 
@@ -200,3 +216,25 @@ browser artifacts are ignored by Git. The original four saved templates remain i
 this checkout's ignored file. The [initial review](docs/public-release-review.md)
 and [recorded baseline](docs/research-evidence.json) describe the recovered prototype;
 use [current status](docs/implementation.md) for present behavior.
+
+## Playback release checks
+
+```sh
+npm run browser:verify
+# Development smoke only; cannot qualify a release:
+npm run browser:verify -- --smoke
+npm run roku:build
+```
+
+The browser runner uses installed Chrome, pinned hls.js/dash.js and the local
+Docker image. It measures rendered frames, startup, stalls, successful retries
+and played DASH periods, with player network access restricted to the local
+simulator and harness. Six cases cover both protocols: three minutes healthy,
+startup 404 recovery, and a 404 after at least 30 seconds healthy rendering.
+Fault cases require another 60 seconds after recovery. Each run needs a fresh
+output directory and saves JSON, diagnostics and screenshots under `output/`.
+
+The standalone native SceneGraph tester has no Standalone dependency. Its installable
+ZIP is `output/roku/hls-dash-stream-tester.zip`; physical Roku gates remain pending
+until the dedicated device is tested. See [verification instructions and limits](docs/playback-gates.md).
+Repository visibility and npm `private: true` remain unchanged.

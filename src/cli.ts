@@ -283,6 +283,11 @@ const program = yargs(hideBin(process.argv))
         .option("vodroot", { type: "string" })
         .option("source", { type: "string" })
         .option("image", { type: "string" })
+        .option("utc", {
+          choices: ["local", "external"],
+          default: "local",
+          description: "DASH UTC synchronization source (external requires internet)",
+        })
         .option("name", { type: "string" })
         .option("open", { type: "boolean", default: false })
         .option("pull", { type: "boolean", default: true })
@@ -343,6 +348,7 @@ const program = yargs(hideBin(process.argv))
               periodCount: args.periods,
               periodDurations: args["period-durations"]?.split(",").map(Number),
               periodsPerHour: args["periods-per-hour"],
+              utc: args.utc,
               extraArgs: args["--"]?.map(String),
             })
           : await startHlsim({

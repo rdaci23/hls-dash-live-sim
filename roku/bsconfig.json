@@ -1,0 +1,7 @@
+{
+  "rootDir": ".",
+  "files": ["manifest", "source/**/*", "components/**/*"],
+  "createPackage": true,
+  "outFile": "../output/roku/hls-dash-stream-tester.zip",
+  "stagingDir": "../output/roku/staging"
+}

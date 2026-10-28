@@ -240,8 +240,10 @@ test("DASH adapter emits supported path options and rejects unimplemented period
   );
   assert.equal(
     result,
-    "/livesim2/segtimeline_1/tsbd_60/periods_60/continuous_1/sample/manifest.mpd",
+    "/livesim2/utc_head/segtimeline_1/tsbd_60/periods_60/continuous_1/sample/manifest.mpd",
   );
+  assert.doesNotMatch(buildLivesimPath("sample", undefined, undefined, "external"), /utc_head/);
+  assert.throws(() => buildLivesimPath("sample", undefined, undefined, "invalid"), /utc must/);
   await assert.rejects(
     startLivesim2({
       port: await unusedPort(),
@@ -250,4 +252,29 @@ test("DASH adapter emits supported path options and rejects unimplemented period
     }),
     /must be equal/,
   );
+});
+
+test("DASH local UTC preserves the engine Date through GET, HEAD and CORS", async (t) => {
+  const { startDashFaultProxy } = require("../dist/support-tools/dash-fault-proxy.js");
+  const { setFaultConfigPath } = require("../dist/support-tools/live-stream-fault-config.js");
+  const { applyConfigOverride } = require("../dist/support-tools/live-stream-fault-config.js");
+  setFaultConfigPath(await config(t));
+  const engineDate = "Tue, 01 Jan 2030 00:00:00 GMT";
+  const origin = await serve(t, (_req, res) => {
+    res.setHeader("Date", engineDate);
+    res.end("2030-01-01T00:00:00Z");
+  });
+  const proxyPort = await unusedPort();
+  const proxy = await startDashFaultProxy({ listenPort: proxyPort, upstreamPort: origin.port });
+  t.after(() => proxy.close());
+  applyConfigOverride({ segment: { latencyMs: 75 } });
+  for (const method of ["GET", "HEAD"]) {
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/static/time.txt`, { method });
+    assert.equal(response.headers.get("date"), engineDate);
+    assert.match(response.headers.get("access-control-expose-headers"), /Date/);
+    assert.equal(response.headers.get("x-sim-fault-ids"), null, "media latency does not alter the clock reference");
+    assert.equal((await response.arrayBuffer()).byteLength, method === "HEAD" ? 0 : 20);
+  }
+  const delayed = await fetch(`http://127.0.0.1:${proxyPort}/manifest.mpd`);
+  assert.ok(delayed.headers.get("x-sim-fault-ids"), "manifest latency remains active");
 });

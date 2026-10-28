@@ -9,6 +9,7 @@ const { XMLParser } = require("fast-xml-parser");
 const {
   startLivesim2,
   stopLivesim2,
+  DEFAULT_IMAGE,
 } = require("../dist/support-tools/dash-sim-runner.js");
 const {
   MANAGED_LABEL,
@@ -51,6 +52,31 @@ test(
       const body = await initial.text();
       assert.match(body, /type="dynamic"/);
       assert.doesNotMatch(body, /localhost|__dash__/);
+      assert.match(body, /urn:mpeg:dash:utc:http-head:2014/);
+      assert.match(body, /value="\/static\/time.txt"/);
+      const clock = await fetch(new URL("/static/time.txt", session.url), { method: "HEAD" });
+      assert.equal(clock.status, 200);
+      assert.ok(Math.abs(Date.parse(clock.headers.get("date")) - Date.now()) < 2000);
+      assert.match(clock.headers.get("access-control-expose-headers"), /Date/);
+      assert.equal((await clock.arrayBuffer()).byteLength, 0);
+      // Probe both addressing modes at and immediately around three minute
+      // boundaries. v1.7 emitted empty SegmentTimeline elements here.
+      const boundary = Math.floor(Date.now() / 60000) * 60000;
+      for (const addressing of ["segtimeline_1", "segtimelinenr_1"])
+        for (const minute of [-1, 0, 1])
+          for (const offset of [-1, 0, 500, 1999, 2000, 2500, 5000]) {
+            const probe = new URL(session.url.replace("segtimeline_1", addressing));
+            probe.searchParams.set("nowMS", String(boundary + minute * 60000 + offset));
+            const response = await fetch(probe);
+            assert.equal(response.status, 200);
+            const root = new XMLParser({ ignoreAttributes: false }).parse(await response.text()).MPD;
+            for (const period of array(root.Period)) {
+              assert.deepEqual(array(period.AdaptationSet).map(a => a["@_contentType"]).sort(), ["audio", "video"]);
+              for (const adaptation of array(period.AdaptationSet))
+                assert.ok(adaptation.SegmentTemplate.SegmentTimeline?.S,
+                  `empty timeline: ${addressing} minute ${minute} offset ${offset}`);
+            }
+          }
       const inspect = JSON.parse(
         execFileSync("docker", ["inspect", name]).toString(),
       )[0];
@@ -94,9 +120,10 @@ test(
       const foreign = name + "-foreign";
       const foreignId = execFileSync("docker", [
         "create",
+        "--platform", "linux/amd64",
         "--name",
         foreign,
-        "ghcr.io/dash-industry-forum/livesim2/livesim2:v1.7.0",
+        DEFAULT_IMAGE,
         "--help",
       ])
         .toString()

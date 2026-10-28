@@ -4,11 +4,11 @@ import { parseMPD } from "./mpd.js";
 const list = (value): any[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
 
-/** Input subset implemented by the pinned livesim2 v1.7.0 asset loader. */
+/** Deliberately narrow input subset verified with the pinned livesim2 engine. */
 export function validateDashAsset(text: string): void {
   const info = parseMPD(text, "fixture://manifest.mpd");
   const fail = (reason: string): never => {
-    throw new Error(`Unsupported DASH asset for livesim2 v1.7.0: ${reason}`);
+    throw new Error(`Unsupported DASH asset for the pinned livesim2 adapter: ${reason}`);
   };
   if (info.type !== "static" || info.periodCount !== 1)
     fail("use a static MPD with exactly one source Period");

@@ -10,7 +10,7 @@ prototype samples, whose regeneration history was not present.
 - DASH: twelve seconds of 360p H.264 video with separate stereo AAC audio. Audio
   uses complete AAC access units; livesim2 handles the small padded tail while
   deriving live audio timing from the media. The MPD moves each representation's
-  SegmentTemplate to AdaptationSet level for the pinned livesim2 v1.7 adapter.
+  SegmentTemplate to AdaptationSet level for the validated livesim2 adapter.
 - The DASH generator uses unformatted `$Number$` filenames, as required by that
   engine version. It does not rewrite source encodings to pretend to have different
   bitrates, resolutions or codecs.

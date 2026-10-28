@@ -62,14 +62,15 @@ units. It preserves inherited attributes, audio/video separation, reordered
 attributes and fractional durations. Import converts ticks through timescale once.
 HLS import now fetches and inspects the source rather than reporting defaults.
 
-DASH playback uses a generated H.264/AAC fixture through livesim2 v1.7.0. The adapter
+DASH playback uses a generated H.264/AAC fixture through livesim2 v1.15.3, pinned
+by image digest. The adapter
 preflights the pinned engine's local asset subset (static, one Period, AdaptationSet
 SegmentTemplates, supported local Number/Time addressing), constructs real path
 options, waits for a valid live MPD, and delegates timing and
 period transitions to the engine. It no longer fabricates incompatible preserved
 segment aliases. Media URLs remain relative and reachable through the fault proxy.
 The preflight addressing restrictions follow the
-[pinned engine asset loader](https://github.com/Dash-Industry-Forum/livesim2/blob/v1.7.0/cmd/livesim2/app/asset.go).
+[pinned engine asset loader](https://github.com/Dash-Industry-Forum/livesim2/blob/v1.15.3/cmd/livesim2/app/asset.go).
 
 Fault framing is corrected: malformed media completes with a matching Content-Length,
 DASH freeze retains the latest observed MPD, and streaming responses implement CORS,
@@ -122,7 +123,8 @@ diagnostic events carry the logical target, ordinal, attempt and rule IDs.
 the real livesim2 engine, and exits nonzero on failed assertions. See
 [scenarios.md](scenarios.md) and [scenario-verification.json](scenario-verification.json).
 
-Chrome also recovered from this specific preset in hls.js 1.7.3 and dash.js 5.2.1.
+Before the stabilization upgrade, Chrome also recovered from this specific preset
+in hls.js 1.7.3 and dash.js 5.2.1.
 Both players decoded more than 5100 frames after their injected failure/retry;
 HLS emitted the expected nonfatal 404 load error, and DASH emitted no player error
 events. The test used one HLS rendition and disabled DASH UTC synchronization.
@@ -154,8 +156,8 @@ A new Chrome smoke check decoded more than 2100 frames per stream over about
 89 seconds with zero dropped frames and no player error events. DASH activated
 three periods. However, dash.js logged four `StreamProcessor` console exceptions
 (`Cannot read properties of undefined (reading 'length')`) near period switches
-while playback continued. Their root cause remains unresolved and is part of the
-release gate. See [follow-up-verification.json](follow-up-verification.json).
+while playback continued. Those historical exceptions came from empty future Period timelines in v1.7.0.
+The stabilization upgrade below addresses that engine defect. See [follow-up-verification.json](follow-up-verification.json).
 
 The earlier v0.2.0 Google Chrome playback was checked using hls.js 1.7.3 and dash.js 5.2.1. Both players
 decoded more than 7600 frames over more than five minutes. HLS crossed repeated
@@ -173,8 +175,8 @@ playback has not been verified.
   use native `--periods-per-hour` or equal durations that divide an hour.
 - The low-latency preset is unavailable. LL-HLS/LL-DASH, real DRM and ad insertion
   still require transport support, real fixtures and separate validation.
-- Broader browser recovery/ABR scenarios, the DASH console exceptions, default/offline
-  UTC synchronization and physical Roku playback/recovery remain release checks.
+- Broader ABR/fallback recovery and physical Roku playback/recovery remain release checks.
+  Stabilization now includes strict browser checks and local UTC; see below for current evidence.
 - Sports/news/OTT/mobile presets report actual sample properties. Mobile selects
   the small rendition; news extends the window. They no longer promise 4K or ads.
 - Manual random failures remain unseeded; scenario rules have seeded probability,
@@ -191,3 +193,47 @@ The [original review](public-release-review.md) and its JSON evidence remain a
 historical baseline; source links there point to the reviewed commit. The original
 observational audit is archived at `docs/archive/prototype-audit.cjs` and is not a
 regression suite for the corrected implementation.
+
+## Real-time stabilization and reproducible playback gates
+
+The engine is pinned to livesim2 v1.15.3 plus its immutable Docker digest. The
+[released upstream fix](https://github.com/Dash-Industry-Forum/livesim2/releases/tag/v1.15.3)
+withholds a new Period while any adaptation has an empty timeline. Docker
+regressions probe both Time and Number addressing at seven offsets around three
+minute boundaries; all emitted audio/video timelines must contain `S` entries.
+The proxy does not remove periods or suppress player exceptions.
+
+`utc_head` is the default engine path option. `/static/time.txt`, MPD availability
+and segment availability use engine real time. The proxy forwards the engine Date
+and exposes it via CORS. Media/manifest delay faults leave the reference clock
+untouched. External UTC is opt-in through `--utc external`; per-request `nowMS`
+remains diagnostic only, with virtual-clock playback explicitly unsupported.
+
+Committed browser checks use rendered-frame callbacks and retain error events,
+HTTP responses, matching server request/fault IDs, samples and final screenshots.
+Normal dash.js synchronization/retry settings remain enabled. The harness blocks
+external player requests and independently verifies browser Date visibility and
+the player's own local UTC traffic. A full check requires healthy playback,
+startup retry and established-playback retry for each protocol. Smoke checks and
+partial selections never qualify the complete browser gate.
+
+HLS healthy playback uses the two-rendition ladder. Strict same-download recovery
+checks use the single 180p rendition: with an ABR ladder, hls.js may recover by
+switching rendition instead of retrying that download. That observation is not a
+same-download pass; ABR fallback recovery remains separate coverage.
+
+The independent SceneGraph tester compiles to a developer-channel ZIP and reports
+native last-rendered audio/video positions every 250ms. Its recorder identifies
+model/OS/build, records monotonic and host timestamps, correlates server retries,
+and enforces the numeric gates. Missing telemetry or unknown mapping from native
+positions to DASH periods fails verification. It does not sideload, discover or
+launch a different developer channel. The Express 4K completed the HLS healthy
+case before its run was interrupted.
+The selected Ultra target is identified, but its debug console is held by another
+debugger; its full playback/recovery matrix remains blocked. Compilation and
+synthetic evidence tests do not establish playback. See the current verification
+record for exact models, versions and gate status.
+
+See [playback gates](playback-gates.md) for reproducible commands and the remaining
+release requirements. Historical JSON reports above retain their original engine
+versions and limitations. The repository and npm package remain private.
