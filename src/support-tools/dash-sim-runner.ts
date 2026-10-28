@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { validateDashAsset } from "./dash-asset.js";
 import type { SessionDiagnostics } from "./session-diagnostics.js";
+import { loadScenario, ScenarioEngine } from "./scenario.js";
 import {
   OriginPolicy,
   fetchRemote,
@@ -54,6 +55,7 @@ export interface LivesimStartOptions {
   periodsPerHour?: number;
   signal?: AbortSignal;
   diagnosticsFile?: string;
+  scenarioFile?: string;
   verbose?: boolean;
 }
 export interface LivesimStopOptions {
@@ -65,6 +67,7 @@ export interface LivesimLogsOptions {
 export interface DashSession {
   url: string;
   diagnostics?: SessionDiagnostics;
+  scenario?: ScenarioEngine;
   close(): Promise<void>;
 }
 export async function fetchMPD(
@@ -179,6 +182,9 @@ export async function startLivesim2(
 ): Promise<DashSession> {
   const signal = options.signal;
   signal?.throwIfAborted();
+  const definition = loadScenario(options.scenarioFile);
+  if (definition && options.faultProxy === false)
+    throw new Error("Scenarios require the DASH fault proxy");
   if (
     options.faultProxy === false &&
     (options.diagnosticsFile || options.verbose)
@@ -382,6 +388,7 @@ export async function startLivesim2(
         host,
         manifestPath,
         diagnosticsFile: options.diagnosticsFile,
+        scenario: definition,
       });
     signal?.throwIfAborted();
     const displayHost =
@@ -402,7 +409,16 @@ export async function startLivesim2(
       spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], {
         stdio: "ignore",
       }).on("error", () => {});
-    return { url, close, diagnostics: proxy?.diagnostics };
+    if (proxy?.scenario)
+      console.info(
+        `Scenario ${proxy.scenario.scenarioId}; report: ${new URL("/scenario", url).href}`,
+      );
+    return {
+      url,
+      close,
+      diagnostics: proxy?.diagnostics,
+      scenario: proxy?.scenario,
+    };
   } catch (error) {
     await close();
     throw error;

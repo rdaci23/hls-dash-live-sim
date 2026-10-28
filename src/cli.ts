@@ -118,6 +118,11 @@ const startOptions = (builder) =>
       default: "127.0.0.1",
       description: "Use 0.0.0.0 explicitly for LAN streaming",
     })
+    .option("scenario", {
+      type: "string",
+      description:
+        "Run immutable logical segment/attempt rules from a scenario JSON file",
+    })
     .option("diagnostics-file", {
       type: "string",
       description:
@@ -154,6 +159,7 @@ async function runTemplate(name: string, args) {
         startLivesim2({
           signal,
           diagnosticsFile: args["diagnostics-file"],
+          scenarioFile: args.scenario,
           verbose: args.verbose,
           port: args.port,
           host: args.host,
@@ -170,6 +176,7 @@ async function runTemplate(name: string, args) {
         startHlsim({
           signal,
           diagnosticsFile: args["diagnostics-file"],
+          scenarioFile: args.scenario,
           verbose: args.verbose,
           port: args.port,
           host: args.host,
@@ -322,6 +329,7 @@ const program = yargs(hideBin(process.argv))
         faultConfigPath: args["fault-config"],
         faultProfile: args["fault-profile"],
         diagnosticsFile: args["diagnostics-file"],
+        scenarioFile: args.scenario,
         verbose: args.verbose,
         ...auth(args),
       };

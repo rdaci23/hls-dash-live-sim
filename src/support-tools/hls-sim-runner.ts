@@ -28,6 +28,7 @@ import {
 import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
+import { loadScenario, ScenarioEngine } from "./scenario.js";
 
 export interface HLSStartOptions {
   rendition?: "all" | "low" | "main";
@@ -55,6 +56,7 @@ export interface HLSStartOptions {
   forcePull?: boolean;
   signal?: AbortSignal;
   diagnosticsFile?: string;
+  scenarioFile?: string;
   verbose?: boolean;
 }
 export interface HLSStopOptions {
@@ -66,6 +68,7 @@ export interface HLSLogsOptions {
 export interface HlsSession {
   url: string;
   diagnostics?: SessionDiagnostics;
+  scenario?: ScenarioEngine;
   close(): Promise<void>;
 }
 
@@ -126,6 +129,9 @@ export async function startHlsim(
   options: HLSStartOptions = {},
 ): Promise<HlsSession> {
   options.signal?.throwIfAborted();
+  const definition = loadScenario(options.scenarioFile);
+  if (definition && options.proxy === false)
+    throw new Error("Scenarios require the HLS Node proxy");
   if (options.proxy === false && (options.diagnosticsFile || options.verbose))
     throw new Error(
       "Request diagnostics require the HLS Node proxy; MP4 VoD bypasses it",
@@ -146,6 +152,10 @@ export async function startHlsim(
     applyConfigOverride({ logging: { verbose: options.verbose } });
   if (options.proxy === false) return startVod(options, host, port);
   const dummy = options.dummyContent ?? !options.manifestUrl;
+  if (definition && !dummy)
+    throw new Error(
+      "HLS scenarios currently require generated sample media; origin-proxy segment identity is not supported yet",
+    );
   if (!dummy && !options.manifestUrl)
     throw new Error("Remote proxy mode requires --manifest-url");
   if (dummy && options.manifestUrl && options.preserveManifest)
@@ -235,6 +245,13 @@ export async function startHlsim(
     file: options.diagnosticsFile,
     verbose: () => getFaultConfig().logging?.verbose,
   });
+  let scenario: ScenarioEngine | undefined;
+  try {
+    if (definition) scenario = new ScenarioEngine(definition, diagnostics);
+  } catch (error) {
+    diagnostics.close();
+    throw error;
+  }
   const faults = new FaultRuntime();
   const transport = sessionServer(async (req, res, signal, trace) => {
     try {
@@ -248,7 +265,19 @@ export async function startHlsim(
             protocol: "hls",
             mode: dummy ? mode : "proxy",
             status: "ready",
+            scenario: scenario?.report().result,
           }),
+          { "Content-Type": "application/json" },
+          req.method,
+        );
+        return;
+      }
+      if (url.pathname === "/scenario") {
+        if (!scenario) throw new HttpError(404, "No scenario is active");
+        send(
+          res,
+          200,
+          JSON.stringify(scenario.report()),
           { "Content-Type": "application/json" },
           req.method,
         );
@@ -286,8 +315,11 @@ export async function startHlsim(
             "origin",
           );
       }
-      freezeState();
-      await faults.delay(signal, trace);
+      if (scenario) scenario.assertCompatible();
+      else {
+        freezeState();
+        await faults.delay(signal, trace);
+      }
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
           const rewritten = master.replace(
@@ -326,8 +358,22 @@ export async function startHlsim(
           throw new HttpError(410, "Segment retention period has expired");
         if (sequence >= end || !Number.isSafeInteger(sequence))
           throw new HttpError(404, "Segment is not available yet");
-        const status =
-          req.method === "HEAD" ? 0 : faults.segmentStatus(url.pathname, trace);
+        const status = scenario
+          ? scenario.decide(
+              {
+                kind: "media",
+                trackType: "video",
+                trackId: `video:${variants.findIndex((variant) => variant.uri.startsWith(match[1] + "/"))}`,
+                key: `hls:${match[1]}:number:${sequence}`,
+                locator: { kind: "number", value: String(sequence) },
+              },
+              req.headers.range,
+              trace,
+              req.method,
+            )
+          : req.method === "HEAD"
+            ? 0
+            : faults.segmentStatus(url.pathname, trace);
         if (status) {
           send(res, status, "Injected segment failure", {}, req.method);
           return;
@@ -351,7 +397,7 @@ export async function startHlsim(
           send(
             res,
             206,
-            req.method === "HEAD"
+            req.method === "HEAD" || scenario
               ? body.subarray(start, finish + 1)
               : faults.corrupt(
                   body.subarray(start, finish + 1),
@@ -368,7 +414,7 @@ export async function startHlsim(
           );
           return;
         }
-        if (req.method !== "HEAD")
+        if (req.method !== "HEAD" && !scenario)
           body = faults.corrupt(body, url.pathname, false, trace);
         send(
           res,
@@ -492,11 +538,16 @@ export async function startHlsim(
   } catch (error) {
     faults.close();
     await transport.close();
+    scenario?.close();
     diagnostics.close();
     throw error;
   }
   const url = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
   console.info(`HLS ${dummy ? mode : "origin proxy"} ready: ${url}`);
+  if (scenario)
+    console.info(
+      `Scenario ${scenario.scenarioId}; report: ${new URL("/scenario", url).href}`,
+    );
   if (!dummy)
     console.info("Proxy credentials are scoped to the manifest origin.");
   if (host === "0.0.0.0")
@@ -510,9 +561,11 @@ export async function startHlsim(
   return {
     url,
     diagnostics,
+    scenario,
     close: async () => {
       faults.close();
       await transport.close();
+      scenario?.close();
       diagnostics.close();
     },
   };

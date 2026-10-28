@@ -1,0 +1,108 @@
+{
+  "checkedAt": "2026-10-28T15:29:20.687Z",
+  "result": "passed",
+  "checks": [
+    {
+      "protocol": "hls",
+      "firstStatus": 404,
+      "retryStatus": 200,
+      "evidence": {
+        "failedRequestId": "0222d89b-c20e-427e-90a3-09cd75c7733f",
+        "retryRequestId": "00021214-a4ad-484a-a4de-52cfb2871de8",
+        "segmentId": "segment_21355772c570892bc9d42ccac61bfea6",
+        "attempts": [1, 2]
+      },
+      "report": {
+        "version": 1,
+        "scenarioId": "scenario_368008fa89e473d9a8cb7ff45bf4182d",
+        "sessionId": "f141232a-2724-4bd4-8a48-07e9f72c2c74",
+        "seed": 42,
+        "clock": "monotonic_session_elapsed",
+        "elapsedMs": 45.27024999999999,
+        "result": "passed",
+        "trackedDownloads": 1,
+        "unidentifiedMediaRequests": 0,
+        "tracks": ["video:0"],
+        "rules": [
+          {
+            "ruleId": "rule:0",
+            "target": {
+              "track": "video",
+              "segment": "next"
+            },
+            "attempts": [1],
+            "afterMs": 0,
+            "probability": 1,
+            "maxApplications": 1,
+            "status": 404,
+            "expectRetry": true,
+            "selected": 1,
+            "applied": 1,
+            "recovered": true,
+            "firstAttempt": 1,
+            "targetId": "segment_21355772c570892bc9d42ccac61bfea6",
+            "targetOrdinal": 1,
+            "result": "passed"
+          }
+        ]
+      }
+    },
+    {
+      "protocol": "dash",
+      "firstStatus": 404,
+      "retryStatus": 200,
+      "evidence": {
+        "failedRequestId": "ce706cc4-39d9-43b7-8d83-f1e7ca433d38",
+        "retryRequestId": "ea7b8325-ceb1-477c-8000-998dcef268a0",
+        "segmentId": "segment_e088a5c73df94d7273d30e9d0bab20aa",
+        "attempts": [1, 2]
+      },
+      "report": {
+        "version": 1,
+        "scenarioId": "scenario_368008fa89e473d9a8cb7ff45bf4182d",
+        "sessionId": "24ab59c0-1959-42b4-88fb-dd1e3a904052",
+        "seed": 42,
+        "clock": "monotonic_session_elapsed",
+        "elapsedMs": 86.37800000000016,
+        "result": "passed",
+        "trackedDownloads": 1,
+        "unidentifiedMediaRequests": 0,
+        "tracks": ["audio:0", "video:0"],
+        "rules": [
+          {
+            "ruleId": "rule:0",
+            "target": {
+              "track": "video",
+              "segment": "next"
+            },
+            "attempts": [1],
+            "afterMs": 0,
+            "probability": 1,
+            "maxApplications": 1,
+            "status": 404,
+            "expectRetry": true,
+            "selected": 1,
+            "applied": 1,
+            "recovered": true,
+            "firstAttempt": 1,
+            "targetId": "segment_e088a5c73df94d7273d30e9d0bab20aa",
+            "targetOrdinal": 1,
+            "result": "passed"
+          }
+        ]
+      }
+    }
+  ],
+  "baseRevision": "f1969fd",
+  "regularTests": {
+    "passed": 61,
+    "failed": 0,
+    "dockerTestsSkipped": 1
+  },
+  "dockerIntegration": {
+    "passed": 1,
+    "failed": 0
+  },
+  "browserEvidence": "scenario-browser-verification.json",
+  "repositoryPrivate": true
+}

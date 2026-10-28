@@ -10,15 +10,19 @@ import {
 import { getFaultConfig } from "./live-stream-fault-config.js";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
+import { ScenarioEngine, ScenarioDefinition } from "./scenario.js";
+import { DashScenarioIndex } from "./dash-scenario-index.js";
 export interface DashFaultProxyOptions {
   listenPort: number;
   upstreamPort: number;
   host?: string;
   manifestPath?: string;
   diagnosticsFile?: string;
+  scenario?: ScenarioDefinition;
 }
 export interface DashFaultProxy {
   diagnostics: SessionDiagnostics;
+  scenario?: ScenarioEngine;
   close(): Promise<void>;
   upstreamBase: string;
 }
@@ -31,6 +35,15 @@ export async function startDashFaultProxy(
     file: options.diagnosticsFile,
     verbose: () => getFaultConfig().logging?.verbose,
   });
+  let scenario: ScenarioEngine | undefined;
+  try {
+    if (options.scenario)
+      scenario = new ScenarioEngine(options.scenario, diagnostics);
+  } catch (error) {
+    diagnostics.close();
+    throw error;
+  }
+  const scenarioIndex = scenario ? new DashScenarioIndex() : undefined;
   const faults = new FaultRuntime();
   const latest = new Map<
     string,
@@ -49,7 +62,22 @@ export async function startDashFaultProxy(
         send(
           res,
           200,
-          JSON.stringify({ protocol: "dash", status: "ready" }),
+          JSON.stringify({
+            protocol: "dash",
+            status: "ready",
+            scenario: scenario?.report().result,
+          }),
+          { "Content-Type": "application/json" },
+          req.method,
+        );
+        return;
+      }
+      if (request.pathname === "/scenario") {
+        if (!scenario) throw new HttpError(404, "No scenario is active");
+        send(
+          res,
+          200,
+          JSON.stringify(scenario.report()),
           { "Content-Type": "application/json" },
           req.method,
         );
@@ -86,12 +114,14 @@ export async function startDashFaultProxy(
         manifest ? "manifest" : segment ? "segment" : "other",
         "livesim2",
       );
-      const shouldFreeze = getFaultConfig().manifest?.freeze === "always";
+      if (scenario) scenario.assertCompatible();
+      const shouldFreeze =
+        !scenario && getFaultConfig().manifest?.freeze === "always";
       if (shouldFreeze !== frozen) {
         frozen = shouldFreeze;
         snapshots = frozen ? new Map(latest) : new Map();
       }
-      await faults.delay(signal, trace);
+      if (!scenario) await faults.delay(signal, trace);
       if (manifest && frozen && snapshots.has(manifestKey)) {
         const cached = snapshots.get(manifestKey);
         faults.frozen(trace);
@@ -103,8 +133,20 @@ export async function startDashFaultProxy(
           503,
           "Frozen manifest capacity reached; unfreeze before requesting another stream",
         );
-      const failure =
-        segment && req.method !== "HEAD"
+      const logical = scenarioIndex?.resolve(
+        upstreamBase + request.pathname + request.search,
+      );
+      if (
+        scenario &&
+        !scenario.settled &&
+        segment &&
+        !logical &&
+        req.method === "GET"
+      )
+        scenario.unidentifiedMedia();
+      const failure = scenario
+        ? scenario.decide(logical, req.headers.range, trace, req.method)
+        : segment && req.method !== "HEAD"
           ? faults.segmentStatus(request.pathname, trace)
           : 0;
       if (failure) {
@@ -131,6 +173,8 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
+          if (scenarioIndex && !scenario.settled)
+            scenarioIndex.observe(text, remote.url);
           latest.set(manifestKey, remote);
           if (frozen) {
             snapshots.set(manifestKey, remote);
@@ -140,7 +184,7 @@ export async function startDashFaultProxy(
         }
       }
       const body =
-        segment && req.method !== "HEAD"
+        segment && req.method !== "HEAD" && !scenario
           ? faults.corrupt(
               remote.body,
               request.pathname,
@@ -174,15 +218,18 @@ export async function startDashFaultProxy(
   } catch (error) {
     faults.close();
     await transport.close();
+    scenario?.close();
     diagnostics.close();
     throw error;
   }
   return {
     upstreamBase,
     diagnostics,
+    scenario,
     close: async () => {
       faults.close();
       await transport.close();
+      scenario?.close();
       diagnostics.close();
     },
   };

@@ -57,9 +57,11 @@ fault.applied        same faultId
 request.completed    status 404
 ```
 
-These IDs identify observations and activations. They do not yet identify a
-logical track, segment or retry attempt; that targeting belongs to the scenario
-engine milestone.
+These IDs identify observations and activations. With an active [scenario](scenarios.md),
+recognized media also carries logical `trackId`, `segmentId`, `segmentOrdinal` and
+`attempt` fields. Scenario selection/results add a `ruleId` and definition
+fingerprint (`scenarioId`). `scenario.attempt`, `scenario.matched` and
+`scenario.result` events connect that identity with the HTTP outcome.
 
 ## Event meanings
 
@@ -96,7 +98,8 @@ queries and fragments. Authorization headers, cookies, media/key bodies, profile
 labels, config paths and raw exception messages are omitted. A per-session keyed
 hash identifies resources: the same target gets the same ID within a session,
 and different sessions use different resource IDs. A changed signed URL gets a
-different ID; this does not yet normalize logical segment identities. Responses
+different ID. Scenario logical segment IDs separately normalize the supported
+track/template/sequence identity, including cache queries on local DASH media. Responses
 and the normal `--show-manifest`/template/Docker console output are outside the
 diagnostic export format.
 

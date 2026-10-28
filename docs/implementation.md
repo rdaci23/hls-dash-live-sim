@@ -2,15 +2,16 @@
 
 Version 0.2.0 implements the first two roadmap milestones for the validated HLS
 sample, HLS origin proxy and pinned livesim2 adapter. The GitHub repository and npm
-package remain private. Public-beta packaging, device coverage and deterministic
-scenario automation are later milestones.
+package remain private. Public-beta packaging, device coverage and expanded
+scenario actions are later milestones.
 
 The agreed public release gate requires playback and fault recovery in hls.js,
 dash.js and a physical Roku. Apple and Android remain unverified until separately
 tested. Ordinary supported streams must be valid; broken manifests, codecs and
 timing belong to explicit fault scenarios. This is a standalone project with no
-external framework integration. The repeatability model in Q3 (track/segment/attempt targets
-alongside timed actions) is still an open design decision.
+external framework integration. Q3's repeatability model now has track/segment/attempt
+targeting, session-time gates, seeded choices and explicit application caps for
+the initial HTTP status scenarios.
 
 ## Safe operation
 
@@ -104,6 +105,32 @@ integration; [diagnostics-verification.json](diagnostics-verification.json) reco
 the checks, including redaction, cross-process IDs, bounded capture, disk failure,
 cancellation and a deliberately suppressed filesystem watcher.
 
+## Repeatable HTTP scenarios
+
+Immutable scenario files now select a track, a next/each/exact logical segment,
+a download attempt, a session-time window and a seeded probability. Rule order
+and application caps are explicit. HLS sample renditions have stable aliases;
+DASH media identities come from observed MPD templates/timelines, preserve integer
+precision and exclude init/audio resources from a video rule. Single byte ranges
+have separate retry counters. Invalid/unidentified targets and capacity exhaustion
+cannot silently pass a run. Manual faults cannot be mixed with an active scenario.
+
+The first preset returns 404 for the next video's first GET and requires the next
+attempt of that same download to return nonempty 200/206 media. Reports and
+diagnostic events carry the logical target, ordinal, attempt and rule IDs.
+`npm run scenario:verify` independently verifies both protocols over HTTP, including
+the real livesim2 engine, and exits nonzero on failed assertions. See
+[scenarios.md](scenarios.md) and [scenario-verification.json](scenario-verification.json).
+
+Chrome also recovered from this specific preset in hls.js 1.7.3 and dash.js 5.2.1.
+Both players decoded more than 5100 frames after their injected failure/retry;
+HLS emitted the expected nonfatal 404 load error, and DASH emitted no player error
+events. The test used one HLS rendition and disabled DASH UTC synchronization.
+DASH still logged its previously observed period-switch console exceptions while
+playback continued. This verifies one browser recovery case, with broader ABR,
+clock/default settings and physical Roku coverage still pending. Detailed evidence
+is in [scenario-browser-verification.json](scenario-browser-verification.json).
+
 ## Verification
 
 The baseline suite and protocol/security regressions cover port collision survival,
@@ -146,12 +173,13 @@ playback has not been verified.
   use native `--periods-per-hour` or equal durations that divide an hour.
 - The low-latency preset is unavailable. LL-HLS/LL-DASH, real DRM and ad insertion
   still require transport support, real fixtures and separate validation.
-- Browser recovery assertions, the DASH console exceptions, default/offline UTC
-  synchronization and physical Roku playback/recovery need verification before release.
+- Broader browser recovery/ABR scenarios, the DASH console exceptions, default/offline
+  UTC synchronization and physical Roku playback/recovery remain release checks.
 - Sports/news/OTT/mobile presets report actual sample properties. Mobile selects
   the small rendition; news extends the window. They no longer promise 4K or ads.
-- Random failures remain unseeded. Timed rules, scenario counters, session control APIs and
-  recovery assertions are the next milestone. Independently controlled sessions
+- Manual random failures remain unseeded; scenario rules have seeded probability,
+  counters and time gates. HLS origin scenario identity, more fault actions and
+  general recovery assertions remain later work. Independently controlled sessions
   should run as separate processes with separate fault files.
 - Saved source URLs may contain secrets. Templates and auth files remain ignored;
   any future scenario export must redact secrets.

@@ -74,8 +74,8 @@ matching GET request across resources. Quick Inject always rearms it; resetting 
 saves merge the latest valid file under a writer lock; simultaneous API writers
 receive HTTP 409 and can retry. Manual editors do not participate in that lock.
 Preserve the generated `_oneShot` identifiers when editing unrelated settings. Random
-faults currently use a 40 percent probability per request; seeded scenarios come
-in the next roadmap milestone.
+manual faults use a 40 percent probability per request. Scenario rules use a seed
+and explicit probability, as described below.
 
 For LAN control, supply a token of at least 16 characters using
 `HLS_DASH_CONTROL_TOKEN` or `--control-token`, then enter it in the control page:
@@ -106,6 +106,24 @@ URLs, credentials and media/key bodies are omitted; resources have opaque IDs.
 Use `--verbose` for structured stderr events, or download recent events from the
 stream server's `/diagnostics` endpoint. History retains 2000 events; optional
 files stop at 10 MiB with an explicit marker. [Format and limits](docs/diagnostics.md).
+
+## Repeatable scenarios
+
+Fail the first request for the next video segment, then verify its retry:
+
+```sh
+mkdir -p output
+npm start -- livesim --sim-type hls --scenario examples/scenarios/next-video-retry.json --fault-config output/scenario-faults.json
+```
+
+Use `--sim-type dash` for the pinned DASH engine. The stream server's `/scenario`
+endpoint reports the selected logical track/segment, attempt counts and outcome.
+Rules also support exact Number/Time selectors, time windows, seeded probability
+and explicit application caps. Manual faults must be off. HLS scenario support
+currently uses generated sample media.
+
+`npm run scenario:verify` runs both HTTP checks automatically (Docker required for
+DASH); add `-- --protocol hls` for HLS only. [Scenario format and replay](docs/scenarios.md).
 
 ## Streaming commands
 

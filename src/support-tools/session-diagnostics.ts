@@ -9,7 +9,8 @@ export type DiagnosticFault =
   | "hls.keyFailure"
   | "hls.keyMismatch"
   | "response.latency"
-  | "manifest.freeze";
+  | "manifest.freeze"
+  | "scenario.status";
 type EventType =
   | "session.started"
   | "session.closed"
@@ -24,11 +25,24 @@ type EventType =
   | "fault.applied"
   | "fault.cancelled"
   | "diagnostics.file_limit"
-  | "diagnostics.file_error";
+  | "diagnostics.file_error"
+  | "scenario.started"
+  | "scenario.attempt"
+  | "scenario.matched"
+  | "scenario.result"
+  | "scenario.closed";
 type ResourceKind = "manifest" | "segment" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error";
 export interface DiagnosticFields {
+  scenarioId?: string;
+  ruleId?: string;
+  trackId?: string;
+  segmentId?: string;
+  segmentOrdinal?: number;
+  attempt?: number;
+  applications?: number;
+  result?: "pending" | "passed" | "failed" | "incomplete";
   requestId?: string;
   method?: string;
   resourceId?: string;
@@ -68,6 +82,7 @@ export interface DiagnosticsOptions {
 export const TRACE_HEADERS =
   "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids";
 const values = {
+  result: ["pending", "passed", "failed", "incomplete"],
   method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
   resourceKind: ["manifest", "segment", "key", "other"],
   resourceSource: ["sample", "origin", "livesim2", "local"],
@@ -79,6 +94,7 @@ const values = {
     "hls.keyMismatch",
     "response.latency",
     "manifest.freeze",
+    "scenario.status",
   ],
   mode: ["once", "random", "always"],
   reason: [
@@ -108,6 +124,18 @@ function allowedField(key: string, value: unknown): boolean {
     );
   if (key === "resourceId")
     return typeof value === "string" && /^resource_[a-f0-9]{24}$/.test(value);
+  if (key === "scenarioId")
+    return typeof value === "string" && /^scenario_[a-f0-9]{32}$/.test(value);
+  if (key === "segmentId")
+    return typeof value === "string" && /^segment_[a-f0-9]{32}$/.test(value);
+  if (key === "ruleId")
+    return typeof value === "string" && /^rule:\d{1,2}$/.test(value);
+  if (key === "trackId")
+    return (
+      typeof value === "string" && /^(video|audio|text):\d{1,3}$/.test(value)
+    );
+  if (key === "attempt" || key === "applications" || key === "segmentOrdinal")
+    return Number.isSafeInteger(value) && Number(value) >= 1;
   if (key === "status")
     return (
       Number.isInteger(value) && Number(value) >= 100 && Number(value) <= 599
@@ -219,6 +247,14 @@ export class SessionDiagnostics {
     };
     // Copy a fixed set of fields even when called from plain JS with extra data.
     for (const key of [
+      "scenarioId",
+      "ruleId",
+      "trackId",
+      "segmentId",
+      "segmentOrdinal",
+      "attempt",
+      "applications",
+      "result",
       "requestId",
       "method",
       "resourceId",
@@ -337,6 +373,8 @@ export class RequestTrace {
   private effects: FaultEffect[] = [];
   private resourceFields: DiagnosticFields;
   private method: string;
+  private outcome?: RequestOutcome;
+  private observers: Array<(outcome: RequestOutcome) => void> = [];
   constructor(
     private diagnostics: SessionDiagnostics,
     req: IncomingMessage,
@@ -370,6 +408,29 @@ export class RequestTrace {
     };
     this.record("request.resource");
   }
+  logical(
+    fields: Pick<
+      DiagnosticFields,
+      "scenarioId" | "trackId" | "segmentId" | "segmentOrdinal" | "attempt"
+    >,
+  ): void {
+    Object.assign(this.resourceFields, fields);
+  }
+  onOutcome(observer: (outcome: RequestOutcome) => void): void {
+    if (this.outcome) observer(this.outcome);
+    else this.observers.push(observer);
+  }
+  private notify(outcome: RequestOutcome): void {
+    this.outcome = outcome;
+    for (const observer of this.observers) {
+      try {
+        observer(outcome);
+      } catch {
+        this.record("request.error", { reason: "handler_error" });
+      }
+    }
+    this.observers = [];
+  }
   record(event: EventType, fields: DiagnosticFields = {}): void {
     this.diagnostics.record(event, {
       ...this.resourceFields,
@@ -402,6 +463,14 @@ export class RequestTrace {
           : Number(this.res.getHeader("content-length") ?? 0),
       durationMs: Math.round((performance.now() - this.started) * 1000) / 1000,
     });
+    this.notify({
+      outcome: "completed",
+      status: this.res.statusCode,
+      bodyBytes:
+        this.method === "HEAD"
+          ? 0
+          : Number(this.res.getHeader("content-length") ?? 0),
+    });
   }
   cancel(reason: CancelReason): void {
     if (this.terminal) return;
@@ -412,5 +481,15 @@ export class RequestTrace {
       ...(this.res.headersSent ? { status: this.res.statusCode } : {}),
       durationMs: Math.round((performance.now() - this.started) * 1000) / 1000,
     });
+    this.notify({
+      outcome: "cancelled",
+      status: this.res.headersSent ? this.res.statusCode : undefined,
+      bodyBytes: 0,
+    });
   }
+}
+export interface RequestOutcome {
+  outcome: "completed" | "cancelled";
+  status?: number;
+  bodyBytes: number;
 }

@@ -63,5 +63,7 @@ on the stream port. See [event meanings, redaction and limits](diagnostics.md).
 Players buffer ahead. A queued fault takes effect when the matching resource is
 requested, not when previously buffered media plays. Freeze can expose this delay
 as the player drains its buffer. Recorded consumption/application/cancellation
-events show what the simulator did. Deterministic timed rules and player recovery
-assertions remain later roadmap work.
+events show what the simulator did. Deterministic status rules and HTTP retry
+assertions are available through [scenario rules](scenarios.md). The first
+video-404/retry preset has a browser check; broader recovery and physical Roku
+coverage remain release work.

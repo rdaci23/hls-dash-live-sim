@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "id": "next-video-retry",
+      "target": { "track": "video", "segment": "next" },
+      "attempts": [1],
+      "status": 404,
+      "maxApplications": 1,
+      "expectRetry": true
+    }
+  ]
+}

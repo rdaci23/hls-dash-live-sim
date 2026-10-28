@@ -25,7 +25,8 @@
     "fault-control": "node dist/cli.js fault-control",
     "test": "npm run build && node --test test/*.test.cjs",
     "test:docker": "npm run build && node scripts/run-docker-tests.cjs",
-    "fixtures": "node scripts/generate-fixtures.cjs"
+    "fixtures": "node scripts/generate-fixtures.cjs",
+    "scenario:verify": "npm run build && node scripts/verify-scenarios.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
