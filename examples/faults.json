@@ -1,0 +1,19 @@
+{
+  "profile": "default",
+  "segment": {
+    "malformed": "off",
+    "forbidden": "off",
+    "missing": "off",
+    "latencyMs": 0
+  },
+  "drm": {
+    "licenseFailure": "off",
+    "keyRotationMismatch": "off"
+  },
+  "manifest": {
+    "freeze": "off"
+  },
+  "logging": {
+    "verbose": false
+  }
+}

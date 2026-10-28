@@ -1,0 +1,38 @@
+#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+const SOURCE_DIRS = [
+  path.join(ROOT, 'src', 'support-tools', 'assets'),
+  path.join(ROOT, 'assets')
+];
+const DEST_DIR = path.join(ROOT, 'dist', 'support-tools', 'assets');
+
+function copyAssets() {
+  fs.rmSync(DEST_DIR, { recursive: true, force: true });
+
+  let copiedAny = false;
+  for (const srcDir of SOURCE_DIRS) {
+    if (!fs.existsSync(srcDir)) continue;
+    if (!copiedAny) {
+      fs.mkdirSync(DEST_DIR, { recursive: true });
+      copiedAny = true;
+    }
+    fs.cpSync(srcDir, DEST_DIR, { recursive: true });
+  }
+
+  return copiedAny;
+}
+
+try {
+  const didCopy = copyAssets();
+  if (didCopy) {
+    console.info(`Copied static assets to ${DEST_DIR}`);
+  } else {
+    console.info('No static asset directories found to copy.');
+  }
+} catch (err) {
+  console.error('Failed to copy static assets:', err);
+  process.exitCode = 1;
+}

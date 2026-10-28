@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.*
+.hls-dash-faults.json
+.hls-dash-manifest-templates.json
+auth*.json
