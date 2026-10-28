@@ -19,6 +19,34 @@ import {
   saveTemplate,
 } from "./support-tools/stream-templates.js";
 
+async function starting<T extends { close(): Promise<void> }>(
+  start: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const interrupt = () => {
+    process.exitCode = 130;
+    controller.abort(new Error("Startup cancelled by SIGINT"));
+  };
+  const terminate = () => {
+    process.exitCode = 143;
+    controller.abort(new Error("Startup cancelled by SIGTERM"));
+  };
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  let session: T | undefined;
+  try {
+    session = await start(controller.signal);
+    controller.signal.throwIfAborted();
+    return session;
+  } catch (error) {
+    await session?.close();
+    throw error;
+  } finally {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+  }
+}
+
 async function supervise(
   session: { url: string; close(): Promise<void> },
   show: boolean,
@@ -113,33 +141,42 @@ async function runTemplate(name: string, args) {
       : "hls");
   if (type === "dash") {
     await supervise(
-      await startLivesim2({
-        port: args.port,
-        host: args.host,
-        asset: template.isDynamic ? undefined : template.asset,
-        manifestUrl: template.sourceUrl,
-        ...auth(args),
-      }),
+      await starting((signal) =>
+        startLivesim2({
+          signal,
+          port: args.port,
+          host: args.host,
+          asset: template.isDynamic ? undefined : template.asset,
+          manifestUrl: template.sourceUrl,
+          ...auth(args),
+        }),
+      ),
       args.showManifest,
     );
   } else {
     await supervise(
-      await startHlsim({
-        port: args.port,
-        host: args.host,
-        mode: args.mode,
-        windowSegments: template.windowSegments,
-        rendition: template.rendition,
-        manifestUrl: template.sourceUrl,
-        dummyContent: template.sourceUrl ? false : true,
-        ...auth(args),
-      }),
+      await starting((signal) =>
+        startHlsim({
+          signal,
+          port: args.port,
+          host: args.host,
+          mode: args.mode,
+          windowSegments: template.windowSegments,
+          rendition: template.rendition,
+          manifestUrl: template.sourceUrl,
+          dummyContent: template.sourceUrl ? false : true,
+          ...auth(args),
+        }),
+      ),
       args.showManifest,
     );
   }
 }
 
 const program = yargs(hideBin(process.argv))
+  .fail((message, error) => {
+    throw error ?? new Error(message);
+  })
   .scriptName("hls-dash-live-sim")
   .usage("$0 <command> [options]")
   .version("0.2.0")
@@ -273,10 +310,11 @@ const program = yargs(hideBin(process.argv))
         faultProfile: args["fault-profile"],
         ...auth(args),
       };
-      const session =
+      const session = await starting(async (signal) =>
         type === "dash"
           ? await startLivesim2({
               ...common,
+              signal,
               faultProxy: args["fault-proxy"],
               asset: args.asset,
               periodCount: args.periods,
@@ -286,11 +324,13 @@ const program = yargs(hideBin(process.argv))
             })
           : await startHlsim({
               ...common,
+              signal,
               mode: args.mode,
               windowSegments: args["window-segments"],
               proxy: args.proxy,
               dummyContent: args["dummy-content"],
-            });
+            }),
+      );
       await supervise(session, args.showManifest);
     },
   )
@@ -362,5 +402,5 @@ program
   .parseAsync()
   .catch((error) => {
     console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
+    process.exitCode ??= 1;
   });

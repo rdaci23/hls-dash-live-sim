@@ -114,6 +114,22 @@ test("HLS sample, control UI and cross-process live fault changes", async (t) =>
     200,
     "one-shot injection expires",
   );
+  const previousArm = JSON.parse(await fs.readFile(configPath, "utf8"))._oneShot
+    .missing;
+  assert.equal((await fetch(`${ui}/reset`, { method: "POST" })).status, 200);
+  response = await fetch(`${ui}/inject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "segment.missing" }),
+  });
+  assert.equal(response.status, 200);
+  assert.notEqual((await response.json()).config._oneShot.missing, previousArm);
+  await waitFor(async () => (await fetch(segmentUrl)).status === 404, logs);
+  assert.equal(
+    (await fetch(segmentUrl)).status,
+    200,
+    "rapid reset/inject rearms exactly one request",
+  );
 
   await fs.writeFile(
     configPath,

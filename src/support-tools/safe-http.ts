@@ -232,6 +232,54 @@ export function closeServer(server: http.Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
+/** Own every request from entry, including artificial latency and shutdown. */
+export function sessionServer(
+  handler: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    signal: AbortSignal,
+  ) => Promise<void>,
+): { server: http.Server; close(): Promise<void> } {
+  const controllers = new Set<AbortController>();
+  const pending = new Set<Promise<void>>();
+  let closing: Promise<void> | undefined;
+  const server = http.createServer((req, res) => {
+    const controller = new AbortController();
+    controllers.add(controller);
+    const disconnect = () => {
+      if (!res.writableEnded) controller.abort();
+    };
+    res.once("close", disconnect);
+    if (closing) controller.abort();
+    const work = Promise.resolve()
+      .then(() => {
+        controller.signal.throwIfAborted();
+        return handler(req, res, controller.signal);
+      })
+      .catch(() => {
+        if (!res.destroyed) res.destroy();
+      })
+      .finally(() => {
+        res.removeListener("close", disconnect);
+        controllers.delete(controller);
+        pending.delete(work);
+      });
+    pending.add(work);
+  });
+  return {
+    server,
+    close() {
+      if (!closing)
+        closing = (async () => {
+          for (const controller of controllers) controller.abort();
+          await closeServer(server);
+          await Promise.allSettled([...pending]);
+        })();
+      return closing;
+    },
+  };
+}
+
 export function send(
   res: http.ServerResponse,
   status: number,
@@ -239,6 +287,7 @@ export function send(
   headers: Record<string, string> = {},
   method = "GET",
 ): void {
+  if (res.destroyed) return;
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",

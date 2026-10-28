@@ -4,6 +4,8 @@ import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import http from "node:http";
 import { randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
+import { validateDashAsset } from "./dash-asset.js";
 import {
   OriginPolicy,
   fetchRemote,
@@ -49,6 +51,7 @@ export interface LivesimStartOptions {
   periodDurations?: number[];
   periodStartTimes?: number[];
   periodsPerHour?: number;
+  signal?: AbortSignal;
 }
 export interface LivesimStopOptions {
   name?: string;
@@ -64,11 +67,12 @@ export async function fetchMPD(
   url: string,
   auth: { token?: string; header?: string; file?: string } = {},
   allowed: string[] = [],
+  signal?: AbortSignal,
 ): Promise<string> {
   const response = await fetchRemote(
     url,
     new OriginPolicy(url, auth, allowed),
-    { maxBytes: 4 * 1024 * 1024 },
+    { maxBytes: 4 * 1024 * 1024, signal },
   );
   if (response.status !== 200)
     throw new Error(`MPD origin returned HTTP ${response.status}`);
@@ -78,8 +82,9 @@ export async function analyzeMPD(
   url: string,
   auth = {},
   allowed: string[] = [],
+  signal?: AbortSignal,
 ): Promise<MPDInfo> {
-  return parseMPD(await fetchMPD(url, auth, allowed), url);
+  return parseMPD(await fetchMPD(url, auth, allowed, signal), url);
 }
 
 /** v1.7 uses path options; arbitrary segment duration cannot change encoded media. */
@@ -168,6 +173,8 @@ function periodsOption(options: LivesimStartOptions): number | undefined {
 export async function startLivesim2(
   options: LivesimStartOptions = {},
 ): Promise<DashSession> {
+  const signal = options.signal;
+  signal?.throwIfAborted();
   const port = portNumber(options.port ?? 8888);
   const host = bindHost(options.host);
   await assertPortAvailable(port, host);
@@ -191,6 +198,7 @@ export async function startLivesim2(
             file: options.authFile,
           },
           options.allowedOrigins,
+          signal,
         )
       : undefined);
   const asset = options.asset ?? "sample";
@@ -208,9 +216,8 @@ export async function startLivesim2(
     );
   if (!fs.existsSync(path.join(assetRoot, "manifest.mpd")))
     throw new Error("DASH asset must contain manifest.mpd");
-  parseMPD(
+  validateDashAsset(
     fs.readFileSync(path.join(assetRoot, "manifest.mpd"), "utf8"),
-    "fixture://manifest.mpd",
   );
   setFaultConfigPath(
     options.faultConfigPath ??
@@ -220,8 +227,9 @@ export async function startLivesim2(
   if (options.faultProfile)
     applyConfigOverride({ profile: options.faultProfile });
   try {
-    await exec("docker", ["info"], { timeout: 15000 });
+    await exec("docker", ["info"], { timeout: 15000, signal });
   } catch {
+    signal?.throwIfAborted();
     throw new Error(
       "Docker daemon is not available; start Docker Desktop and retry",
     );
@@ -241,9 +249,12 @@ export async function startLivesim2(
     throw new Error(
       `Container ${name} already exists; choose another --name or stop its owning session`,
     );
+  signal?.throwIfAborted();
+  const sessionId = randomUUID();
+  const sessionLabel = "io.hls-dash-live-sim.session";
   const image = options.image ?? DEFAULT_IMAGE;
   if (options.forcePull)
-    await exec("docker", ["pull", image], { timeout: 120000 });
+    await exec("docker", ["pull", image], { timeout: 120000, signal });
   const internalPort =
     options.faultProxy === false ? port : await freeInternalPort();
   const args = [
@@ -253,6 +264,8 @@ export async function startLivesim2(
     "--name",
     name,
     ...ownershipArgs(),
+    "--label",
+    `${sessionLabel}=${sessionId}`,
     "-p",
     `${options.faultProxy === false ? host : "127.0.0.1"}:${internalPort}:8888`,
     "-v",
@@ -266,46 +279,71 @@ export async function startLivesim2(
       "persist-repdata is not supported by the read-only fixture adapter",
     );
   }
-  let started = false;
+  let attempted = false;
   let proxy: Awaited<ReturnType<typeof startDashFaultProxy>> | undefined;
-  const close = async () => {
-    await proxy?.close();
-    if (started) {
-      await stopLivesim2({ name });
-      started = false;
-    }
-  };
-  try {
-    try {
-      await exec("docker", args, { timeout: 120000 });
-      started = true;
-    } catch (error) {
-      // Docker may create a container before a mount failure. Remove only that
-      // exact returned ID after verifying both ownership labels.
-      const createdId = String(
-        (error as { stdout?: string }).stdout ?? "",
-      ).trim();
-      if (/^[a-f0-9]{64}$/.test(createdId) && assertOwnedContainer(name)) {
-        const inspected = await exec("docker", [
-          "inspect",
-          "--format",
-          "{{.Id}}",
-          name,
-        ]);
-        if (inspected.stdout.trim() === createdId)
-          await exec("docker", ["rm", name]);
+  let closing: Promise<void> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      try {
+        await proxy?.close();
+      } finally {
+        if (attempted) {
+          // An interrupted client may not have printed the newly created ID.
+          // Select by a unique session label, then verify workspace ownership.
+          const result = await exec(
+            "docker",
+            [
+              "ps",
+              "-a",
+              "--filter",
+              `label=${sessionLabel}=${sessionId}`,
+              "--format",
+              "{{.ID}}",
+            ],
+            { timeout: 15000 },
+          );
+          for (const id of result.stdout.trim().split(/\s+/).filter(Boolean)) {
+            const inspected = JSON.parse(
+              (await exec("docker", ["inspect", id], { timeout: 15000 }))
+                .stdout,
+            )[0];
+            if (
+              inspected.Config?.Labels?.[sessionLabel] === sessionId &&
+              assertOwnedContainer(id)
+            )
+              await exec("docker", ["rm", "-f", inspected.Id], {
+                timeout: 15000,
+              });
+          }
+        }
       }
+    })());
+  try {
+    signal?.throwIfAborted();
+    attempted = true;
+    try {
+      // Let the daemon acknowledge creation before cleanup. Killing this client
+      // on SIGINT can otherwise leave a container created after the cleanup scan.
+      await exec("docker", args, { timeout: 120000 });
+    } catch {
+      signal?.throwIfAborted();
       throw new Error(
         "Could not start the owned DASH container; check Docker logs and media mounts",
       );
     }
-    const deadline = Date.now() + 30000;
+    signal?.throwIfAborted();
+    const deadline = performance.now() + 30000;
     let ready = false;
     const upstream = `http://127.0.0.1:${internalPort}`;
-    while (Date.now() < deadline) {
+    while (performance.now() < deadline) {
+      signal?.throwIfAborted();
       try {
         const response = await fetch(upstream + manifestPath, {
-          signal: AbortSignal.timeout(1000),
+          signal: (
+            AbortSignal as typeof AbortSignal & {
+              any(signals: AbortSignal[]): AbortSignal;
+            }
+          ).any([AbortSignal.timeout(1000), ...(signal ? [signal] : [])]),
         });
         if (response.ok) {
           parseMPD(await response.text(), upstream + manifestPath);
@@ -313,8 +351,10 @@ export async function startLivesim2(
           break;
         }
         await response.body?.cancel();
-      } catch {}
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      } catch {
+        signal?.throwIfAborted();
+      }
+      await delay(200, undefined, { signal });
     }
     if (!ready) {
       const logs = await exec("docker", ["logs", "--tail", "10", name]);
@@ -329,6 +369,7 @@ export async function startLivesim2(
         host,
         manifestPath,
       });
+    signal?.throwIfAborted();
     const displayHost =
       host === "0.0.0.0" || host === "::"
         ? "127.0.0.1"

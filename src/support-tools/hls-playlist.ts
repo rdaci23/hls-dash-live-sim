@@ -1,6 +1,26 @@
+import { HttpError } from "./safe-http.js";
+
 export interface HlsSegment {
   duration: number;
   uri: string;
+}
+export function validateSupportedHls(text: string): void {
+  if (!text.trimStart().startsWith("#EXTM3U"))
+    throw new HttpError(422, "Origin did not return an HLS playlist");
+  if (/^#EXT-X-DEFINE[:\s]|\{\$[^}]+\}/m.test(text))
+    throw new HttpError(
+      422,
+      "HLS variable substitution (EXT-X-DEFINE) is not supported yet",
+    );
+  if (
+    /^#EXT-X-(PART|PART-INF|PRELOAD-HINT|RENDITION-REPORT|SKIP)(:|\s|$)|^#EXT-X-SERVER-CONTROL:.*(?:CAN-BLOCK-RELOAD=YES|CAN-SKIP-UNTIL=)/m.test(
+      text,
+    )
+  )
+    throw new HttpError(
+      422,
+      "Low-latency HLS parts, blocking reload and delta updates are not supported yet",
+    );
 }
 export function attributes(line: string): Record<string, string> {
   const result: Record<string, string> = {};
@@ -47,8 +67,7 @@ export function rewritePlaylist(
   base: string,
   register: (url: string, kind: "playlist" | "segment" | "key") => string,
 ): string {
-  if (!text.trimStart().startsWith("#EXTM3U"))
-    throw new Error("Origin did not return an HLS playlist");
+  validateSupportedHls(text);
   let variant = false;
   return text
     .split(/\r?\n/)

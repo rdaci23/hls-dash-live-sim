@@ -2,21 +2,22 @@ import {
   FaultMode,
   getFaultConfig,
   onFaultConfigChange,
+  faultModes,
 } from "./live-stream-fault-config.js";
+import { setTimeout as delay } from "node:timers/promises";
 export class FaultRuntime {
   private modes = new Map<string, FaultMode>();
+  private arms = new Map<string, string>();
   private consumed = new Set<string>();
   private unsubscribe = onFaultConfigChange((config) => {
-    const values = {
-      missing: config.segment?.missing,
-      forbidden: config.segment?.forbidden,
-      malformed: config.segment?.malformed,
-      "key-failure": config.drm?.licenseFailure,
-      "key-mismatch": config.drm?.keyRotationMismatch,
-    };
+    const values = faultModes(config);
     for (const [category, mode] of Object.entries(values))
-      if (this.modes.get(category) !== mode) {
+      if (
+        this.modes.get(category) !== mode ||
+        this.arms.get(category) !== config._oneShot?.[category]
+      ) {
         this.modes.set(category, mode);
+        this.arms.set(category, config._oneShot?.[category]);
         this.consumed.delete(category);
       }
   });
@@ -28,8 +29,10 @@ export class FaultRuntime {
     category: string,
     resource = "",
   ): boolean {
-    if (this.modes.get(category) !== mode) {
+    const arm = getFaultConfig()._oneShot?.[category];
+    if (this.modes.get(category) !== mode || this.arms.get(category) !== arm) {
       this.modes.set(category, mode);
+      this.arms.set(category, arm);
       this.consumed.delete(category);
     }
     if (!mode || mode === "off") return false;
@@ -47,17 +50,23 @@ export class FaultRuntime {
       return 403;
     return 0;
   }
-  corrupt(body: Buffer, resource: string): Buffer {
-    return this.trigger(
-      getFaultConfig().segment?.malformed,
-      "malformed",
-      resource,
+  corrupt(body: Buffer, resource: string, ranged = false): Buffer {
+    if (
+      !this.trigger(getFaultConfig().segment?.malformed, "malformed", resource)
     )
-      ? body.subarray(0, Math.max(1, Math.floor(body.length / 4)))
-      : body;
+      return body;
+    // Completed range responses must still match Content-Range exactly.
+    if (ranged) {
+      const damaged = Buffer.from(body);
+      for (let i = 0; i < damaged.length; i++) damaged[i] ^= 0xff;
+      return damaged;
+    }
+    return body.subarray(0, Math.max(1, Math.floor(body.length / 4)));
   }
 }
-export async function faultDelay(): Promise<void> {
+export async function faultDelay(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
   const ms = getFaultConfig().segment?.latencyMs ?? 0;
-  if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
+  if (ms) await delay(ms, undefined, { signal });
+  signal?.throwIfAborted();
 }

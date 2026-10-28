@@ -1,11 +1,10 @@
-import http from "node:http";
 import {
   OriginPolicy,
   fetchRemote,
   send,
   preflight,
   listen,
-  closeServer,
+  sessionServer,
   HttpError,
 } from "./safe-http.js";
 import { getFaultConfig } from "./live-stream-fault-config.js";
@@ -35,7 +34,7 @@ export async function startDashFaultProxy(
     string,
     { body: Buffer; headers: Record<string, string>; status: number }
   >();
-  const server = http.createServer(async (req, res) => {
+  const transport = sessionServer(async (req, res, signal) => {
     try {
       if (preflight(req, res, options.host)) return;
       const request = new URL(req.url ?? "/", "http://localhost");
@@ -56,6 +55,9 @@ export async function startDashFaultProxy(
       if (/^\/\//.test(req.url ?? ""))
         throw new HttpError(400, "Invalid proxy path");
       const manifest = request.pathname.toLowerCase().endsWith(".mpd");
+      // livesim2 puts stream options in the path. Query time/cache selectors must
+      // not let a client escape an active freeze or grow its snapshot cache.
+      const manifestKey = request.pathname;
       const segment = /\.(m4s|mp4|cmfv|cmfa|m4v|m4a|m4i)$/i.test(
         request.pathname,
       );
@@ -64,12 +66,17 @@ export async function startDashFaultProxy(
         frozen = shouldFreeze;
         snapshots = frozen ? new Map(latest) : new Map();
       }
-      await faultDelay();
-      if (manifest && frozen && snapshots.has(request.href)) {
-        const cached = snapshots.get(request.href);
+      await faultDelay(signal);
+      if (manifest && frozen && snapshots.has(manifestKey)) {
+        const cached = snapshots.get(manifestKey);
         send(res, cached.status, cached.body, cached.headers, req.method);
         return;
       }
+      if (manifest && frozen && snapshots.size >= 128)
+        throw new HttpError(
+          503,
+          "Frozen manifest capacity reached; unfreeze before requesting another stream",
+        );
       const failure =
         segment && req.method !== "HEAD"
           ? faults.segmentStatus(request.pathname)
@@ -78,14 +85,14 @@ export async function startDashFaultProxy(
         send(res, failure, "Injected DASH segment failure", {}, req.method);
         return;
       }
-      const controller = new AbortController();
-      res.once("close", () => {
-        if (!res.writableEnded) controller.abort();
-      });
       const remote = await fetchRemote(
         upstreamBase + request.pathname + request.search,
         policy,
-        { range: req.headers.range, signal: controller.signal },
+        {
+          range: req.headers.range,
+          signal,
+          maxBytes: manifest ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
+        },
       );
       if (manifest) {
         remote.headers["cache-control"] = "no-store";
@@ -94,14 +101,14 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          latest.set(request.href, remote);
-          if (frozen) snapshots.set(request.href, remote);
+          latest.set(manifestKey, remote);
+          if (frozen) snapshots.set(manifestKey, remote);
           if (latest.size > 128) latest.delete(latest.keys().next().value);
         }
       }
       const body =
         segment && req.method !== "HEAD"
-          ? faults.corrupt(remote.body, request.pathname)
+          ? faults.corrupt(remote.body, request.pathname, remote.status === 206)
           : remote.body;
       send(res, remote.status, body, remote.headers, req.method);
     } catch (error) {
@@ -117,6 +124,7 @@ export async function startDashFaultProxy(
         );
     }
   });
+  const server = transport.server;
   try {
     await listen(server, options.listenPort, options.host);
   } catch (error) {
@@ -127,7 +135,7 @@ export async function startDashFaultProxy(
     upstreamBase,
     close: () => {
       faults.close();
-      return closeServer(server);
+      return transport.close();
     },
   };
 }

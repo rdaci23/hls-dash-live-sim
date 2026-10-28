@@ -77,7 +77,7 @@ function renderPage(): string {
     <section>
       <h2>Quick Inject</h2>
       <div class="card">
-        <p style="margin-top:0; margin-bottom:12px; font-size:0.9rem; color:#475569;">Updates the shared configuration. Once applies to one matching request until reset. HLS key faults require a remote encrypted stream and do not apply to clear samples or DASH.</p>
+        <p style="margin-top:0; margin-bottom:12px; font-size:0.9rem; color:#475569;">Updates the shared configuration. Once applies to one matching request; Quick Inject rearms it. HLS key faults require a remote encrypted stream and do not apply to clear samples or DASH.</p>
         <div class="quick-grid">
           <button class="warning" data-inject="segment.malformed">Inject Malformed Segment</button>
           <button class="warning" data-inject="segment.forbidden">Inject 403 Segment</button>
@@ -127,8 +127,6 @@ function renderPage(): string {
           <label>Manifest Freeze
             <select data-key="manifest.freeze">
               <option value="off">Off</option>
-              <option value="once">Once</option>
-              <option value="random">Random</option>
               <option value="always">Always</option>
             </select>
           </label>
@@ -405,23 +403,23 @@ export async function startFaultServer(
 
     switch (type) {
       case "segment.malformed":
-        persistFaultConfig({ segment: { malformed: "once" } });
+        persistFaultConfig({ segment: { malformed: "once" } }, true);
         message = "Queued malformed segment injection";
         break;
       case "segment.forbidden":
-        persistFaultConfig({ segment: { forbidden: "once" } });
+        persistFaultConfig({ segment: { forbidden: "once" } }, true);
         message = "Queued 403 segment injection";
         break;
       case "segment.missing":
-        persistFaultConfig({ segment: { missing: "once" } });
+        persistFaultConfig({ segment: { missing: "once" } }, true);
         message = "Queued 404 segment injection";
         break;
       case "drm.licenseFailure":
-        persistFaultConfig({ drm: { licenseFailure: "once" } });
+        persistFaultConfig({ drm: { licenseFailure: "once" } }, true);
         message = "Queued license failure";
         break;
       case "drm.keyRotationMismatch":
-        persistFaultConfig({ drm: { keyRotationMismatch: "once" } });
+        persistFaultConfig({ drm: { keyRotationMismatch: "once" } }, true);
         message = "Queued key rotation mismatch";
         break;
       case "segment.latencySpike": {
@@ -483,10 +481,19 @@ export async function startFaultServer(
       error?.name === "SyntaxError" ||
       error?.constructor?.name === "ConfigValidationError";
     res
-      .status(invalid ? 400 : 500)
+      .status(
+        invalid
+          ? 400
+          : error?.constructor?.name === "ConfigConflictError"
+            ? 409
+            : 500,
+      )
       .json({
         ok: false,
-        error: invalid ? error.message : "Configuration could not be saved",
+        error:
+          invalid || error?.constructor?.name === "ConfigConflictError"
+            ? error.message
+            : "Configuration could not be saved",
       });
   });
   const listenPort = port;

@@ -5,6 +5,8 @@ dist/
 .env
 .env.*
 .hls-dash-faults.json
+.hls-dash-faults.json.lock
+.hls-dash-faults.json.*.tmp
 .hls-dash-manifest-templates.json
 auth*.json
 .playwright-cli/

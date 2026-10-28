@@ -12,26 +12,40 @@ The default panel is `http://127.0.0.1:19090`. For distinct working directories,
 pass the same absolute `--fault-config` path to both commands. See
 [network access](../README.md#network-access) before enabling LAN control.
 
-| Control | Supported effect |
-| --- | --- |
-| Segment missing | HTTP 404 before fetching or serving media. |
-| Segment forbidden | HTTP 403 before fetching or serving media. |
-| Malformed segment | Truncated media bytes in a completed HTTP response with accurate length. |
-| Latency | Fixed response delay from 0 to 60000 ms; this is not bandwidth throttling. |
-| Manifest freeze | Holds live HLS timelines/child playlists or the latest observed DASH MPD. Unfreezing resumes current live time. |
-| HLS key HTTP failure | HTTP 403 on a remote HLS key request. |
-| HLS key mismatch | A mismatching 16-byte HLS key response. Requires actual encrypted origin content. |
+| Control              | Supported effect                                                                                                                         |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Segment missing      | HTTP 404 before fetching or serving media.                                                                                               |
+| Segment forbidden    | HTTP 403 before fetching or serving media.                                                                                               |
+| Malformed segment    | Truncated media bytes in a completed full response; range responses instead corrupt bytes in place, preserving Content-Range and length. |
+| Latency              | Fixed response delay from 0 to 60000 ms; cancelled on disconnect or session shutdown. This is not bandwidth throttling.                  |
+| Manifest freeze      | Holds live HLS timelines/child playlists or the latest observed DASH MPD. Unfreezing resumes current live time.                          |
+| HLS key HTTP failure | HTTP 403 on a remote HLS key request.                                                                                                    |
+| HLS key mismatch     | A mismatching 16-byte HLS key response. Requires actual encrypted origin content.                                                        |
 
-Fault modes are `off`, `once`, `always` and `random`. A one-shot fault consumes one
-matching GET request across resources; HEAD requests do not consume it. Reset to
-`off` before queuing it again. Random uses 40 percent per matching request and is
+Segment and key fault modes are `off`, `once`, `always` and `random`. Freeze accepts
+only `off` and `always`; other values return HTTP 400. DASH freeze identifies a
+stream by its path, so changing cache-busting or time query parameters does not
+bypass it. Both proxies limit cached manifests to 128; requesting a new stream
+beyond the frozen snapshot limit returns HTTP 503 until unfreezing.
+
+A one-shot fault consumes one matching GET request across resources; HEAD requests
+and requests cancelled during artificial latency do not consume it. Quick Inject
+rearms the selected fault on each call. Resetting to `off` then `once` also works,
+even when another process observes only the final configuration file. Generated
+`_oneShot` identifiers make these arm changes durable; preserve them during unrelated
+manual edits. These are arm identifiers, not an event queue: multiple injections
+before consumption coalesce into the latest arm. Random uses 40 percent per matching request and is
 not yet seeded. There is no DRM license simulator; key controls do not affect DASH
 or the clear samples. The profile field is a session label, not a stored scenario.
 
 The JSON configuration is validated, saved atomically and watched through directory
 changes. Invalid edits keep the last valid config. Unknown fields and negative or
 excessive latency return HTTP 400; failed writes are reported rather than acknowledged
-as saved. Example configuration is in [examples/faults.json](../examples/faults.json).
+as saved. Partial API writes reread the latest valid file under an exclusive
+`.lock` file; concurrent cooperating writers return HTTP 409 and should retry.
+Manual file writers are outside this lock and can still race a save. If a process
+crashes during a save, confirm that its PID in the lock file has exited before
+removing that stale lock. Example configuration is in [examples/faults.json](../examples/faults.json).
 
 The API exposes `GET /config`, `POST /config`, `POST /inject`, `POST /reset` and
 `POST /profile`. Cross-origin control requests are rejected. A LAN control server

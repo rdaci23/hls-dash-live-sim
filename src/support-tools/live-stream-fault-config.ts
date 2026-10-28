@@ -14,16 +14,21 @@ export interface DRMFaultConfig {
   keyRotationMismatch?: FaultMode;
 }
 export interface ManifestFaultConfig {
-  freeze?: FaultMode;
+  freeze?: "off" | "always";
 }
+export type FaultCategory =
+  "missing" | "forbidden" | "malformed" | "key-failure" | "key-mismatch";
 export interface FaultConfig {
   profile?: string;
   segment?: SegmentFaultConfig;
   drm?: DRMFaultConfig;
   manifest?: ManifestFaultConfig;
   logging?: { verbose?: boolean };
+  /** Durable arm identifiers; preserve these when editing a configuration file. */
+  _oneShot?: Partial<Record<FaultCategory, string>>;
 }
 export class ConfigValidationError extends Error {}
+export class ConfigConflictError extends Error {}
 const DEFAULT_CONFIG: FaultConfig = {
   profile: "default",
   segment: { malformed: "off", forbidden: "off", missing: "off", latencyMs: 0 },
@@ -40,8 +45,15 @@ const schema = {
     latencyMs: "delay",
   },
   drm: { licenseFailure: "mode", keyRotationMismatch: "mode" },
-  manifest: { freeze: "mode" },
+  manifest: { freeze: "freeze" },
   logging: { verbose: "boolean" },
+  _oneShot: {
+    missing: "string",
+    forbidden: "string",
+    malformed: "string",
+    "key-failure": "string",
+    "key-mismatch": "string",
+  },
 };
 export function validateFaultConfig(
   input: unknown,
@@ -59,6 +71,11 @@ export function validateFaultConfig(
       const rule = rules[key];
       const label = `${prefix}${key}`;
       if (typeof rule === "object") check(entry, rule, label + ".");
+      else if (
+        rule === "freeze" &&
+        !["off", "always"].includes(entry as string)
+      )
+        throw new ConfigValidationError(`${label} supports only off or always`);
       else if (
         rule === "mode" &&
         !["off", "always", "random", "once"].includes(entry as string)
@@ -97,7 +114,35 @@ function merge(base: FaultConfig, patch: FaultConfig): FaultConfig {
     drm: { ...base.drm, ...patch.drm },
     manifest: { ...base.manifest, ...patch.manifest },
     logging: { ...base.logging, ...patch.logging },
+    _oneShot: { ...base._oneShot, ...patch._oneShot },
   };
+}
+export function faultModes(config: FaultConfig) {
+  return {
+    missing: config.segment?.missing,
+    forbidden: config.segment?.forbidden,
+    malformed: config.segment?.malformed,
+    "key-failure": config.drm?.licenseFailure,
+    "key-mismatch": config.drm?.keyRotationMismatch,
+  };
+}
+function arm(
+  base: FaultConfig,
+  patch: FaultConfig,
+  rearmOnce = false,
+): FaultConfig {
+  const next = merge(base, patch);
+  const previous = faultModes(base);
+  const requested = faultModes(patch);
+  for (const [category, mode] of Object.entries(faultModes(next))) {
+    if (
+      mode === "once" &&
+      (previous[category] !== "once" ||
+        (rearmOnce && requested[category] === "once"))
+    )
+      next._oneShot[category] = randomUUID();
+  }
+  return next;
 }
 let activeConfig = merge(DEFAULT_CONFIG, {});
 let activePath = path.resolve(process.cwd(), ".hls-dash-faults.json");
@@ -176,14 +221,35 @@ export function onFaultConfigChange(
 }
 export function applyConfigOverride(patch: Partial<FaultConfig>): void {
   validateFaultConfig(patch);
-  update(merge(activeConfig, patch));
+  update(arm(activeConfig, patch));
 }
-export function persistFaultConfig(patch: Partial<FaultConfig>): FaultConfig {
+export function persistFaultConfig(
+  patch: Partial<FaultConfig>,
+  rearmOnce = false,
+): FaultConfig {
   validateFaultConfig(patch);
-  const next = merge(activeConfig, patch);
   fs.mkdirSync(path.dirname(activePath), { recursive: true });
-  atomicWrite(activePath, next);
-  lastDiskText = JSON.stringify(next, null, 2) + "\n";
-  update(next);
-  return getFaultConfig();
+  const lock = `${activePath}.lock`;
+  let fd: number;
+  try {
+    fd = fs.openSync(lock, "wx", 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST")
+      throw new ConfigConflictError(
+        "Configuration is being saved by another writer; retry. If a writer crashed, remove the stale .lock file first.",
+      );
+    throw error;
+  }
+  try {
+    fs.writeFileSync(fd, String(process.pid));
+    // A directory watcher may still be waiting to observe the latest edit.
+    const next = arm(read(activePath), patch, rearmOnce);
+    atomicWrite(activePath, next);
+    lastDiskText = JSON.stringify(next, null, 2) + "\n";
+    update(next);
+    return getFaultConfig();
+  } finally {
+    fs.closeSync(fd);
+    fs.rmSync(lock, { force: true });
+  }
 }

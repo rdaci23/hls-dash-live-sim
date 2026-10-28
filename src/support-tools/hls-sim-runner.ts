@@ -1,7 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import http from "node:http";
-import { createHash } from "node:crypto";
+import { HlsResourceRegistry } from "./hls-resource-registry.js";
 import { execFileSync, spawn } from "node:child_process";
 import {
   OriginPolicy,
@@ -11,7 +10,7 @@ import {
   preflight,
   HttpError,
   listen,
-  closeServer,
+  sessionServer,
   bindHost,
   portNumber,
 } from "./safe-http.js";
@@ -24,7 +23,7 @@ import {
 import {
   mediaSegments,
   variantEntries,
-  rewritePlaylist,
+  validateSupportedHls,
 } from "./hls-playlist.js";
 import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
 import { FaultRuntime, faultDelay } from "./fault-runtime.js";
@@ -53,6 +52,7 @@ export interface HLSStartOptions {
   open?: boolean;
   noPull?: boolean;
   forcePull?: boolean;
+  signal?: AbortSignal;
 }
 export interface HLSStopOptions {
   name?: string;
@@ -81,6 +81,7 @@ export async function analyzeHLS(
   )
     throw new Error("Origin did not return an HLS playlist");
   const text = source.body.toString("utf8");
+  validateSupportedHls(text);
   const variants = variantEntries(text);
   const playlists = variants.length
     ? await Promise.all(
@@ -92,7 +93,9 @@ export async function analyzeHLS(
           );
           if (child.status !== 200)
             throw new Error("Could not inspect HLS child playlist");
-          return child.body.toString("utf8");
+          const playlist = child.body.toString("utf8");
+          validateSupportedHls(playlist);
+          return playlist;
         }),
       )
     : [text];
@@ -118,6 +121,7 @@ export async function analyzeHLS(
 export async function startHlsim(
   options: HLSStartOptions = {},
 ): Promise<HlsSession> {
+  options.signal?.throwIfAborted();
   const host = bindHost(options.host);
   const port = portNumber(options.port ?? 8899);
   const mode = options.mode ?? "live";
@@ -173,7 +177,8 @@ export async function startHlsim(
         ]),
     ].join("\n");
   const variants = dummy ? variantEntries(master) : [];
-  const startedAt = Date.now();
+  const startedAt = performance.now();
+  const wallStartedAt = Date.now();
   const timelines = new Map(
     variants.map((v) => [
       v.uri.split("/")[0],
@@ -181,15 +186,13 @@ export async function startHlsim(
         mediaSegments(fs.readFileSync(path.join(root, v.uri), "utf8")),
         mode,
         options.windowSegments,
-        Date.now,
+        () => performance.now(),
         startedAt,
+        wallStartedAt,
       ),
     ]),
   );
-  const resources = new Map<
-    string,
-    { url: string; kind: "playlist" | "segment" | "key" }
-  >();
+  const resources = new HlsResourceRegistry();
   const latest = new Map<string, string>();
   let frozen = false;
   let snapshots = new Map<string, string>();
@@ -201,20 +204,7 @@ export async function startHlsim(
     }
     for (const timeline of timelines.values()) timeline.setFrozen(next);
   }
-  const register = (
-    url: string,
-    kind: "playlist" | "segment" | "key",
-  ): string => {
-    policy.check(url);
-    const id = createHash("sha256")
-      .update(kind + ":" + url)
-      .digest("hex")
-      .slice(0, 32);
-    resources.set(id, { url, kind });
-    if (resources.size > 10000) resources.delete(resources.keys().next().value);
-    return `/r/${id}${kind === "playlist" ? ".m3u8" : kind === "key" ? ".key" : ".bin"}`;
-  };
-  const server = http.createServer(async (req, res) => {
+  const transport = sessionServer(async (req, res, signal) => {
     try {
       if (preflight(req, res, host)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -233,7 +223,7 @@ export async function startHlsim(
         return;
       }
       freezeState();
-      await faultDelay();
+      await faultDelay(signal);
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
           const rewritten = master.replace(
@@ -254,6 +244,7 @@ export async function startHlsim(
         );
         if (!match) throw new HttpError(404, "Unknown stream resource");
         const timeline = timelines.get(match[1]);
+        if (!timeline) throw new HttpError(404, "Unknown rendition");
         if (match[2] === "stream.m3u8") {
           send(
             res,
@@ -266,8 +257,8 @@ export async function startHlsim(
         }
         const sequence = Number(match[3]);
         const { first, end } = timeline.bounds();
-        if (sequence < first)
-          throw new HttpError(410, "Segment has left the live window");
+        if (sequence < first && !timeline.retained(sequence))
+          throw new HttpError(410, "Segment retention period has expired");
         if (sequence >= end || !Number.isSafeInteger(sequence))
           throw new HttpError(404, "Segment is not available yet");
         const status =
@@ -278,7 +269,6 @@ export async function startHlsim(
         }
         const segment = timeline.segments[sequence % timeline.segments.length];
         let body = fs.readFileSync(path.join(root, match[1], segment.uri));
-        if (req.method !== "HEAD") body = faults.corrupt(body, url.pathname);
         const range = req.headers.range;
         if (range) {
           const parsed = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -296,7 +286,13 @@ export async function startHlsim(
           send(
             res,
             206,
-            body.subarray(start, finish + 1),
+            req.method === "HEAD"
+              ? body.subarray(start, finish + 1)
+              : faults.corrupt(
+                  body.subarray(start, finish + 1),
+                  url.pathname,
+                  true,
+                ),
             {
               "Content-Type": "video/mp2t",
               "Content-Range": `bytes ${start}-${finish}/${body.length}`,
@@ -306,6 +302,7 @@ export async function startHlsim(
           );
           return;
         }
+        if (req.method !== "HEAD") body = faults.corrupt(body, url.pathname);
         send(
           res,
           200,
@@ -366,30 +363,33 @@ export async function startHlsim(
         send(res, failure, "Injected response failure", {}, req.method);
         return;
       }
-      const controller = new AbortController();
-      res.once("close", () => {
-        if (!res.writableEnded) controller.abort();
-      });
       const remote = await fetchRemote(resource.url, policy, {
         range: req.headers.range,
         maxBytes:
           resource.kind === "playlist" ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
-        signal: controller.signal,
+        signal,
       });
       let body: Buffer | string = remote.body;
       const headers = remote.headers;
       if (resource.kind === "playlist" && remote.status === 200) {
-        body = rewritePlaylist(
+        if (frozen && snapshots.size >= 128)
+          throw new HttpError(
+            503,
+            "Frozen manifest capacity reached; unfreeze before requesting another playlist",
+          );
+        body = resources.rewrite(
           remote.body.toString("utf8"),
           remote.url,
-          register,
+          resource.url,
+          policy,
         );
         latest.set(resource.url, body);
+        if (latest.size > 128) latest.delete(latest.keys().next().value);
         if (frozen) snapshots.set(resource.url, body);
         headers["Content-Type"] = "application/vnd.apple.mpegurl";
         headers["cache-control"] = "no-store";
       } else if (resource.kind === "segment" && req.method !== "HEAD")
-        body = faults.corrupt(remote.body, resource.url);
+        body = faults.corrupt(remote.body, resource.url, remote.status === 206);
       else if (
         resource.kind === "key" &&
         req.method !== "HEAD" &&
@@ -412,10 +412,13 @@ export async function startHlsim(
         );
     }
   });
+  const server = transport.server;
   try {
     await listen(server, port, host);
+    options.signal?.throwIfAborted();
   } catch (error) {
     faults.close();
+    await transport.close();
     throw error;
   }
   const url = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
@@ -434,7 +437,7 @@ export async function startHlsim(
     url,
     close: () => {
       faults.close();
-      return closeServer(server);
+      return transport.close();
     },
   };
 }

@@ -1,0 +1,50 @@
+{
+  "checkedAt": "2026-10-28T11:49:22.319Z",
+  "baseRevision": "0c9a0f5",
+  "scope": "Follow-up fixes for startup/shutdown, config rearming/merging, resource retention, freeze and HTTP framing",
+  "regularTests": { "passed": 30, "failed": 0, "dockerTestsSkipped": 1 },
+  "dockerIntegration": {
+    "passed": 1,
+    "failed": 0,
+    "engine": "livesim2 v1.7.0"
+  },
+  "typecheck": "passed",
+  "productionDependencyAudit": { "vulnerabilities": 0 },
+  "browser": {
+    "browser": "Google Chrome",
+    "players": { "hls.js": "1.7.3", "dash.js": "5.2.1" },
+    "approximateObservationSeconds": 89,
+    "dashUtcSynchronizationEnabled": false,
+    "hls": {
+      "frames": 2118,
+      "dropped": 0,
+      "readyState": 4,
+      "width": 640,
+      "height": 360,
+      "playerErrorEvents": []
+    },
+    "dash": {
+      "frames": 2122,
+      "dropped": 0,
+      "readyState": 4,
+      "width": 640,
+      "height": 360,
+      "playerErrorEvents": [],
+      "activatedPeriods": ["P29886467", "P29886468", "P29886469"]
+    },
+    "unresolvedConsoleErrors": {
+      "player": "dash.js",
+      "component": "StreamProcessor audio/video",
+      "message": "TypeError: Cannot read properties of undefined (reading 'length')",
+      "count": 4,
+      "observation": "One audio/video pair logged near each period switch. Both videos continued decoding; no player error event was emitted. Root cause has not been established."
+    }
+  },
+  "remainingReleaseChecks": [
+    "Investigate the DASH console exceptions",
+    "Assert browser fault recovery, not only healthy playback",
+    "Verify playback and recovery on a physical Roku",
+    "Verify offline/default UTC synchronization separately"
+  ],
+  "repositoryPrivate": true
+}

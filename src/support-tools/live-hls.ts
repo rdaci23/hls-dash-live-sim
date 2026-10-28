@@ -5,12 +5,15 @@ export class LiveHlsTimeline {
   private frozen?: number;
   private cycleDuration: number;
   private initialOffset: number;
+  private elapsed = 0;
+  private retention: number;
   constructor(
     readonly segments: HlsSegment[],
     readonly mode: StreamMode = "live",
     readonly window = 6,
-    private clock = () => Date.now(),
+    private clock = () => performance.now(),
     startedAt?: number,
+    private wallStartedAt = Date.now(),
   ) {
     if (!segments.length) throw new Error("Sample contains no segments");
     if (!Number.isInteger(window) || window < 3 || window > 120)
@@ -21,6 +24,22 @@ export class LiveHlsTimeline {
       0,
     );
     this.initialOffset = this.timeAt(window);
+    this.retention = Math.max(
+      ...segments.map((_, start) =>
+        Array.from(
+          { length: window },
+          (_, offset) => segments[(start + offset) % segments.length].duration,
+        ).reduce((a, b) => a + b, 0),
+      ),
+    );
+  }
+  private positionTime(): number {
+    this.elapsed = Math.max(
+      this.elapsed,
+      ((this.frozen ?? this.clock()) - this.started) / 1000,
+      0,
+    );
+    return this.elapsed;
   }
   setFrozen(frozen: boolean): void {
     if (frozen && this.frozen === undefined) this.frozen = this.clock();
@@ -37,10 +56,7 @@ export class LiveHlsTimeline {
   }
   bounds(): { first: number; end: number } {
     if (this.mode === "vod") return { first: 0, end: this.segments.length };
-    const elapsed = Math.max(
-      0,
-      ((this.frozen ?? this.clock()) - this.started) / 1000,
-    );
+    const elapsed = this.positionTime();
     const position = this.initialOffset + elapsed;
     let end = Math.floor(position / this.cycleDuration) * this.segments.length;
     while (this.timeAt(end + 1) <= position + 0.000001) end++;
@@ -52,6 +68,20 @@ export class LiveHlsTimeline {
   available(sequence: number): boolean {
     const { first, end } = this.bounds();
     return Number.isInteger(sequence) && sequence >= first && sequence < end;
+  }
+  retained(sequence: number): boolean {
+    if (!Number.isSafeInteger(sequence) || sequence < 0) return false;
+    const { first, end } = this.bounds();
+    if (sequence >= end) return false;
+    if (sequence >= first || this.mode !== "live") return true;
+    const removedAt =
+      this.timeAt(sequence + this.window + 1) - this.initialOffset;
+    return (
+      this.positionTime() <
+      removedAt +
+        this.segments[sequence % this.segments.length].duration +
+        this.retention
+    );
   }
   playlist(rendition: string): string {
     const { first, end } = this.bounds();
@@ -70,7 +100,9 @@ export class LiveHlsTimeline {
         lines.push("#EXT-X-DISCONTINUITY");
       const segment = this.segments[sequence % this.segments.length];
       const epoch =
-        this.started - this.initialOffset * 1000 + this.timeAt(sequence) * 1000;
+        this.wallStartedAt -
+        this.initialOffset * 1000 +
+        this.timeAt(sequence) * 1000;
       lines.push(
         `#EXT-X-PROGRAM-DATE-TIME:${new Date(epoch).toISOString()}`,
         `#EXTINF:${segment.duration.toFixed(6)},`,

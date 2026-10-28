@@ -20,7 +20,10 @@ npm run hls
 The HLS player URL is `http://127.0.0.1:8899/proxy.m3u8`. The procedural sample has
 180p and 360p H.264/AAC renditions, two-second segments and a sliding live window.
 Audio and video are multiplexed together. Sequence numbers advance; each loop has
-an explicit discontinuity. Old segments return 410 and future segments return 404.
+an explicit discontinuity. Removed segments remain available for a retention grace
+period (14 seconds after removal with the default window), then return 410. Future
+segments return 404. Publication uses a monotonic clock, so system clock corrections
+cannot move the window backwards.
 
 ```sh
 npm run dash
@@ -28,7 +31,9 @@ npm run dash
 
 DASH prints its actual live MPD URL when the engine is ready. The bundled DASH
 fixture has separate H.264 video and AAC audio; livesim2 advances their timelines.
-Ctrl+C stops the session, proxy and its owned container. `--detach` is a legacy
+Ctrl+C stops the session, proxy and its owned container, including during startup.
+An in-progress Docker creation is allowed to finish acknowledging its container
+before cleanup; cancellation can wait for that Docker operation. `--detach` is a legacy
 flag: the Node session always remains supervised in the foreground.
 
 ## Network access
@@ -55,13 +60,20 @@ npm run fault-control
 
 Visit `http://127.0.0.1:19090`. Segment 403/404, malformed media, response delay and
 manifest freeze apply live. Freeze includes HLS child playlists and captures the
-latest DASH MPD. Malformed-media responses complete with an accurate Content-Length;
-they are distinct from a network timeout.
+latest DASH MPD per stream path, including requests with cache-busting queries.
+Freeze supports `off` and `always`. Malformed-media responses complete with an
+accurate Content-Length; ranged responses corrupt bytes without changing their
+range length. Delayed requests are cancelled when the client disconnects or the
+session closes.
 
 Both processes must share `--fault-config /absolute/path/faults.json` when started
 from different directories. Invalid settings fail validation. Atomic saves are
 watched; malformed edits retain the last valid configuration. `once` consumes one
-matching request across resources and is rearmed by resetting the mode. Random
+matching GET request across resources. Quick Inject always rearms it; resetting to
+`off` then setting `once` also rearms it, even with back-to-back API calls. Partial
+saves merge the latest valid file under a writer lock; simultaneous API writers
+receive HTTP 409 and can retry. Manual editors do not participate in that lock.
+Preserve the generated `_oneShot` identifiers when editing unrelated settings. Random
 faults currently use a 40 percent probability per request; seeded scenarios come
 in the next roadmap milestone.
 
@@ -116,8 +128,17 @@ Source URLs may themselves contain secrets, so local templates remain ignored.
 DASH source import analyzes supported timing metadata and uses validated local
 media. It does not replicate arbitrary source encodings. Custom DASH assets require
 `--vodroot` with an asset directory containing `manifest.mpd`. The current adapter
-supports the livesim2 v1.7 input subset: AdaptationSet SegmentTemplates and
-unformatted `$Number$` or supported `$Time$` addressing.
+checks the livesim2 v1.7 input subset before starting Docker: a static MPD with one
+source Period, AdaptationSet SegmentTemplates, plain `$Number$` without a timeline
+or `$Time$` with a finite timeline, and local relative media paths. Representation
+templates, BaseURL/Location, SegmentList/SegmentBase and formatted identifiers fail
+with an actionable error. This structural check does not validate encoded media.
+
+HLS variable substitution (`EXT-X-DEFINE`), LL-HLS parts, blocking reload and delta
+updates fail explicitly with HTTP 422. The proxy keeps active child playlists,
+keys, initialization resources and segment references reachable. It retains retired
+references for a grace period and returns HTTP 503 if its bounded registry cannot
+accept another playlist; it never silently evicts URLs still advertised.
 
 Arbitrary MPD substitution, uneven period layouts and the old low-latency preset
 fail explicitly. Sports, news, OTT and mobile presets describe their actual sample
