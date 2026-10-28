@@ -1,0 +1,85 @@
+{
+  "reviewedCommit": "55952e9712d6386e6bca6f3366bcf7d203fd1897",
+  "reviewDate": "2026-10-28",
+  "scope": "Local HTTP fixtures and direct module calls; no Docker backend or browser playback",
+  "observations": {
+    "hls_sample": {
+      "endlist": true,
+      "mediaSequence": "0",
+      "entries": 100,
+      "uniqueSegments": 2,
+      "videoDurationSeconds": 600,
+      "audioDurationSeconds": 518.3999999999999,
+      "discontinuityTags": 0,
+      "unchangedAfterTargetDuration": true
+    },
+    "once_scope": [
+      404,
+      404,
+      200
+    ],
+    "low_latency_template": {
+      "masterIdentical": true,
+      "videoIdentical": true,
+      "containsPartialSegments": false
+    },
+    "hls_import": {
+      "originRequests": 0,
+      "reportedDurationMs": 6000
+    },
+    "dash_import": {
+      "expectedDurationMs": 2000,
+      "actualDurationMs": 2000000,
+      "contentType": "video"
+    },
+    "mpd_parser": {
+      "fractionalMinimumUpdatePeriod": 0,
+      "reorderedRepresentations": 0,
+      "parsedCodecs": null
+    },
+    "proxy_rewrite": {
+      "signedPlaylistUsesSegmentEndpoint": true,
+      "audioUriUnchanged": true
+    },
+    "hls_freeze": {
+      "childPlaylistStillAdvances": true,
+      "initializationUriUnchanged": true
+    },
+    "proxy_target_scope": {
+      "differentOriginReceivedConfiguredTestToken": true
+    },
+    "dash_freeze": {
+      "first": "<MPD id=\"1\"/>",
+      "second": "<MPD id=\"2\"/>",
+      "frozen": "<MPD id=\"1\"/>",
+      "freezesFirstInsteadOfLatest": true
+    },
+    "dash_browser_headers": {
+      "allowOrigin": null,
+      "preflightStatus": 200
+    },
+    "dash_corruption": {
+      "completed": false,
+      "error": "TimeoutError",
+      "cause": null
+    },
+    "dash_drm": {
+      "segmentStatus": 200
+    },
+    "dash_preserved_paths": {
+      "generatorStyleStatus": 404,
+      "handlerStyleStatus": 200
+    },
+    "config_validation": {
+      "invalidAcceptedStatus": 200
+    }
+  },
+  "dependencyAudit": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0,
+    "total": 0
+  }
+}
