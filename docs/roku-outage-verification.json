@@ -1,0 +1,503 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-29T12:44:07.546Z",
+  "sourceCommit": "c44142fbcf46cd50d6f7b0fec90e3edef3f2dd2a",
+  "workingTreeModified": false,
+  "repository": {
+    "name": "rdaci23/hls-dash-live-sim",
+    "visibility": "PRIVATE",
+    "npmPrivate": true
+  },
+  "tester": {
+    "version": "1.1.0",
+    "archiveSha256": "5510f3beec4643d3ad575faa149e484e55525d91780a1b8deb75c8baabc0eaa5"
+  },
+  "sustainedOutageGatesPassed": false,
+  "releaseReady": false,
+  "baselineSixCasesRerun": false,
+  "conclusion": "Both protocols fail automatic recovery from the 20-second media 503 outage on this identified Roku with native Video defaults. Service restoration succeeded. No application restart, retry or seek was added.",
+  "developmentAttempt": {
+    "excludedFromCandidateProof": true,
+    "localDirectory": "output/roku-outage-development-1",
+    "reason": "The initial version field was lowercased by BrightScript and failed the version assertion. The field was corrected and both cases were repeated from the clean source commit above. Native terminal errors were observed in both attempts."
+  },
+  "reports": [
+    {
+      "schemaVersion": 1,
+      "recordedAt": "2026-10-29T12:41:19.650Z",
+      "protocol": "hls",
+      "test": "outage",
+      "identity": {
+        "modelNumber": "3940EU",
+        "modelName": "Roku Express 4K",
+        "softwareVersion": "16.0.4",
+        "softwareBuild": 842
+      },
+      "commit": "c44142fbcf46cd50d6f7b0fec90e3edef3f2dd2a",
+      "workingTreeModified": false,
+      "passed": false,
+      "releaseQualified": false,
+      "failures": [
+        "Native Video error or unexplained runtime exception",
+        "No successful same-resource video retry within recovery gate",
+        "One measured video stall followed by automatic recovery is required",
+        "Native video did not resume within 10 seconds after restoration",
+        "Less than 60 seconds healthy rendered video after recovery",
+        "Less than 60 seconds healthy rendered audio after recovery"
+      ],
+      "firstFrameUpperBoundMs": 791,
+      "lastRenderedMs": 62031,
+      "renderedDurationMs": 61240,
+      "renderedSamples": 123,
+      "videoProgressSeconds": 61.12599992752075,
+      "firstAudioMs": 1281,
+      "lastAudioMs": 62031,
+      "renderedAudioSamples": 122,
+      "audioProgressSeconds": 60.67899990081787,
+      "gaps": [
+        {
+          "startMs": 62031,
+          "endMs": 165031,
+          "durationMs": 103000,
+          "ongoing": true
+        }
+      ],
+      "regressions": [],
+      "playedPeriods": [],
+      "epochValues": [
+        1
+      ],
+      "startHostEpochMs": 1793277514005,
+      "states": [
+        "stopped",
+        "buffering",
+        "playing",
+        "error",
+        "finished"
+      ],
+      "gates": {
+        "startupMs": 10000,
+        "beforeFaultMs": 30000,
+        "durationMs": 20000,
+        "healthyStallMs": 4000,
+        "recoveryMs": 10000,
+        "afterRecoveryMs": 60000,
+        "clockMarginMs": 1000,
+        "sampleGapMs": 1000
+      },
+      "testerVersion": "1.1.0",
+      "playerSettings": "Native SceneGraph Video defaults; one play command, no application retry, seek or restart",
+      "nativeErrors": [
+        {
+          "atMs": 62342,
+          "errorCode": -5,
+          "errorMessage": "no valid bitrates",
+          "errorCategory": "mediaerror",
+          "errorInternalCode": 9
+        }
+      ],
+      "outageStartMs": 59178,
+      "outageEndMs": 79178,
+      "outageDurationMs": 20000,
+      "injectedResponses": 4,
+      "failureTraffic": [
+        {
+          "track": "video",
+          "failures": 4,
+          "firstFailureMs": 60348,
+          "lastFailureMs": 62321,
+          "longestRetryGapMs": 1929
+        }
+      ],
+      "retries": [],
+      "renderResumedAtMs": 165031,
+      "recoveredAtMs": 165031,
+      "serverRestored": true,
+      "restorationProbes": [
+        {
+          "kind": "manifest",
+          "requestId": "230afcf0-4a33-4464-bdad-d4c2368da829",
+          "status": 200,
+          "bodyBytes": 157,
+          "completedEpochMs": 1793277598537
+        },
+        {
+          "kind": "manifest",
+          "requestId": "44a32aaf-4507-43c3-a26e-f5072cfc2784",
+          "status": 200,
+          "bodyBytes": 707,
+          "completedEpochMs": 1793277598542
+        },
+        {
+          "kind": "video",
+          "requestId": "1a71b1c0-424c-4f60-82bf-e3106a0e8d97",
+          "status": 200,
+          "bodyBytes": 65988,
+          "completedEpochMs": 1793277598551
+        }
+      ],
+      "resumeAfterOutageMs": 85853,
+      "resumeUpperBoundMs": 86853,
+      "postRecoveryMs": 0,
+      "trackProgress": {
+        "video": {
+          "before": {
+            "durationMs": 57240,
+            "mediaProgressSeconds": 57.133999824523926,
+            "firstSampleMs": 791,
+            "lastSampleMs": 58031
+          },
+          "after": {
+            "durationMs": 0,
+            "mediaProgressSeconds": 0
+          },
+          "stalls": []
+        },
+        "audio": {
+          "before": {
+            "durationMs": 56750,
+            "mediaProgressSeconds": 56.63000011444092,
+            "firstSampleMs": 1281,
+            "lastSampleMs": 58031
+          },
+          "after": {
+            "durationMs": 0,
+            "mediaProgressSeconds": 0
+          },
+          "stalls": []
+        }
+      },
+      "clockAlignment": "Host receipt of native start; 1000ms reserved for both pre-fault and recovery bounds",
+      "firstFrameMeasurement": "Native last-rendered positionInfo sampled every 250ms",
+      "localUtcRequests": 0,
+      "nativeClockUseVerified": false,
+      "scenario": {
+        "version": 1,
+        "scenarioId": "scenario_df76840e868f88f4101020b61875ec52",
+        "sessionId": "c9956564-a320-42bd-9da2-5e0d0507a2fb",
+        "seed": 42,
+        "clock": "monotonic_session_elapsed",
+        "elapsedMs": 166464.05891599998,
+        "result": "passed",
+        "trackedDownloads": 37,
+        "unidentifiedMediaRequests": 0,
+        "tracks": [
+          "video:0"
+        ],
+        "rules": [
+          {
+            "ruleId": "rule:0",
+            "kind": "outage",
+            "target": {
+              "track": "video",
+              "segment": "each"
+            },
+            "attempts": "all",
+            "afterMs": 60000,
+            "beforeMs": 80000,
+            "probability": 1,
+            "maxApplications": 10000,
+            "status": 503,
+            "expectRetry": false,
+            "selected": 4,
+            "applied": 4,
+            "recovered": false,
+            "firstAttempt": 2,
+            "targetId": "segment_d7a80dc280a608ea4aef49cffb91cc58",
+            "targetOrdinal": 37,
+            "result": "passed"
+          }
+        ]
+      },
+      "runId": "1b6ca1ee-5ed8-4ff4-95c8-0a03c5192dc0",
+      "observedUntilMs": 165031,
+      "observedAfterRestorationMs": 85853,
+      "firstInjectedResponseMs": 60348,
+      "errorAfterFirstInjectedResponseMs": 1994,
+      "rawEvidence": [
+        {
+          "localPath": "output/roku-outage-candidate-1/hls-outage/native.json",
+          "sha256": "2c997c3f5231322d34a14ab02b422f3fc5e63a7b37b70031b4491f91d9d15a82"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/hls-outage/native-console.txt",
+          "sha256": "be8e8765e454cff49273de688091c337aef6bc7e11f8ddb34abc94faeb493161"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/hls-outage/requests.jsonl",
+          "sha256": "d6f4c49a490b554c9d2b2d69e07e3bb4b7869d40d897500fb2704b04b3c874a6"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/hls-outage/report.json",
+          "sha256": "250656c3452e0c19dfd8c54425abe4113ac32239356a3799f9ae2795c80cb3f9"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/hls-outage/scenario.json",
+          "sha256": "839bb445f75b4d4f1698a4846829e1650861b0f863e5b1101a89ac0d4530b06d"
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "recordedAt": "2026-10-29T12:44:07.531Z",
+      "protocol": "dash",
+      "test": "outage",
+      "identity": {
+        "modelNumber": "3940EU",
+        "modelName": "Roku Express 4K",
+        "softwareVersion": "16.0.4",
+        "softwareBuild": 842
+      },
+      "commit": "c44142fbcf46cd50d6f7b0fec90e3edef3f2dd2a",
+      "workingTreeModified": false,
+      "engineImage": "ghcr.io/dash-industry-forum/livesim2/livesim2:v1.15.3@sha256:800acefece3ea6d59b4fa04d657ea8081d5c710c07359cfddbaaa4dbf2bf2d9c",
+      "passed": false,
+      "releaseQualified": false,
+      "failures": [
+        "Native Video error or unexplained runtime exception",
+        "No successful same-resource video retry within recovery gate",
+        "No successful same-resource audio retry within recovery gate",
+        "One measured video stall followed by automatic recovery is required",
+        "Native video did not resume within 10 seconds after restoration",
+        "Less than 60 seconds healthy rendered video after recovery",
+        "Less than 60 seconds healthy rendered audio after recovery"
+      ],
+      "firstFrameUpperBoundMs": 1278,
+      "lastRenderedMs": 61270,
+      "renderedDurationMs": 59992,
+      "renderedSamples": 121,
+      "videoProgressSeconds": 60,
+      "firstAudioMs": 1770,
+      "lastAudioMs": 61270,
+      "renderedAudioSamples": 120,
+      "audioProgressSeconds": 59.50699996948242,
+      "gaps": [
+        {
+          "startMs": 61270,
+          "endMs": 165021,
+          "durationMs": 103751,
+          "ongoing": true
+        }
+      ],
+      "regressions": [],
+      "playedPeriods": [
+        {
+          "id": "P29887961",
+          "utcStart": 1793277660,
+          "utcEnd": 1793277720,
+          "firstRenderedSampleMs": 1278,
+          "videoPosition": 1793277660
+        },
+        {
+          "id": "P29887962",
+          "utcStart": 1793277720,
+          "utcEnd": 1793277780,
+          "firstRenderedSampleMs": 61270,
+          "videoPosition": 1793277720
+        }
+      ],
+      "epochValues": [
+        1
+      ],
+      "startHostEpochMs": 1793277681586,
+      "states": [
+        "stopped",
+        "buffering",
+        "playing",
+        "error",
+        "finished"
+      ],
+      "gates": {
+        "startupMs": 10000,
+        "beforeFaultMs": 30000,
+        "durationMs": 20000,
+        "healthyStallMs": 4000,
+        "recoveryMs": 10000,
+        "afterRecoveryMs": 60000,
+        "clockMarginMs": 1000,
+        "sampleGapMs": 1000
+      },
+      "testerVersion": "1.1.0",
+      "playerSettings": "Native SceneGraph Video defaults; one play command, no application retry, seek or restart",
+      "nativeErrors": [
+        {
+          "atMs": 61566,
+          "errorCode": -5,
+          "errorMessage": "no valid bitrates",
+          "errorCategory": "mediaerror",
+          "errorInternalCode": 9
+        }
+      ],
+      "outageStartMs": 58959,
+      "outageEndMs": 78959,
+      "outageDurationMs": 20000,
+      "injectedResponses": 8,
+      "failureTraffic": [
+        {
+          "track": "video",
+          "failures": 4,
+          "firstFailureMs": 59327,
+          "lastFailureMs": 61432,
+          "longestRetryGapMs": 1143
+        },
+        {
+          "track": "audio",
+          "failures": 4,
+          "firstFailureMs": 59330,
+          "lastFailureMs": 61434,
+          "longestRetryGapMs": 1144
+        }
+      ],
+      "retries": [],
+      "renderResumedAtMs": 165021,
+      "recoveredAtMs": 165021,
+      "serverRestored": true,
+      "restorationProbes": [
+        {
+          "kind": "manifest",
+          "requestId": "313ca21d-97c5-470a-89f7-cbd29cb8a20c",
+          "status": 200,
+          "bodyBytes": 2495,
+          "completedEpochMs": 1793277766067
+        },
+        {
+          "kind": "video",
+          "requestId": "df143c1a-ff39-42af-be13-a404bd028f07",
+          "status": 200,
+          "bodyBytes": 155836,
+          "completedEpochMs": 1793277766082
+        },
+        {
+          "kind": "audio",
+          "requestId": "cf6155cc-7182-4cdb-8062-b3a374e945a8",
+          "status": 200,
+          "bodyBytes": 16638,
+          "completedEpochMs": 1793277766096
+        }
+      ],
+      "resumeAfterOutageMs": 86062,
+      "resumeUpperBoundMs": 87062,
+      "postRecoveryMs": 0,
+      "trackProgress": {
+        "video": {
+          "before": {
+            "durationMs": 56493,
+            "mediaProgressSeconds": 56.5,
+            "firstSampleMs": 1278,
+            "lastSampleMs": 57771
+          },
+          "after": {
+            "durationMs": 0,
+            "mediaProgressSeconds": 0
+          },
+          "stalls": []
+        },
+        "audio": {
+          "before": {
+            "durationMs": 56001,
+            "mediaProgressSeconds": 56.00600004196167,
+            "firstSampleMs": 1770,
+            "lastSampleMs": 57771
+          },
+          "after": {
+            "durationMs": 0,
+            "mediaProgressSeconds": 0
+          },
+          "stalls": []
+        }
+      },
+      "clockAlignment": "Host receipt of native start; 1000ms reserved for both pre-fault and recovery bounds",
+      "firstFrameMeasurement": "Native last-rendered positionInfo sampled every 250ms",
+      "localUtcRequests": 0,
+      "nativeClockUseVerified": false,
+      "scenario": {
+        "version": 1,
+        "scenarioId": "scenario_c08623c0abe8bdf86ce11d38b7f5b99a",
+        "sessionId": "ac209c8c-f8de-46c7-ab93-c9b07844f734",
+        "seed": 42,
+        "clock": "monotonic_session_elapsed",
+        "elapsedMs": 166610.80475,
+        "result": "passed",
+        "trackedDownloads": 82,
+        "unidentifiedMediaRequests": 0,
+        "tracks": [
+          "audio:0",
+          "video:0"
+        ],
+        "rules": [
+          {
+            "ruleId": "rule:0",
+            "kind": "outage",
+            "target": {
+              "track": "video",
+              "segment": "each"
+            },
+            "attempts": "all",
+            "afterMs": 60000,
+            "beforeMs": 80000,
+            "probability": 1,
+            "maxApplications": 10000,
+            "status": 503,
+            "expectRetry": false,
+            "selected": 4,
+            "applied": 4,
+            "recovered": false,
+            "firstAttempt": 2,
+            "targetId": "segment_7878acb429566bbffb09d69a4bf8d756",
+            "targetOrdinal": 41,
+            "result": "passed"
+          },
+          {
+            "ruleId": "rule:1",
+            "kind": "outage",
+            "target": {
+              "track": "audio",
+              "segment": "each"
+            },
+            "attempts": "all",
+            "afterMs": 60000,
+            "beforeMs": 80000,
+            "probability": 1,
+            "maxApplications": 10000,
+            "status": 503,
+            "expectRetry": false,
+            "selected": 4,
+            "applied": 4,
+            "recovered": false,
+            "firstAttempt": 2,
+            "targetId": "segment_a54d8e9c0908dbdefb67b31f237fc810",
+            "targetOrdinal": 41,
+            "result": "passed"
+          }
+        ]
+      },
+      "runId": "e0d02ea0-35e6-4799-8042-a84a5766b296",
+      "observedUntilMs": 165021,
+      "observedAfterRestorationMs": 86062,
+      "firstInjectedResponseMs": 59327,
+      "errorAfterFirstInjectedResponseMs": 2239,
+      "rawEvidence": [
+        {
+          "localPath": "output/roku-outage-candidate-1/dash-outage/native.json",
+          "sha256": "3c7e5d9891b3b86e5870596010981734c24032cb279ac87a59873d2248ae5593"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/dash-outage/native-console.txt",
+          "sha256": "b5fd598bf0b58a504376e6cb77e6279cfb2e2aeb1c8cb48dd45cad013e68b6c2"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/dash-outage/requests.jsonl",
+          "sha256": "85b3d78c8fbb6b43791b4537987505a25af54ac811c2ebd66a3cdb1211e73a89"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/dash-outage/report.json",
+          "sha256": "3f35072850617ba5b10077472976597c453dca7f4185f71c320248fd215106a6"
+        },
+        {
+          "localPath": "output/roku-outage-candidate-1/dash-outage/scenario.json",
+          "sha256": "420fad8e3bb7b665181bdc68ddd46da9f155f39516e03280c2d3b871aff57e52"
+        }
+      ]
+    }
+  ]
+}

@@ -103,5 +103,6 @@ as the player drains its buffer. Recorded consumption/application/cancellation
 events show what the simulator did. Deterministic status rules and HTTP retry
 assertions are available through [scenario rules](scenarios.md). The first
 video-404/retry preset has full browser and one-model physical Roku coverage for
-startup and established playback. Broader ABR, sustained-outage and freeze/resume
+startup and established playback. The separate [sustained-outage checks](sustained-outages.md) retain browser
+passes and native Roku failures for their exact profiles. Broader ABR and manifest freeze/resume
 recovery remain unverified. See [playback gates](playback-gates.md).

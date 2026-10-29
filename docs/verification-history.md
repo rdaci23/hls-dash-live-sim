@@ -14,6 +14,7 @@ platform support. Reports are not rewritten to turn historical failures into pas
 | [Early browser playback](playback-verification.json) | Long Chrome playback before stabilization. | DASH UTC synchronization was disabled; no physical Roku result. |
 | [Early scenario browser check](scenario-browser-verification.json) | Browser recovery from the initial next-video-404 preset. | UTC disabled, older engine exceptions and narrower playback coverage. |
 | [Stabilization](stabilization-verification.json) | Recorded strict browser gates and six physical Roku cases, 29 October 2026. | One identified Roku model/OS; native clock internals and internet-isolated Roku remain unverified. |
+| [Native sustained outages](roku-outage-verification.json) | Clean-commit physical HLS/DASH 20-second media 503 checks, 29 October 2026. | Both native recovery cases failed on 3940EU / OS 16.0.4 build 842; independent host media restoration passed. |
 
 The [extraction record](extraction.md) documents repository provenance. The old
 prototype observational script at `docs/archive/prototype-audit.cjs` is historical,

@@ -143,7 +143,9 @@ The separate [sustained media-outage check](sustained-outages.md) verifies a
 20-second 503 outage in HLS/DASH browsers with an explicit retry profile. Its
 rendered stall/resume and subsequent 60 seconds of playback are additional
 evidence. The six-case results above do not establish native sustained-outage
-recovery, which remains unverified.
+recovery. The separate [native outage verification](roku-outage-verification.json)
+failed for both protocols on 3940EU / OS 16.0.4 build 842: Video entered -5
+("no valid bitrates") and did not resume after media service was restored.
 
 The default engine `utc_head` clock, MPD and segment availability share engine
 real time. The proxy preserves Date and CORS visibility. `--utc external` is an

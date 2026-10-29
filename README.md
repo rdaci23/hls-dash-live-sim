@@ -71,7 +71,9 @@ files for independent sessions. Stop sessions before regenerating sample assets.
 virtual clock. DASH source import analyzes supported metadata; it does not clone
 arbitrary source media. HLS origin scenarios and broader ABR/fault recovery remain
 outside verified coverage. [Automatic HLS bandwidth adaptation](docs/hls-abr.md)
-has a separate two-rendition Chrome check. Apple, Android and additional Roku models remain
+has a separate two-rendition Chrome check. The tested Roku fails automatic
+recovery from the [20-second media outage](docs/sustained-outages.md); that native
+recovery profile is unsupported. Apple, Android and additional Roku models remain
 unverified. [Detailed capabilities and limits](docs/implementation.md).
 
 ## Fault controls

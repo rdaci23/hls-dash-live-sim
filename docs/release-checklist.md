@@ -28,6 +28,11 @@ maintainer decision after the remaining requirements are satisfied.
 - [x] Separate timed HLS/DASH media-outage runner and routine CI job with measured
   stall/resume and post-recovery rendering; [scope and retry policy](sustained-outages.md).
 
+- [x] Native HLS/DASH sustained-outage recorder and one-model physical verification,
+  including failed recovery evidence and independent service-restoration probes.
+- [ ] Resolve or explicitly exclude the [failed native 20-second outage profile](sustained-outages.md)
+  before advertising sustained-outage recovery on Roku.
+
 Checked items describe implemented checks or recorded evidence. They do not say
 that every future commit has passed. For the candidate, inspect the exact
 [CI run](https://github.com/rdaci23/hls-dash-live-sim/actions) and
@@ -64,7 +69,8 @@ that every future commit has passed. For the candidate, inspect the exact
   bandwidth-adaptation check covers one two-rendition Chrome profile. DASH/native
   ABR, jitter recovery, manifest freeze/resume recovery and perceived audio
   quality remain outside that evidence. The separate browser [media-outage check](sustained-outages.md)
-  covers one timed 503 profile with explicit retries; native sustained outages remain unverified.
+  covers one timed 503 profile with explicit retries. The tested native 20-second
+  profile failed on 3940EU / OS 16.0.4 build 842; it must not be advertised as supported.
 - LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
   deferred capabilities. They must not appear as supported preset promises.
 

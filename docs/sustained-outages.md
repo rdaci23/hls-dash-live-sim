@@ -129,6 +129,35 @@ while browser tests pass: use the recorded result rather than extending browser
 support claims to the device. Native UTC use and whole-device internet isolation
 remain separate tests.
 
+## Recorded Roku result — 29 October 2026
+
+**Both protocols fail this recovery gate** on Roku Express 4K **3940EU,
+OS 16.0.4 build 842**, using tester 1.1.0 and native Video defaults. The clean
+source commit and compact results are retained in
+[the verification record](roku-outage-verification.json), including hashes of the
+full local raw evidence. The recording ran to normal completion in both cases;
+there was no harness failure, application restart or manual recovery.
+
+| Protocol | First rendered sample | Verified healthy A/V before outage | Injected 503 responses | Restored media | Native recovery |
+| --- | ---: | ---: | ---: | --- | --- |
+| HLS | 0.791 s | at least 56.75 s | 4 | Host GET: 200, 65,988 media bytes | Failed |
+| DASH | 1.278 s | at least 56.00 s | 8 across video/audio | Host GETs: 200, 155,836 video / 16,638 audio bytes | Failed |
+
+Both players entered error **-5, "no valid bitrates"**, category `mediaerror`,
+internal code `9`, shortly after the injected responses began, then remained in
+`finished` without advancing rendered positions. Both scenario runs passed
+the server injection checks. Independent host probes confirmed restored media
+about five seconds after the outage ended; those requests were excluded from all
+native recovery assertions. The recorder continued for roughly 86 seconds after
+the outage ended in each case. Neither established successful same-resource native
+retries or the required 60 seconds of post-recovery A/V progress.
+
+This is a tested native limitation for this exact media/status/model/OS profile.
+Browser success uses a different, explicit retry profile. Earlier native single-404
+success remains narrower evidence. Application-managed recovery, different outage
+statuses/durations and other devices need separate profiles and measurements;
+none are silently substituted for a passing result here.
+
 ## Evidence and CI
 
 Each worker retains its scenario, complete server JSONL diagnostics, raw browser
@@ -139,6 +168,8 @@ passing HLS/DASH pair sets `sustainedOutageGatesPassed: true`. It never sets
 
 Routine CI runs this pair on Linux/Node 24 and retains evidence in the private
 repository for seven days, including failures. A green CI job applies to the exact
-candidate and recorded Chrome/player/image versions. Roku outage recovery, Apple,
-Android and additional device models remain unverified. Existing Roku 404 evidence
-must not be relabeled as sustained-outage evidence.
+candidate and recorded Chrome/player/image versions. Physical Roku checks are
+manual and remain separate from hosted CI. The 20-second native profile above
+was tested and failed; Apple, Android and additional device models remain
+unverified. Existing Roku 404 evidence must not be relabeled as sustained-outage
+evidence.
