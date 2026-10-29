@@ -23,13 +23,20 @@ notices are intentional public upstream attribution, not project credentials.
 Git author metadata remains present; the maintainer should review the identity
 exposed when publishing history. No history rewrite was performed.
 
-The original extracted media is still reachable in commit `55952e9`, under
-`assets/hls-sample/segments/`. An inspected historical video frame showed a test
-pattern, not customer footage. Visual appearance is not a provenance or rights
-record. The current packaged fixtures have procedural generation scripts and
-[documented provenance](../assets/README.md); publishing old media history still
-needs the maintainer's provenance decision. Deleting the current files would not
-remove those historical objects.
+The original extracted media remains reachable in commit `55952e9`, under
+`assets/hls-sample/segments/`. A follow-up investigation traced all four files
+byte-for-byte to upstream commit `b135669` (3 November 2025), whose README calls
+them color-bar video plus tone. All 288 video frames closely match newly generated
+FFmpeg `testsrc` at 1280×720/24 fps; the AAC audio is a 1,000 Hz tone, and the two
+standalone AAC files concatenate exactly to the audio demuxed from the first TS
+segment. The files also contain libx264/libavcodec encoder markers. This provides
+strong reproducible evidence of generated test content, resolving the earlier
+uncertainty based on one visual frame. The exact historical command was not found.
+[Evidence and reconstruction](historical-media-provenance.md).
+
+Current packaged fixtures have explicit procedural generation scripts and
+[documented provenance](../assets/README.md). Choosing the project's source/media
+license remains a separate publication decision.
 
 This audit covers repository objects and the locally generated npm archive. It
 is not a review of unrelated personal files, upstream repositories' full history,
@@ -91,8 +98,8 @@ published or installed globally. Review the retained file list manually as well.
 - Confirm the right to publish/license the extracted simulator source. The source
   commit recorded in [extraction](extraction.md) had no root license file; a
   standalone copy does not resolve that question.
-- Choose the project's source license, retain required upstream attribution and
-  resolve the historical fixture provenance decision.
+- Choose the project's source/media license and retain required upstream
+  attribution. Historical test-content generation is now documented separately.
 - Confirm a private security contact or enable GitHub private vulnerability
   reporting at public cutover, then verify the button before public announcement.
   [Current policy and availability](../SECURITY.md).

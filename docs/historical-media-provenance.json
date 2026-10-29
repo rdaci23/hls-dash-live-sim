@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "reviewDate": "2026-10-29",
+  "upstreamRepository": "original private tools project",
+  "introducedInCommit": "b1356697404887ca2e49a3ae3a55da0577f421d5",
+  "introducedOn": "2025-11-03",
+  "standaloneExtractionCommit": "55952e9",
+  "exactHistoricalCommandRecovered": false,
+  "conclusion": "Strong reproducible evidence of FFmpeg testsrc video and synthesized 1000 Hz audio, encoded with libx264/libavcodec.",
+  "ffmpegVersionUsedForAnalysis": "ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers",
+  "allFourFilesMatchOriginalUpstreamCommit": true,
+  "video": [
+    {
+      "file": "segment0.ts",
+      "framesCompared": 250,
+      "reference": "FFmpeg lavfi testsrc=size=1280x720:rate=24",
+      "referenceStartFrame": 0,
+      "meanSSIM": 0.999375952,
+      "minimumFrameSSIM": 0.999248
+    },
+    {
+      "file": "segment1.ts",
+      "framesCompared": 38,
+      "reference": "FFmpeg lavfi testsrc=size=1280x720:rate=24",
+      "referenceStartFrame": 250,
+      "meanSSIM": 0.9994008157894738,
+      "minimumFrameSSIM": 0.999215
+    }
+  ],
+  "audio": [
+    {
+      "file": "segment0.ts",
+      "sha256": "ecdbe209a48f6f3a19f7cdd150e07c119e97ff0373fe9b56b899ae5c3737c748",
+      "decodedAudioSamples": 497664,
+      "decodedAudioDurationSeconds": 10.368,
+      "measuredToneHz": 1000.0011975435606,
+      "integerToneHz": 1000,
+      "singleTonePowerFraction": 0.9995809664241279,
+      "libavcodecMarkers": [
+        "Lavc61.19.101"
+      ],
+      "wholeFileToneWindows": {
+        "windowSeconds": 0.5,
+        "ignoredLeadingSeconds": 0.1,
+        "ignoredTrailingSamples": 1024,
+        "windows": 21,
+        "minimum1000HzPowerFraction": 0.999577446352853
+      }
+    },
+    {
+      "file": "segment1.ts",
+      "sha256": "4226e77c17e20276738a8c434e48dc2ea13eae16c42039db0ffe4ccdd15d03a3",
+      "decodedAudioSamples": 79872,
+      "decodedAudioDurationSeconds": 1.664,
+      "measuredToneHz": 1000.0000198227345,
+      "integerToneHz": 1000,
+      "singleTonePowerFraction": 0.9999987175996359,
+      "libavcodecMarkers": [
+        "Lavc61.19.101"
+      ],
+      "wholeFileToneWindows": {
+        "windowSeconds": 0.5,
+        "ignoredLeadingSeconds": 0.1,
+        "ignoredTrailingSamples": 1024,
+        "windows": 4,
+        "minimum1000HzPowerFraction": 0.9700445649393721
+      }
+    },
+    {
+      "file": "audio0.aac",
+      "sha256": "c53c0902d1588e283787f1c36f60f465dca33df24810c9f01cd67e2319d5350a",
+      "decodedAudioSamples": 288768,
+      "decodedAudioDurationSeconds": 6.016,
+      "measuredToneHz": 1000.0011975435606,
+      "integerToneHz": 1000,
+      "singleTonePowerFraction": 0.9995809664241279,
+      "libavcodecMarkers": [
+        "Lavc61.19.101"
+      ],
+      "wholeFileToneWindows": {
+        "windowSeconds": 0.5,
+        "ignoredLeadingSeconds": 0.1,
+        "ignoredTrailingSamples": 1024,
+        "windows": 12,
+        "minimum1000HzPowerFraction": 0.999577446352853
+      }
+    },
+    {
+      "file": "audio1.aac",
+      "sha256": "becf0fe3a21043a5d24d543deb6798dd4c8993ad71ebb397bb04c140b7ba8aa8",
+      "decodedAudioSamples": 208896,
+      "decodedAudioDurationSeconds": 4.352,
+      "measuredToneHz": 1000.002601188063,
+      "integerToneHz": 1000,
+      "singleTonePowerFraction": 0.9998714637920328,
+      "libavcodecMarkers": [],
+      "wholeFileToneWindows": {
+        "windowSeconds": 0.5,
+        "ignoredLeadingSeconds": 0.1,
+        "ignoredTrailingSamples": 1024,
+        "windows": 9,
+        "minimum1000HzPowerFraction": 0.9998573795161535
+      }
+    }
+  ],
+  "videoEncoderSignatures": [
+    "x264 - core 164 r3108 31e19f9 - H.264/MPEG-4 AVC codec - Copyleft 2003-2023 - http://www.videolan.org/x264.html - options: cabac=1 ref=3 deblock=1:0:0 analyse=0x3:0x113 me=hex subme=7 psy=1 psy_rd=1.00:0.00 mixed_ref=1 me_range=16 chroma_me=1 trellis=1 8x8dct=1 cqm=0 deadzone=21,11 fast_pskip=1 chroma_qp_offset=-2 threads=18 lookahead_threads=3 sliced_threads=0 nr=0 decimate=1 interlaced=0 bluray_compat=0 constrained_intra=0 bframes=3 b_pyramid=2 b_adapt=1 b_bias=0 direct=1 weightb=1 open_gop=0 weightp=2 keyint=250 keyint_min=24 scenecut=40 intra_refresh=0 rc_lookahead=40 rc=crf mbtree=1 crf=23.0 qcomp=0.60 qpmin=0 qpmax=69 qpstep=4 ip_ratio=1.40 aq=1:1.00"
+  ],
+  "separateAudioMatchesDemuxedFirstSegment": {
+    "identical": true,
+    "bytes": 93099,
+    "sha256": "8c7bff17208a18f0315f45f5068c2514b06d11426710d8d06fea3251f1cac237"
+  }
+}

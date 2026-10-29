@@ -64,8 +64,10 @@ that every future commit has passed. For the candidate, inspect the exact
   Fixture provenance is documented, but does not settle the source license.
 - [x] Inventory locked dependency notices and record the external livesim2
   redistribution/use boundary. [Notices and exceptions](../THIRD_PARTY_NOTICES.md).
-- [ ] Resolve project source licensing and historical-media provenance; dependency
-  attribution does not settle those rights.
+- [x] Trace original media to its introducing commit and verify the historical
+  FFmpeg test pattern/tone evidence. [Investigation](historical-media-provenance.md).
+- [ ] Resolve project source/media licensing and publication rights; dependency
+  attribution does not settle the project's license.
 - [ ] Establish a private vulnerability-reporting route and document it before
   opening public issues. Do not invent a contact address or assume advisory
   reporting is enabled.
