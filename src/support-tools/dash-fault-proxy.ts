@@ -45,10 +45,11 @@ export async function startDashFaultProxy(
     throw error;
   }
   const scenarioIndex = scenario ? new DashScenarioIndex() : undefined;
-  const faults = new FaultRuntime();
+  const faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario);
+  const unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const transport = sessionServer(async (req, res, signal, trace) => {
     try {
       if (preflight(req, res, options.host)) return;
@@ -112,10 +113,14 @@ export async function startDashFaultProxy(
       );
       if (scenario) scenario.assertCompatible();
       // Media/manifest latency faults must not skew the UTC reference itself.
-      if (!scenario && (manifest || segment)) await faults.delay(signal, trace, req.method);
+      if ((!scenario || scenario.timeline) && (manifest || segment)) {
+        const identity = scenarioIndex?.resolve(upstreamBase + request.pathname + request.search);
+        await faults.delay(signal, trace, req.method, true, manifest ? `manifest:${request.pathname}` : `${identity?.kind ?? "media"}:${identity?.trackId ?? "unknown"}`);
+      }
+      const profile = scenario?.timeline?.profile();
       const cached = manifest ? snapshots.held(manifestKey) : undefined;
       if (cached) {
-        faults.frozen(trace);
+        faults.frozen(trace, false, profile);
         send(res, cached.status, cached.body, cached.headers, req.method);
         return;
       }
@@ -153,9 +158,10 @@ export async function startDashFaultProxy(
         status: remote.status,
         bodyBytes: remote.body.length,
       });
+      const latestProfile = scenario?.timeline?.profile();
       const held = manifest ? snapshots.held(manifestKey) : undefined;
       if (held) {
-        faults.frozen(trace);
+        faults.frozen(trace, false, latestProfile);
         send(res, held.status, held.body, held.headers, req.method);
         return;
       }
@@ -169,7 +175,7 @@ export async function startDashFaultProxy(
           if (scenarioIndex && !scenario.settled)
             scenarioIndex.observe(text, remote.url);
           const choice = snapshots.observe(manifestKey, remote);
-          if (choice.action) faults.frozen(trace, choice.action === "capture");
+          if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);
           remote.body = choice.value.body;
           remote.headers = choice.value.headers;
           remote.status = choice.value.status;
@@ -185,7 +191,7 @@ export async function startDashFaultProxy(
             )
           : remote.body;
       if (segment)
-        await faults.sendMedia(res, remote.status, body, remote.headers, req.method, signal, trace, !scenario);
+        await faults.sendMedia(res, remote.status, body, remote.headers, req.method, signal, trace, !scenario || !!scenario.timeline);
       else send(res, remote.status, body, remote.headers, req.method);
     } catch (error) {
       if (!signal.aborted)
@@ -213,6 +219,7 @@ export async function startDashFaultProxy(
   } catch (error) {
     faults.close();
     snapshots.close();
+    unsubscribeTimeline?.();
     await transport.close();
     scenario?.close();
     diagnostics.close();
@@ -225,6 +232,7 @@ export async function startDashFaultProxy(
     close: async () => {
       faults.close();
       snapshots.close();
+      unsubscribeTimeline?.();
       await transport.close();
       scenario?.close();
       diagnostics.close();

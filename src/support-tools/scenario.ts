@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { HttpError } from "./safe-http.js";
 import { getFaultConfig } from "./live-stream-fault-config.js";
+import { parseTimeline, ScenarioTimeline, TimelinePhase } from "./scenario-timeline.js";
 import type {
   RequestTrace,
   SessionDiagnostics,
@@ -37,6 +38,7 @@ export interface ScenarioDefinition {
   version: 1;
   seed: number;
   rules: ScenarioRule[];
+  timeline?: TimelinePhase[];
 }
 const statuses = [403, 404, 408, 429, 500, 502, 503, 504];
 const fail = (message: string): never => {
@@ -59,17 +61,18 @@ function immutable<T>(value: T): T {
   return value;
 }
 export function parseScenario(input: unknown): ScenarioDefinition {
-  object(input, ["version", "seed", "rules"], "scenario");
+  object(input, ["version", "seed", "rules", "timeline"], "scenario");
   const source = input as ScenarioDefinition;
   if (source.version !== 1) fail("version must be 1");
   if (!integer(source.seed ?? 0, 0, 0xffffffff))
     fail("seed must be an unsigned 32-bit integer");
   if (
     !Array.isArray(source.rules) ||
-    !source.rules.length ||
     source.rules.length > 64
   )
-    fail("provide 1 to 64 rules");
+    fail("rules must be an array of up to 64 HTTP rules; use [] with a timeline");
+  const timeline = source.timeline === undefined ? undefined : parseTimeline(source.timeline);
+  if (!source.rules.length && !timeline) fail("provide HTTP rules or a timeline");
   const ids = new Set<string>();
   const rules = source.rules.map((rule, index) => {
     const label = `rule ${index}`;
@@ -197,7 +200,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       expectRetry: rule.expectRetry ?? false,
     };
   });
-  return { version: 1, seed: source.seed ?? 0, rules };
+  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}) };
 }
 export function loadScenario(file?: string): ScenarioDefinition | undefined {
   if (!file) return undefined;
@@ -244,6 +247,7 @@ const hash = (value: string) =>
 export class ScenarioEngine {
   readonly definition: ScenarioDefinition;
   readonly scenarioId: string;
+  readonly timeline?: ScenarioTimeline;
   private started: number;
   private states: RuleState[];
   private attempts = new Map<string, Attempts>();
@@ -279,9 +283,11 @@ export class ScenarioEngine {
     }));
     this.assertCompatible();
     diagnostics.record("scenario.started", { scenarioId: this.scenarioId });
+    if (this.definition.timeline)
+      this.timeline = new ScenarioTimeline(this.definition.timeline, this.definition.seed, this.scenarioId, diagnostics, () => this.time());
   }
   assertCompatible(): void {
-    if (this.settled && !this.invalid) return;
+    if (this.settled && !this.invalid && !this.definition.timeline) return;
     const config = getFaultConfig();
     if (
       Object.entries(config.segment ?? {}).some(([key, value]) =>
@@ -314,7 +320,7 @@ export class ScenarioEngine {
       : (this.elapsed = Math.max(this.elapsed, this.clock() - this.started, 0));
   }
   get settled(): boolean {
-    return this.states.every(
+    return (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
       (_, index) => this.stateStatus(index) !== "pending",
     );
   }
@@ -559,6 +565,8 @@ export class ScenarioEngine {
         result: this.stateStatus(index),
       };
     });
+    const timeline = this.timeline?.report();
+    const outcomes = [...rules, ...(timeline ?? [])];
     return structuredClone({
       version: 1,
       scenarioId: this.scenarioId,
@@ -567,23 +575,25 @@ export class ScenarioEngine {
       clock: "monotonic_session_elapsed",
       elapsedMs: this.time(),
       result:
-        this.invalid || rules.some((rule) => rule.result === "failed")
+        this.invalid || outcomes.some((rule) => rule.result === "failed")
           ? "failed"
-          : rules.every((rule) => rule.result === "passed")
+          : outcomes.every((rule) => rule.result === "passed")
             ? "passed"
-            : this.closed || rules.some((rule) => rule.result === "incomplete")
+            : this.closed || outcomes.some((rule) => rule.result === "incomplete")
               ? "incomplete"
               : "pending",
-      invalidReason: this.invalid,
+      invalidReason: this.invalid ?? this.timeline?.failureReason,
       trackedDownloads: this.attempts.size,
       unidentifiedMediaRequests: this.unidentified,
       tracks: [...this.tracks].sort(),
       rules,
+      ...(timeline ? { timeline, profile: this.timeline.profile() } : {}),
     });
   }
   close(): void {
     if (!this.closed) {
       this.time();
+      this.timeline?.close();
       this.closed = true;
       this.diagnostics.record("scenario.closed", {
         scenarioId: this.scenarioId,

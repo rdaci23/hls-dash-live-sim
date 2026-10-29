@@ -24,6 +24,9 @@ release requirement.
   cancellation and real-engine integration checks; broader player recovery remains unverified.
 - [x] Control-page startup regression, configurable latency and actual HLS/DASH
   manifest inspection, with dedicated browser checks.
+- [x] Timed bandwidth, seeded jitter and manifest freeze/resume scenarios, with
+  isolated HLS/DASH HTTP replay verification and retained CI evidence;
+  [scope](network-scenarios.md).
 - [x] Simulator manifest freeze/resume verification for HLS/DASH, including media
   availability, current-time resume, local UTC and concurrent-response regressions.
 - [x] Current support/limits documentation, quick start and contributor guidance.

@@ -242,8 +242,9 @@ export async function startHlsim(
     diagnostics.close();
     throw error;
   }
-  const faults = new FaultRuntime();
+  const faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<string>(128, !scenario);
+  const unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const transport = sessionServer(async (req, res, signal, trace) => {
     try {
       if (preflight(req, res, host)) return;
@@ -308,10 +309,15 @@ export async function startHlsim(
           );
       }
       if (scenario) scenario.assertCompatible();
-      else {
+      if (!scenario || scenario.timeline) {
+        const requestVariant = url.pathname.match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
+        const lane = requestVariant
+          ? `media:video:${variants.findIndex(variant => variant.uri.startsWith(requestVariant + "/"))}`
+          : `manifest:${url.pathname}`;
         await faults.delay(signal, trace, req.method,
           dummy ? /\.(m3u8|ts)$/.test(url.pathname)
-            : ["playlist", "segment"].includes(lookupResource(url)?.kind));
+            : ["playlist", "segment"].includes(lookupResource(url)?.kind),
+          lane);
       }
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
@@ -335,8 +341,9 @@ export async function startHlsim(
         const timeline = timelines.get(match[1]);
         if (!timeline) throw new HttpError(404, "Unknown rendition");
         if (match[2] === "stream.m3u8") {
+          const profile = scenario?.timeline?.profile();
           const choice = snapshots.observe(url.pathname, timeline.playlist(match[1]));
-          if (choice.action) faults.frozen(trace, choice.action === "capture");
+          if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
           send(
             res,
             200,
@@ -404,7 +411,7 @@ export async function startHlsim(
               "Content-Range": `bytes ${start}-${finish}/${body.length}`,
               "Accept-Ranges": "bytes",
             },
-            req.method, signal, trace, !scenario,
+            req.method, signal, trace, !scenario || !!scenario.timeline,
           );
           return;
         }
@@ -415,7 +422,7 @@ export async function startHlsim(
           200,
           body,
           { "Content-Type": "video/mp2t", "Accept-Ranges": "bytes" },
-          req.method, signal, trace, !scenario,
+          req.method, signal, trace, !scenario || !!scenario.timeline,
         );
         return;
       }
@@ -533,6 +540,7 @@ export async function startHlsim(
   } catch (error) {
     faults.close();
     snapshots.close();
+    unsubscribeTimeline?.();
     await transport.close();
     scenario?.close();
     diagnostics.close();
@@ -561,6 +569,7 @@ export async function startHlsim(
     close: async () => {
       faults.close();
       snapshots.close();
+      unsubscribeTimeline?.();
       await transport.close();
       scenario?.close();
       diagnostics.close();

@@ -11,6 +11,7 @@ import { SharedBandwidthLimiter } from "./bandwidth-limiter.js";
 import { send, sendHeaders, HttpError } from "./safe-http.js";
 import type { ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import type { ScenarioTimeline, TimelineProfile } from "./scenario-timeline.js";
 import type {
   DiagnosticFault,
   RequestTrace,
@@ -35,7 +36,10 @@ export class FaultRuntime {
   private shapedBodies = 0;
   private shapedBytes = 0;
   private bandwidth = new SharedBandwidthLimiter(getFaultConfig().network?.bandwidthKbps);
-  constructor(private random: () => number = Math.random) {}
+  constructor(private random: () => number = Math.random, private timeline?: ScenarioTimeline) {
+    this.unsubscribeTimeline = timeline?.subscribe(profile => this.bandwidth.setRate(profile.bandwidthKbps));
+  }
+  private unsubscribeTimeline?: () => void;
   private unsubscribe = onFaultConfigChange((config) => {
     const values = faultModes(config);
     for (const [category, mode] of Object.entries(values))
@@ -58,7 +62,7 @@ export class FaultRuntime {
       this.activations.delete("bandwidth");
     this.jitter = config.network?.jitterMs;
     this.bandwidthKbps = config.network?.bandwidthKbps;
-    this.bandwidth.setRate(config.network?.bandwidthKbps ?? 0);
+    if (!this.timeline) this.bandwidth.setRate(config.network?.bandwidthKbps ?? 0);
     this.latency = config.segment?.latencyMs;
     this.freeze = config.manifest?.freeze;
   });
@@ -129,6 +133,7 @@ export class FaultRuntime {
   }
   close(): void {
     this.unsubscribe();
+    this.unsubscribeTimeline?.();
   }
   trigger(
     mode: FaultMode | undefined,
@@ -187,14 +192,18 @@ export class FaultRuntime {
     }
     return body.subarray(0, Math.max(1, Math.floor(body.length / 4)));
   }
-  async delay(signal: AbortSignal, trace?: RequestTrace, method = "GET", jitterEligible = true): Promise<void> {
+  async delay(signal: AbortSignal, trace?: RequestTrace, method = "GET", jitterEligible = true, lane = "manifest"): Promise<void> {
     signal.throwIfAborted();
     const config = getFaultConfig();
-    const ms = config.segment?.latencyMs ?? 0;
-    const jitterMs = method === "GET" && jitterEligible ? config.network?.jitterMs ?? 0 : 0;
-    const extra = jitterMs ? Math.floor(this.random() * (jitterMs + 1)) : 0;
+    const profile = this.timeline?.profile();
+    const ms = this.timeline ? 0 : config.segment?.latencyMs ?? 0;
+    const jitterMs = method === "GET" && jitterEligible ? (profile ? profile.jitterMs : config.network?.jitterMs ?? 0) : 0;
+    const track = /^(?:media|init):((?:video|audio|text):\d+)$/.exec(lane)?.[1];
+    if (this.timeline && track) trace?.logical({ trackId: track });
+    if (this.timeline && method === "GET" && jitterEligible) this.timeline.observe(trace, profile);
+    const extra = jitterMs ? this.timeline ? this.timeline.jitter(lane, jitterMs, profile) : Math.floor(this.random() * (jitterMs + 1)) : 0;
     const fixed = ms ? this.effect("latency", "always", trace, { delayMs: ms, action: "delay" }) : undefined;
-    const jitter = jitterMs ? this.effect("jitter", "always", trace, { jitterMs, delayMs: extra, action: "delay" }) : undefined;
+    const jitter = jitterMs ? this.timeline ? this.timeline.effect("jitter", trace, "delay", { jitterMs, delayMs: extra }, profile) : this.effect("jitter", "always", trace, { jitterMs, delayMs: extra, action: "delay" }) : undefined;
     if (ms + extra) await delay(ms + extra, undefined, { signal });
     signal.throwIfAborted();
     fixed?.apply();
@@ -207,7 +216,8 @@ export class FaultRuntime {
     signal: AbortSignal, trace?: RequestTrace, enabled = true,
   ): Promise<void> {
     signal.throwIfAborted();
-    const bandwidthKbps = enabled ? getFaultConfig().network?.bandwidthKbps ?? 0 : 0;
+    const profile = this.timeline?.profile();
+    const bandwidthKbps = enabled ? (profile ? profile.bandwidthKbps : getFaultConfig().network?.bandwidthKbps ?? 0) : 0;
     if (!bandwidthKbps || method !== "GET" || ![200, 206].includes(status)) {
       send(res, status, body, headers, method);
       return;
@@ -219,7 +229,7 @@ export class FaultRuntime {
     this.shapedBodies++;
     this.shapedBytes += buffer.length;
     try {
-      const effect = this.effect("bandwidth", "always", trace, { bandwidthKbps, action: "throttle" });
+      const effect = this.timeline ? this.timeline.effect("bandwidth", trace, "throttle", { bandwidthKbps }, profile) : this.effect("bandwidth", "always", trace, { bandwidthKbps, action: "throttle" });
       sendHeaders(res, status, buffer.length, headers);
       await this.bandwidth.write(res, buffer, signal);
       effect?.prepare();
@@ -229,9 +239,13 @@ export class FaultRuntime {
       this.shapedBytes -= buffer.length;
     }
   }
-  frozen(trace?: RequestTrace, capture = false): void {
+  frozen(trace?: RequestTrace, capture = false, profile?: TimelineProfile): void {
     // The proxy records the snapshot it actually used, even if configuration
     // changed while this request was waiting on an origin or artificial delay.
+    if (this.timeline) {
+      this.timeline.effect("freeze", trace, capture ? "capture_manifest" : "hold_manifest", {}, profile)?.prepare();
+      return;
+    }
     this.effect("freeze", "always", trace, {
       action: capture ? "capture_manifest" : "hold_manifest",
     })?.prepare();

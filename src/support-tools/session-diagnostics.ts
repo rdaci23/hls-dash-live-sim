@@ -32,6 +32,7 @@ type EventType =
   | "scenario.attempt"
   | "scenario.matched"
   | "scenario.result"
+  | "scenario.profile"
   | "scenario.closed";
 type ResourceKind = "manifest" | "segment" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
@@ -39,6 +40,8 @@ type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error";
 export interface DiagnosticFields {
   scenarioId?: string;
   ruleId?: string;
+  phaseId?: string;
+  manifestFreeze?: boolean;
   trackId?: string;
   segmentId?: string;
   segmentOrdinal?: number;
@@ -138,6 +141,9 @@ function allowedField(key: string, value: unknown): boolean {
     return typeof value === "string" && /^segment_[a-f0-9]{32}$/.test(value);
   if (key === "ruleId")
     return typeof value === "string" && /^rule:\d{1,2}$/.test(value);
+  if (key === "phaseId")
+    return typeof value === "string" && /^phase:\d{1,2}$/.test(value);
+  if (key === "manifestFreeze") return typeof value === "boolean";
   if (key === "trackId")
     return (
       typeof value === "string" && /^(video|audio|text):\d{1,3}$/.test(value)
@@ -257,6 +263,8 @@ export class SessionDiagnostics {
     for (const key of [
       "scenarioId",
       "ruleId",
+      "phaseId",
+      "manifestFreeze",
       "trackId",
       "segmentId",
       "segmentOrdinal",

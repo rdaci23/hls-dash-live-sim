@@ -86,10 +86,11 @@ selected rates, sampled delays, completion and cancellation without media bodies
 
 ## Scenarios and evidence
 
-The current scenario format owns HTTP status faults and rejects enabled manual
-network settings at startup or while a scenario is active. Seeded jitter, timed
-rate changes and scenario-driven shaping are future work. Do not assume a scenario
-silently incorporates the manual network profile.
+Scenario files can own timed bandwidth, seeded jitter and manifest freeze via an
+optional [timeline](network-scenarios.md). These settings are separate from the
+manual configuration described above. Enabled manual faults/network settings
+conflict with scenario mode; timeline sessions continue rejecting them after
+completion. Do not assume a scenario silently incorporates a manual profile.
 
 Automated checks exercise generated HLS, origin HLS and DASH proxy responses:
 shared concurrent throughput, progressive delivery, exact bytes/ranges, jitter

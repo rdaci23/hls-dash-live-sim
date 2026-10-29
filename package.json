@@ -40,7 +40,8 @@
     "browser:outage": "npm run build && node scripts/verify-browser.cjs --case outage",
     "manifest:verify": "npm run build && node scripts/verify-manifest-freeze.cjs",
     "browser:dash-abr": "npm run build && node scripts/verify-dash-abr.cjs",
-    "browser:dash-fallback": "npm run build && node scripts/verify-dash-abr.cjs --case fallback"
+    "browser:dash-fallback": "npm run build && node scripts/verify-dash-abr.cjs --case fallback",
+    "network:verify": "npm run build && node scripts/verify-network-scenarios.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

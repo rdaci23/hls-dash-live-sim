@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "timeline": [
+    { "afterMs": 0, "beforeMs": 30000, "network": { "bandwidthKbps": 1500, "jitterMs": 0 } },
+    { "afterMs": 30000, "beforeMs": 60000, "network": { "bandwidthKbps": 450, "jitterMs": 150 } },
+    { "afterMs": 60000, "beforeMs": 80000, "network": { "bandwidthKbps": 1500, "jitterMs": 80 }, "manifestFreeze": true },
+    { "afterMs": 80000, "beforeMs": 100000, "network": { "bandwidthKbps": 1500, "jitterMs": 0 } }
+  ]
+}

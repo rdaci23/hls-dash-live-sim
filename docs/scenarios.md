@@ -58,7 +58,7 @@ the response. Later rules cannot assign a second status to that request.
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `version`              | Must be 1. Unknown fields fail validation.                                                                                                                                                                                                   |
 | `seed`                 | Unsigned 32-bit integer, default 0.                                                                                                                                                                                                          |
-| `rules`                | One to 64 rules.                                                                                                                                                                                                                             |
+| `rules`                | One to 64 HTTP rules, or an empty array when a timeline is present.                                                                                                                                                                                                                             |
 | `id`                   | Optional unique human label. Labels are omitted from reports and logs; rules are identified as `rule:0`, `rule:1`, etc.                                                                                                                      |
 | `target.track`         | `video`, `audio`, `text`, or an exact alias such as `video:0`.                                                                                                                                                                               |
 | `target.segment`       | `next`, `each`, or an exact locator such as `{"kind":"number","value":"42"}` / `{"kind":"time","value":"22034830098432"}`. Values are unsigned 64-bit decimal strings.                                                                       |
@@ -87,6 +87,13 @@ different ranges have separate attempt counts. Single byte ranges are normalized
 so `bytes=000-0099` and `bytes=0-99` refer to the same download. Signed/cache query
 changes on the local DASH engine do not create a fresh first attempt. Multiple
 byte ranges in one request are outside this version's targeting subset.
+
+## Network and manifest timelines
+
+The optional `timeline` array schedules complete bandwidth/jitter/freeze profiles
+alongside HTTP rules. It supports finite phase windows, seeded response jitter
+and automatic restoration. Use `rules: []` for timeline-only definitions.
+[Format, examples and replay verification](network-scenarios.md).
 
 ## Timed outages
 
@@ -142,12 +149,13 @@ responses. Reports remain inspectable through `session.scenario.report()` after
   Number/Time SegmentTemplates and finite SegmentTimelines. Empty timelines at a
   period boundary are allowed. Media requests without an observed identity
   invalidate an active run with HTTP 409, rather than consuming a guessed target.
-- Manual faults, including network bandwidth/jitter, must be off at startup. Changing them during an active scenario
-  invalidates the run. Scenario mode owns fault behavior for that session; it does
-  not mix manual faults with scenario rules. Settled results are retained, and
-  finite completed scenarios allow healthy playback to continue.
-- This version injects HTTP statuses. Scenario-driven latency, corruption,
-  manifest freeze, DRM, ads and device-specific recovery actions are later work.
+- Manual faults, including network bandwidth/jitter, must be off at startup.
+  Conflicting requests during a scenario invalidate the run. Timeline-owned
+  sessions require them off even after their final phase. Settled results are
+  retained and completed finite scenarios allow healthy playback to continue.
+- HTTP statuses and optional timed bandwidth, seeded jitter and manifest freeze
+  are supported. Scenario-driven fixed latency, corruption, DRM, ads and
+  device-specific recovery actions remain later work.
 - Active attempt history is capped at 10000 downloads. The DASH index is bounded
   to 10000 retained resources, 128 tracks and 256 template scopes. Capacity
   exhaustion fails explicitly; counters are never silently evicted and reset.

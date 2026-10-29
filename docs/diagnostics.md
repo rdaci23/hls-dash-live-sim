@@ -63,6 +63,16 @@ recognized media also carries logical `trackId`, `segmentId`, `segmentOrdinal` a
 fingerprint (`scenarioId`). `scenario.attempt`, `scenario.matched` and
 `scenario.result` events connect that identity with the HTTP outcome.
 
+[Network timelines](network-scenarios.md) add `scenario.profile` at phase
+boundaries and `phaseId` on their fault events. Profile events report the effective
+bandwidth, jitter and boolean freeze setting. The healthy profile outside a phase
+has zero bandwidth/jitter, freeze false and no phase ID. Selected effects retain
+the phase observed at selection even if the response crosses a boundary. Combine
+profile events with request intervals to see rate changes affecting active bodies;
+a response's initial bandwidth selection is not a promise of one rate throughout
+its transfer. Timeline reports require successful in-window effect evidence and
+keep cancellation separate from completion.
+
 ## Event meanings
 
 | Event                                | Meaning                                                                                                                                                                                                            |

@@ -8,14 +8,14 @@ export class ManifestSnapshots<T> {
   private frozen = false;
   private unsubscribe: () => void;
   constructor(private capacity = 128, allowFreeze = true) {
-    const update = (enabled: boolean) => {
-      if (enabled !== this.frozen) {
-        this.frozen = enabled;
-        this.snapshots = enabled ? new Map(this.latest) : new Map();
-      }
-    };
-    update(allowFreeze && getFaultConfig().manifest?.freeze === "always");
-    this.unsubscribe = onFaultConfigChange(config => update(allowFreeze && config.manifest?.freeze === "always"));
+    this.setFrozen(allowFreeze && getFaultConfig().manifest?.freeze === "always");
+    this.unsubscribe = allowFreeze ? onFaultConfigChange(config => this.setFrozen(config.manifest?.freeze === "always")) : () => {};
+  }
+  setFrozen(enabled: boolean): void {
+    if (enabled !== this.frozen) {
+      this.frozen = enabled;
+      this.snapshots = enabled ? new Map(this.latest) : new Map();
+    }
   }
   held(key: string): T | undefined {
     return this.frozen ? this.snapshots.get(key) : undefined;
