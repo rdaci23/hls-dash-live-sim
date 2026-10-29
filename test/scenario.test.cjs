@@ -549,3 +549,60 @@ test("active HTTP scenarios reject manual network shaping instead of silently ig
     diagnostics.close();
   }
 });
+
+const outageDefinition = (extra = {}) => ({ version: 1, seed: 42, rules: [{ kind: 'outage',
+  target: { track: 'video', segment: 'each' }, status: 503, afterMs: 100, beforeMs: 300, ...extra }] });
+test('timed outage fails all retries and new segments only within its inclusive/exclusive window', t => {
+  const h = harness(t, outageDefinition());
+  h.time(99); assert.equal(h.request(media(1)).status, 0);
+  h.time(100);
+  assert.equal(h.request(media(1)).status, 503); // Includes retries seen before start.
+  assert.equal(h.request(media(1)).status, 503);
+  assert.equal(h.request(media(2)).status, 503);
+  assert.equal(h.request(media(3, 'audio:0')).status, 0);
+  assert.equal(h.request(media(4, 'video:0', 'init')).status, 0);
+  assert.equal(h.request(media(5), { method: 'HEAD' }).status, 0);
+  assert.equal(h.engine.report().result, 'pending');
+  h.time(299); assert.equal(h.request(media(2)).status, 503);
+  h.time(300); assert.equal(h.request(media(2)).status, 0);
+  const report = h.engine.report();
+  assert.equal(report.result, 'passed'); assert.equal(report.rules[0].applied, 4);
+  h.time(100000); assert.equal(h.request(media(99)).status, 0);
+  assert.equal(h.engine.report().result, 'passed');
+});
+test('timed outage cannot pass from an early quota, no traffic, cancellation or early shutdown', t => {
+  const capped = harness(t, outageDefinition({ maxApplications: 1 }));
+  capped.time(100); capped.request(media(1));
+  assert.equal(capped.engine.report().result, 'pending');
+  assert.throws(() => capped.request(media(2)), /capacity/);
+  assert.equal(capped.engine.report().result, 'failed');
+  const empty = harness(t, outageDefinition()); empty.time(300);
+  assert.equal(empty.engine.report().result, 'incomplete');
+  const early = harness(t, outageDefinition()); early.time(100); early.request(media(1)); early.engine.close();
+  assert.equal(early.engine.report().result, 'incomplete');
+  const cancelled = harness(t, outageDefinition()); cancelled.time(100); cancelled.request(media(1), { cancel: true });
+  cancelled.time(300); assert.equal(cancelled.engine.report().result, 'failed');
+  const pending = harness(t, outageDefinition()); pending.time(100);
+  const request = pending.request(media(1), { pending: true }); pending.time(300);
+  assert.equal(pending.engine.report().result, 'pending'); request.complete();
+  assert.equal(pending.engine.report().result, 'passed');
+});
+test('outage schema requires deterministic bounded all-attempt each-segment rules', () => {
+  for (const extra of [{ kind: 'unknown' }, { beforeMs: undefined }, { attempts: [1] },
+    { target: { track: 'video', segment: 'next' } }, { probability: 0.5 }, { expectRetry: true }])
+    assert.throws(() => parseScenario(outageDefinition(extra)), /Invalid scenario/);
+  assert.throws(() => parseScenario(definition({ attempts: 'all' })), /Invalid scenario/);
+  assert.deepEqual(parseScenario(parseScenario(outageDefinition())), parseScenario(outageDefinition()));
+});
+
+test('both outage presets validate, and active outage rules continue to reject manual fault conflicts', async t => {
+  for (const protocol of ['hls', 'dash']) {
+    const preset = parseScenario(JSON.parse(await fs.readFile(path.join(__dirname, '../examples/scenarios', protocol + '-sustained-outage.json'), 'utf8')));
+    assert.equal(preset.rules.length, protocol === 'dash' ? 2 : 1);
+    assert.ok(preset.rules.every(r => r.kind === 'outage' && r.attempts === 'all' && r.beforeMs - r.afterMs === 20000));
+  }
+  const h = harness(t, outageDefinition()); h.time(100); h.request(media(1));
+  config.applyConfigOverride({ network: { jitterMs: 1 } });
+  assert.throws(() => h.request(media(2)), /manual faults off/);
+  assert.equal(h.engine.report().invalidReason, 'manual_fault_conflict');
+});

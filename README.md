@@ -65,7 +65,7 @@ files for independent sessions. Stop sessions before regenerating sample assets.
 | Network conditions | Shared per-session media bandwidth ceiling and additional random media/manifest response jitter. |
 | Scenarios | Seeded HTTP status rules targeting logical tracks, segments, attempts and session-time windows; same-download retry assertions. |
 | Inspection | Actual HLS/DASH manifests in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
-| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; a separate automatic HLS bandwidth-adaptation check. |
+| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS bandwidth-adaptation and timed HLS/DASH media-outage checks. |
 
 **Limits:** no LL-HLS/LL-DASH, commercial DRM, ads or shared
 virtual clock. DASH source import analyzes supported metadata; it does not clone
@@ -172,6 +172,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | --- | --- |
 | [Implementation](docs/implementation.md) | Current behavior, supported imports and explicit limits. |
 | [Development and CI](docs/development.md) | Install, checks, CI matrix and packaged-CLI smoke test. |
+| [Sustained media outages](docs/sustained-outages.md) | Timed HLS/DASH 503 outages, measured stall/resume and explicit retry settings. |
 | [HLS automatic ABR](docs/hls-abr.md) | Reproducible bandwidth drop/restoration with rendered downshift/upshift evidence. |
 | [Playback gates](docs/playback-gates.md) | Numeric acceptance gates, reproducible browser/Roku commands and recorded hardware results. |
 | [Release checklist](docs/release-checklist.md) | Completed preparation and unresolved public-release requirements. |

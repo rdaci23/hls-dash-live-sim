@@ -62,7 +62,7 @@ the response. Later rules cannot assign a second status to that request.
 | `id`                   | Optional unique human label. Labels are omitted from reports and logs; rules are identified as `rule:0`, `rule:1`, etc.                                                                                                                      |
 | `target.track`         | `video`, `audio`, `text`, or an exact alias such as `video:0`.                                                                                                                                                                               |
 | `target.segment`       | `next`, `each`, or an exact locator such as `{"kind":"number","value":"42"}` / `{"kind":"time","value":"22034830098432"}`. Values are unsigned 64-bit decimal strings.                                                                       |
-| `attempts`             | Eligible request attempts, default `[1]`; unique integers from 1 to 1000.                                                                                                                                                                    |
+| `attempts`             | Eligible request attempts, default `[1]`; unique integers from 1 to 1000. Timed outages require `"all"` (their default).                                                                                                                                                                    |
 | `status`               | An explicit failure status: 403, 404, 408, 429, 500, 502, 503 or 504.                                                                                                                                                                        |
 | `maxApplications`      | Selection cap from 1 to 10000, default 1. Reserved when selected so concurrent requests cannot exceed the cap.                                                                                                                               |
 | `probability`          | From 0 to 1, default 1. Uses the seed rather than global random state.                                                                                                                                                                       |
@@ -88,6 +88,24 @@ so `bytes=000-0099` and `bytes=0-99` refer to the same download. Signed/cache qu
 changes on the local DASH engine do not create a fresh first attempt. Multiple
 byte ranges in one request are outside this version's targeting subset.
 
+## Timed outages
+
+A rule with `"kind": "outage"` requires `target.segment: "each"`, a finite
+`beforeMs`, all attempts (`attempts: "all"`, the default for this kind), probability
+1 and no `expectRetry`. It rejects new downloads and retries within
+`[afterMs, beforeMs)`, including retries first seen before the start. The default
+`maxApplications: 10000` is a safety bound: exhausting it during the window fails
+the run explicitly instead of silently restoring service. The rule stays pending
+until the end, then passes only if at least one injected response completed and
+all selected responses completed correctly. No traffic, early shutdown or cancelled
+injections cannot pass. Ordinary rules retain their quota/retry semantics.
+
+The server outcome proves injection only, not player recovery. Generated HLS
+muxes audio/video, so its preset targets `video`; the DASH preset has separate
+`video` and `audio` rules. Manifests, init, HEAD and UTC requests remain available.
+See [sustained outage recovery](sustained-outages.md) for the two presets, the
+explicit player retry profile and rendered browser acceptance checks.
+
 ## Replaying and checking outcomes
 
 Each rule has selected/applied counts. With `expectRetry`, passing requires the
@@ -96,8 +114,8 @@ download to start after that failure and finish with nonempty HTTP 200/206 media
 A concurrent duplicate cannot satisfy a retry assertion. Another segment, track
 or byte range cannot satisfy the assertion. Cancelled injections, failed retries
 and empty success responses fail the rule. Stopping before the assertion is met
-leaves an incomplete report. An expired time window with an unmet selection cap
-also reports incomplete.
+leaves an incomplete report. An expired ordinary rule time window with an unmet selection cap
+also reports incomplete. Timed outages use the window completion described above.
 
 For seeded choices, a new logical segment gets a per-track first-seen ordinal.
 The draw depends on seed, rule, track, that ordinal, normalized range and attempt.

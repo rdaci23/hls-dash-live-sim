@@ -103,7 +103,9 @@ time windows, seeded probability, ordered rules and application caps. The initia
 404 preset asserts a nonempty successful retry of the same logical download and
 byte range. HTTP success alone does not prove player recovery. Unknown identities,
 capacity exhaustion and conflicting manual faults invalidate a run. More scenario
-actions and ABR fallback assertions remain future work. [Rules](scenarios.md).
+actions remain future work. Timed outage rules reject all attempts until their
+window ends; the separate [browser outage check](sustained-outages.md) measures
+rendered recovery with an explicit retry profile. [Rules](scenarios.md).
 
 Session/request/fault IDs correlate response headers and redacted events for
 selection, consumption, application and cancellation. No raw source URLs,

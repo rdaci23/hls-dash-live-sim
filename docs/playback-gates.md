@@ -139,6 +139,12 @@ local clock was directly verified while external player requests were blocked.
 
 ## Clock scope and release status
 
+The separate [sustained media-outage check](sustained-outages.md) verifies a
+20-second 503 outage in HLS/DASH browsers with an explicit retry profile. Its
+rendered stall/resume and subsequent 60 seconds of playback are additional
+evidence. The six-case results above do not establish native sustained-outage
+recovery, which remains unverified.
+
 The default engine `utc_head` clock, MPD and segment availability share engine
 real time. The proxy preserves Date and CORS visibility. `--utc external` is an
 explicit internet-dependent test option. `nowMS` is a per-request diagnostic and

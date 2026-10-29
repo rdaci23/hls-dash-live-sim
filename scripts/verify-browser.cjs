@@ -6,6 +6,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
 const { setTimeout: delay } = require('node:timers/promises');
 const { GATES, evaluate } = require('./browser/acceptance.cjs');
+const { OUTAGE_GATES, evaluateOutage } = require('./browser/outage-acceptance.cjs');
 const { DEFAULT_IMAGE, startLivesim2 } = require('../dist/support-tools/dash-sim-runner.js');
 const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const root = path.resolve(__dirname, '..');
@@ -24,9 +25,11 @@ async function worker(protocol, test, directory) {
   const abort = new AbortController();
   process.once('SIGTERM', () => abort.abort()); process.once('SIGINT', () => abort.abort());
   let result, browserVersion, harnessError;
+  const assess = input => test === 'outage' ? evaluateOutage({ ...input, samples }) : evaluate(input);
   try {
     const scenarioFile = path.join(directory, 'scenario.json');
-    if (test !== 'healthy') await fs.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, rules: [{
+    if (test === 'outage') await fs.copyFile(path.join(root, 'examples/scenarios', protocol + '-sustained-outage.json'), scenarioFile);
+    else if (test !== 'healthy') await fs.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, rules: [{
       id: test, target: { track: 'video', segment: 'next' }, attempts: [1], status: 404,
       maxApplications: 1, expectRetry: true, afterMs: test === 'during' ? (smoke ? 12000 : 60000) : 0 }] }));
     const options = { port: await port(), faultConfigPath: path.join(directory, 'faults.json'),
@@ -79,20 +82,22 @@ async function worker(protocol, test, directory) {
     });
     await page.goto(origin);
     // Poll telemetry from rendered-frame callbacks; the browser remains independently active.
-    const deadline = Date.now() + (smoke ? 45000 : test === 'healthy' ? 215000 : test === 'during' ? 155000 : 100000);
+    const deadline = Date.now() + (test === 'outage' ? 180000 : smoke ? 45000 : test === 'healthy' ? 215000 : test === 'during' ? 155000 : 100000);
+    const telemetryDeadline = Date.now() + 15000;
     let lastLog = 0;
     while (Date.now() < deadline) {
       abort.signal.throwIfAborted();
       if (latest) {
         const scenario = session.scenario?.report();
-        const events = session.diagnostics.snapshot().events;
-        result = evaluate({ protocol, test, metrics: latest, audit, events, scenario, smoke });
+        const events = test === 'outage' ? (await fs.readFile(path.join(directory, 'requests.jsonl'), 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse) : session.diagnostics.snapshot().events;
+        result = assess({ protocol, test, metrics: latest, audit, events, scenario, smoke });
         if (result.passed) break;
         if (Date.now() - lastLog >= 30000) { console.log(`${protocol}/${test}: ${Math.round(latest.elapsedMs / 1000)}s, ${latest.frames} rendered frames, ${latest.playedPeriods.length} played periods`); lastLog = Date.now(); }
         if (latest.elapsedMs > 12000 && latest.firstFrameMs === null) break;
         if (latest.videoErrors.length || audit.some(e => e.kind === 'pageerror')) break;
         if (Date.now() - latest.startEpochMs - latest.elapsedMs > 10000) throw Error('Browser telemetry stopped advancing');
       }
+      else if (Date.now() > telemetryDeadline) throw Error('Browser telemetry did not start');
       await delay(500, undefined, { signal: abort.signal });
     }
     // Capture actual final state before closing the owned browser and stream.
@@ -107,9 +112,9 @@ async function worker(protocol, test, directory) {
     if (session) await session.close();
     if (web) { web.closeAllConnections(); await new Promise(r => web.close(r)); }
   }
-  const events = (await fs.readFile(path.join(directory, 'requests.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
-  const scenario = session.scenario?.report();
-  result = evaluate({ protocol, test, metrics: latest, audit, events, scenario, smoke });
+  const events = (await fs.readFile(path.join(directory, 'requests.jsonl'), 'utf8').catch(() => '')).trim().split('\n').filter(Boolean).map(JSON.parse);
+  const scenario = session?.scenario?.report();
+  result = assess({ protocol, test, metrics: latest, audit, events, scenario, smoke });
   if (harnessError) { result.passed = false; result.releaseQualified = false; result.failures.push('Harness failure: ' + harnessError); }
   await fs.writeFile(path.join(directory, 'raw.json'), JSON.stringify({ metrics: latest, samples, audit, scenario }, null, 2));
   const playerPackage = JSON.parse(await fs.readFile(path.join(root, 'node_modules', protocol === 'hls' ? 'hls.js' : 'dashjs', 'package.json'), 'utf8'));
@@ -125,8 +130,8 @@ async function main() {
   const protocols = option('--protocol', 'hls,dash').split(',');
   const cases = option('--case', 'healthy,startup,during').split(',');
   if (new Set(protocols).size !== protocols.length || new Set(cases).size !== cases.length ||
-      protocols.some(p => !['hls', 'dash'].includes(p)) || cases.some(c => !['healthy', 'startup', 'during'].includes(c)))
-    throw Error('Use --protocol hls,dash and --case healthy,startup,during');
+      protocols.some(p => !['hls', 'dash'].includes(p)) || cases.some(c => !['healthy', 'startup', 'during', 'outage'].includes(c)) || (smoke && cases.includes('outage')))
+    throw Error('Use --protocol hls,dash and --case healthy,startup,during,outage; outage has no shortened smoke mode');
   const directory = path.resolve(option('--output', path.join(root, 'output/playwright', 'verification-' + Date.now())));
   if (args.includes('--worker')) return worker(protocols[0], cases[0], directory);
   await fs.mkdir(path.dirname(directory), { recursive: true });
@@ -155,8 +160,10 @@ async function main() {
     if (interrupted) throw Error('Verification interrupted; completed case evidence remains in ' + directory);
   }
   const summary = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root }).toString().trim(),
-    workingTreeModified: !!execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: root }).toString().trim(),
-    gates: GATES, smoke, browserGatesPassed: reports.length === 6 && reports.every(r => r.releaseQualified),
+    workingTreeModified: !!execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim(),
+    gates: GATES, outageGates: cases.includes('outage') ? OUTAGE_GATES : undefined, smoke,
+    sustainedOutageGatesPassed: reports.filter(r => r.test === 'outage').length === 2 && reports.filter(r => r.test === 'outage').every(r => r.passed),
+    browserGatesPassed: reports.filter(r => r.test !== 'outage').length === 6 && reports.filter(r => r.test !== 'outage').every(r => r.releaseQualified),
     releaseReady: false, roku: { verified: false, reason: 'Physical target verification required separately' }, reports };
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(summary, null, 2) + '\n');
   console.log('Evidence: ' + path.join(directory, 'report.json'));

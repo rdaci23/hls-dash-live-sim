@@ -25,6 +25,8 @@ maintainer decision after the remaining requirements are satisfied.
 - [x] Optional manual CI full-browser gate with retained run evidence.
 - [x] Separate automatic HLS bandwidth-adaptation runner and CI job with rendered
   high/low/high evidence; see [its exact scope and gates](hls-abr.md).
+- [x] Separate timed HLS/DASH media-outage runner and routine CI job with measured
+  stall/resume and post-recovery rendering; [scope and retry policy](sustained-outages.md).
 
 Checked items describe implemented checks or recorded evidence. They do not say
 that every future commit has passed. For the candidate, inspect the exact
@@ -60,8 +62,9 @@ that every future commit has passed. For the candidate, inspect the exact
   external player requests blocked, not with the whole computer disconnected.
 - Same-download 404 recovery does not establish ABR fallback. The separate HLS
   bandwidth-adaptation check covers one two-rendition Chrome profile. DASH/native
-  ABR, jitter recovery, sustained outages, freeze/resume recovery and perceived
-  audio quality remain outside that evidence.
+  ABR, jitter recovery, manifest freeze/resume recovery and perceived audio
+  quality remain outside that evidence. The separate browser [media-outage check](sustained-outages.md)
+  covers one timed 503 profile with explicit retries; native sustained outages remain unverified.
 - LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
   deferred capabilities. They must not appear as supported preset promises.
 

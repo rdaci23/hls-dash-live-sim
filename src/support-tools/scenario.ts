@@ -18,12 +18,14 @@ export interface LogicalMedia {
   locator?: { kind: "number" | "time"; value: string };
 }
 export interface ScenarioRule {
+  /** A bounded outage rejects every attempt until beforeMs, not a quota of failures. */
+  kind?: "outage";
   id?: string;
   target: {
     track: string;
     segment: "next" | "each" | { kind: "number" | "time"; value: string };
   };
-  attempts: number[];
+  attempts: number[] | "all";
   afterMs: number;
   beforeMs?: number;
   probability: number;
@@ -75,6 +77,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       rule,
       [
         "id",
+        "kind",
         "target",
         "attempts",
         "afterMs",
@@ -116,13 +119,17 @@ export function parseScenario(input: unknown): ScenarioDefinition {
           `${label} segment requires number/time and an unsigned 64-bit decimal string value`,
         );
     }
-    const attempts = rule.attempts ?? [1];
+    if (rule.kind !== undefined && rule.kind !== "outage")
+      fail(`${label} kind must be outage`);
+    const outage = rule.kind === "outage";
+    const attempts = rule.attempts ?? (outage ? "all" : [1]);
     if (
-      !Array.isArray(attempts) ||
-      !attempts.length ||
-      attempts.length > 100 ||
-      attempts.some((n) => !integer(n, 1, 1000)) ||
-      new Set(attempts).size !== attempts.length
+      !(outage && attempts === "all") &&
+      (!Array.isArray(attempts) ||
+        !attempts.length ||
+        attempts.length > 100 ||
+        attempts.some((n) => !integer(n, 1, 1000)) ||
+        new Set(attempts).size !== attempts.length)
     )
       fail(`${label} attempts must be unique integers from 1 to 1000`);
     const afterMs = rule.afterMs ?? 0,
@@ -136,7 +143,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         `${label} time window must be within one day, with beforeMs greater than afterMs`,
       );
     const probability = rule.probability ?? 1,
-      maxApplications = rule.maxApplications ?? 1;
+      maxApplications = rule.maxApplications ?? (outage ? 10000 : 1);
     if (
       typeof probability !== "number" ||
       !Number.isFinite(probability) ||
@@ -151,10 +158,19 @@ export function parseScenario(input: unknown): ScenarioDefinition {
     if (rule.expectRetry !== undefined && typeof rule.expectRetry !== "boolean")
       fail(`${label} expectRetry must be boolean`);
     if (
+      outage &&
+      (segment !== "each" || beforeMs === undefined || attempts !== "all" ||
+        probability !== 1 || rule.expectRetry === true)
+    )
+      fail(
+        `${label} outage requires each, all attempts, a finite beforeMs, probability 1 and no expectRetry`,
+      );
+    if (
       rule.expectRetry &&
       (segment === "each" ||
         maxApplications !== 1 ||
         probability !== 1 ||
+        attempts === "all" ||
         attempts.length !== 1 ||
         attempts[0] !== 1)
     )
@@ -163,6 +179,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       );
     return {
       ...(rule.id ? { id: rule.id } : {}),
+      ...(outage ? { kind: "outage" as const } : {}),
       target: {
         track: rule.target.track,
         segment:
@@ -170,7 +187,8 @@ export function parseScenario(input: unknown): ScenarioDefinition {
             ? segment
             : { kind: segment.kind, value: segment.value },
       },
-      attempts: [...attempts].sort((a, b) => a - b),
+      attempts:
+        attempts === "all" ? "all" as const : [...attempts].sort((a, b) => a - b),
       afterMs,
       ...(beforeMs !== undefined ? { beforeMs } : {}),
       probability,
@@ -209,7 +227,8 @@ interface RuleState {
     | "injected_response_cancelled"
     | "unexpected_fault_response"
     | "retry_failed"
-    | "retry_before_fault";
+    | "retry_before_fault"
+    | "outage_capacity_exceeded";
   firstAttempt?: number;
   targetId?: string;
   targetOrdinal?: number;
@@ -305,6 +324,14 @@ export class ScenarioEngine {
     const state = this.states[index],
       rule = this.definition.rules[index];
     if (this.invalid || state.failure) return "failed";
+    if (rule.kind === "outage") {
+      // A quota must never silently restore service before the promised end.
+      if (this.time() >= rule.beforeMs!) {
+        if (state.applied > 0 && state.applied === state.selected) return "passed";
+        if (!state.selected) return "incomplete";
+      }
+      return this.closed ? "incomplete" : "pending";
+    }
     if (
       state.applied >= rule.maxApplications &&
       (!rule.expectRetry || state.recovered)
@@ -395,7 +422,7 @@ export class ScenarioEngine {
       const state = this.states[index];
       if (
         state.failure ||
-        state.selected >= rule.maxApplications ||
+        (rule.kind !== "outage" && state.selected >= rule.maxApplications) ||
         (rule.target.track !== media.trackType &&
           rule.target.track !== media.trackId)
       )
@@ -420,7 +447,12 @@ export class ScenarioEngine {
         )
           continue;
       }
-      if (!rule.attempts.includes(ordinal)) continue;
+      if (rule.attempts !== "all" && !rule.attempts.includes(ordinal)) continue;
+      if (state.selected >= rule.maxApplications) {
+        state.failure = "outage_capacity_exceeded";
+        this.invalid = "capacity_exceeded";
+        throw new HttpError(503, "Outage capacity reached; restart with a new run");
+      }
       const choice =
         parseInt(
           hash(
@@ -441,7 +473,7 @@ export class ScenarioEngine {
         faultId: "fault_" + hash(`${this.scenarioId}:${index}`).slice(0, 32),
         fault: "scenario.status",
         mode:
-          rule.maxApplications === 1
+          rule.maxApplications === 1 && rule.kind !== "outage"
             ? "once"
             : rule.probability < 1
               ? "random"
@@ -449,7 +481,7 @@ export class ScenarioEngine {
         action: "response",
         status: rule.status,
       });
-      if (rule.maxApplications === 1) effect.consumed();
+      if (rule.maxApplications === 1 && rule.kind !== "outage") effect.consumed();
       effect.prepare();
       trace.record("scenario.matched", {
         ruleId,
@@ -508,6 +540,7 @@ export class ScenarioEngine {
       const state = this.states[index];
       return {
         ruleId: `rule:${index}`,
+        kind: rule.kind,
         target: rule.target,
         attempts: rule.attempts,
         afterMs: rule.afterMs,
