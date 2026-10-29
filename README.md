@@ -62,11 +62,12 @@ files for independent sessions. Stop sessions before regenerating sample assets.
 | DASH samples | livesim2 v1.15.3 at an immutable digest, H.264 video plus separate AAC, live windows and supported period options. |
 | Clock | Coherent real-time DASH availability and local UTC by default; external UTC is opt-in. |
 | Manual faults | Segment 403/404, malformed media, fixed response delay, manifest freeze, and limited encrypted-origin HLS key faults. |
+| Network conditions | Shared per-session media bandwidth ceiling and additional random media/manifest response jitter. |
 | Scenarios | Seeded HTTP status rules targeting logical tracks, segments, attempts and session-time windows; same-download retry assertions. |
 | Inspection | Actual HLS/DASH manifests in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
 | Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku. |
 
-**Limits:** no LL-HLS/LL-DASH, commercial DRM, ads, bandwidth throttling or shared
+**Limits:** no LL-HLS/LL-DASH, commercial DRM, ads or shared
 virtual clock. DASH source import analyzes supported metadata; it does not clone
 arbitrary source media. HLS origin scenarios and ABR fallback recovery remain
 outside verified coverage. Apple, Android and additional Roku models remain
@@ -85,7 +86,12 @@ stream and controls; inspecting a stream does not retarget its configuration.
 
 Set **Latency (ms)** between 0 and 60,000, then **Apply Latency**. This delays
 matching media and manifest responses until **Clear Latency** or zero is applied.
-It does not limit bandwidth; the local UTC endpoint stays unaffected.
+Fixed latency is separate from **Network conditions**: set **Bandwidth limit
+(kbps)** and **Jitter (ms)**, then **Apply Network Conditions**. Zero disables each
+setting. The bandwidth ceiling is shared across concurrent media/init downloads;
+jitter adds a random 0–N ms to media/manifest GETs. **Clear Network Conditions**
+releases queued capped transfers. Local UTC and health stay unaffected.
+[Units, timing and scope](docs/network-conditions.md).
 
 **Once** applies to one matching GET, not one playback event. Quick Inject rearms
 it; repeated injections before consumption coalesce into the latest arm. Player

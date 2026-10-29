@@ -8,6 +8,8 @@ export type DiagnosticFault =
   | "segment.malformed"
   | "hls.keyFailure"
   | "hls.keyMismatch"
+  | "response.jitter"
+  | "response.bandwidth"
   | "response.latency"
   | "manifest.freeze"
   | "scenario.status";
@@ -55,9 +57,12 @@ export interface DiagnosticFields {
   bodyBytes?: number;
   durationMs?: number;
   delayMs?: number;
+  jitterMs?: number;
+  bandwidthKbps?: number;
   reason?: CancelReason | "resource_rejected" | "origin_failure";
   action?:
     | "response"
+    | "throttle"
     | "delay"
     | "corrupt_body"
     | "corrupt_range"
@@ -93,6 +98,8 @@ const values = {
     "hls.keyFailure",
     "hls.keyMismatch",
     "response.latency",
+    "response.jitter",
+    "response.bandwidth",
     "manifest.freeze",
     "scenario.status",
   ],
@@ -107,6 +114,7 @@ const values = {
   action: [
     "response",
     "delay",
+    "throttle",
     "corrupt_body",
     "corrupt_range",
     "capture_manifest",
@@ -141,7 +149,7 @@ function allowedField(key: string, value: unknown): boolean {
       Number.isInteger(value) && Number(value) >= 100 && Number(value) <= 599
     );
   return (
-    ["bodyBytes", "durationMs", "delayMs"].includes(key) &&
+    ["bodyBytes", "durationMs", "delayMs", "jitterMs", "bandwidthKbps"].includes(key) &&
     typeof value === "number" &&
     Number.isFinite(value) &&
     value >= 0
@@ -267,6 +275,8 @@ export class SessionDiagnostics {
       "bodyBytes",
       "durationMs",
       "delayMs",
+      "jitterMs",
+      "bandwidthKbps",
       "reason",
       "action",
     ])

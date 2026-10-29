@@ -133,6 +133,24 @@
     </section>
 
     <section>
+      <h2>Network conditions</h2>
+      <div class="card">
+        <label>Bandwidth limit (kbps)
+          <input type="number" min="0" max="1000000" step="1" required value="0" data-key="network.bandwidthKbps" aria-describedby="bandwidth-help" />
+        </label>
+        <p class="help" id="bandwidth-help">0 disables the cap. Decimal kilobits per second (1,000 kbps = 1 Mbps), shared across concurrent media and initialization GET downloads in this session. Manifests, keys, health and UTC are outside the cap.</p>
+        <label>Jitter (ms)
+          <input type="number" min="0" max="60000" step="1" required value="0" data-key="network.jitterMs" aria-describedby="jitter-help" />
+        </label>
+        <p class="help" id="jitter-help">Adds a random 0–N ms delay to each media or manifest GET, plus the fixed latency above. 0 disables jitter. Health, keys and UTC stay unaffected. Changes apply to new delays; clearing the bandwidth cap also releases queued transfers.</p>
+        <div class="actions">
+          <button id="apply-network" class="warning">Apply Network Conditions</button>
+          <button id="clear-network" class="secondary">Clear Network Conditions</button>
+        </div>
+      </div>
+    </section>
+
+    <section>
       <h2>Segment Faults</h2>
       <div class="grid">
         <div class="card">

@@ -230,6 +230,7 @@ export async function startFaultServer(
         missing: "off",
         latencyMs: 0,
       },
+      network: { bandwidthKbps: 0, jitterMs: 0 },
       drm: { licenseFailure: "off", keyRotationMismatch: "off" },
       manifest: { freeze: "off" },
     });

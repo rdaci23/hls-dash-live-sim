@@ -7,6 +7,9 @@ import {
   FaultCategory,
 } from "./live-stream-fault-config.js";
 import { setTimeout as delay } from "node:timers/promises";
+import { SharedBandwidthLimiter } from "./bandwidth-limiter.js";
+import { send, sendHeaders, HttpError } from "./safe-http.js";
+import type { ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import type {
   DiagnosticFault,
@@ -20,6 +23,8 @@ const names: Record<string, DiagnosticFault> = {
   "key-failure": "hls.keyFailure",
   "key-mismatch": "hls.keyMismatch",
   latency: "response.latency",
+  jitter: "response.jitter",
+  bandwidth: "response.bandwidth",
   freeze: "manifest.freeze",
 };
 export class FaultRuntime {
@@ -27,6 +32,10 @@ export class FaultRuntime {
   private arms = new Map<string, string>();
   private consumed = new Set<string>();
   private activations = new Map<string, { signature: string; id: string }>();
+  private shapedBodies = 0;
+  private shapedBytes = 0;
+  private bandwidth = new SharedBandwidthLimiter(getFaultConfig().network?.bandwidthKbps);
+  constructor(private random: () => number = Math.random) {}
   private unsubscribe = onFaultConfigChange((config) => {
     const values = faultModes(config);
     for (const [category, mode] of Object.entries(values))
@@ -43,9 +52,18 @@ export class FaultRuntime {
       this.activations.delete("latency");
     if (config.manifest?.freeze !== this.freeze)
       this.activations.delete("freeze");
+    if (config.network?.jitterMs !== this.jitter)
+      this.activations.delete("jitter");
+    if (config.network?.bandwidthKbps !== this.bandwidthKbps)
+      this.activations.delete("bandwidth");
+    this.jitter = config.network?.jitterMs;
+    this.bandwidthKbps = config.network?.bandwidthKbps;
+    this.bandwidth.setRate(config.network?.bandwidthKbps ?? 0);
     this.latency = config.segment?.latencyMs;
     this.freeze = config.manifest?.freeze;
   });
+  private jitter = getFaultConfig().network?.jitterMs;
+  private bandwidthKbps = getFaultConfig().network?.bandwidthKbps;
   private latency = getFaultConfig().segment?.latencyMs;
   private freeze = getFaultConfig().manifest?.freeze;
   private effect(
@@ -60,9 +78,13 @@ export class FaultRuntime {
       ":" +
       (category === "latency"
         ? config.segment?.latencyMs
-        : category === "freeze"
-          ? config.manifest?.freeze
-          : (config._oneShot?.[category] ?? ""));
+        : category === "jitter"
+          ? config.network?.jitterMs
+          : category === "bandwidth"
+            ? config.network?.bandwidthKbps
+            : category === "freeze"
+              ? config.manifest?.freeze
+              : (config._oneShot?.[category] ?? ""));
     let activation = this.activations.get(category);
     if (!activation || activation.signature !== signature) {
       activation = {
@@ -100,6 +122,8 @@ export class FaultRuntime {
             : "enabled",
         })),
       latencyMs: config.segment?.latencyMs ?? 0,
+      jitterMs: config.network?.jitterMs ?? 0,
+      bandwidthKbps: config.network?.bandwidthKbps ?? 0,
       manifestFreeze: config.manifest?.freeze === "always",
     };
   }
@@ -163,18 +187,47 @@ export class FaultRuntime {
     }
     return body.subarray(0, Math.max(1, Math.floor(body.length / 4)));
   }
-  async delay(signal: AbortSignal, trace?: RequestTrace): Promise<void> {
+  async delay(signal: AbortSignal, trace?: RequestTrace, method = "GET", jitterEligible = true): Promise<void> {
     signal.throwIfAborted();
-    const ms = getFaultConfig().segment?.latencyMs ?? 0;
-    const effect = ms
-      ? this.effect("latency", "always", trace, {
-          delayMs: ms,
-          action: "delay",
-        })
-      : undefined;
-    if (ms) await delay(ms, undefined, { signal });
+    const config = getFaultConfig();
+    const ms = config.segment?.latencyMs ?? 0;
+    const jitterMs = method === "GET" && jitterEligible ? config.network?.jitterMs ?? 0 : 0;
+    const extra = jitterMs ? Math.floor(this.random() * (jitterMs + 1)) : 0;
+    const fixed = ms ? this.effect("latency", "always", trace, { delayMs: ms, action: "delay" }) : undefined;
+    const jitter = jitterMs ? this.effect("jitter", "always", trace, { jitterMs, delayMs: extra, action: "delay" }) : undefined;
+    if (ms + extra) await delay(ms + extra, undefined, { signal });
     signal.throwIfAborted();
-    effect?.apply();
+    fixed?.apply();
+    jitter?.apply();
+  }
+
+  async sendMedia(
+    res: ServerResponse, status: number, body: Buffer | string,
+    headers: Record<string, string>, method: string,
+    signal: AbortSignal, trace?: RequestTrace, enabled = true,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    const bandwidthKbps = enabled ? getFaultConfig().network?.bandwidthKbps ?? 0 : 0;
+    if (!bandwidthKbps || method !== "GET" || ![200, 206].includes(status)) {
+      send(res, status, body, headers, method);
+      return;
+    }
+    const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+    if (!buffer.length) { send(res, status, buffer, headers, method); return; }
+    if (this.shapedBodies >= 128 || this.shapedBytes + buffer.length > 64 * 1024 * 1024)
+      throw new HttpError(503, "Bandwidth shaping capacity exceeded; finish or clear active transfers");
+    this.shapedBodies++;
+    this.shapedBytes += buffer.length;
+    try {
+      const effect = this.effect("bandwidth", "always", trace, { bandwidthKbps, action: "throttle" });
+      sendHeaders(res, status, buffer.length, headers);
+      await this.bandwidth.write(res, buffer, signal);
+      effect?.prepare();
+      res.end();
+    } finally {
+      this.shapedBodies--;
+      this.shapedBytes -= buffer.length;
+    }
   }
   frozen(trace?: RequestTrace, capture = false): void {
     // The proxy records the snapshot it actually used, even if configuration

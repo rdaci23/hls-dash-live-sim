@@ -15,5 +15,9 @@
   },
   "logging": {
     "verbose": false
+  },
+  "network": {
+    "bandwidthKbps": 0,
+    "jitterMs": 0
   }
 }

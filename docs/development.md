@@ -32,7 +32,7 @@ use your existing Chrome installation.
 | --- | --- | --- |
 | `npm run docs:check` | Local documentation link targets exist. Does not verify remote URLs or heading fragments. | Node; no network. |
 | `npm run typecheck` | TypeScript checking. | Development dependencies. |
-| `npm test` | Builds assets, then API, protocol, safety, diagnostics, scenarios and evidence regressions. | No Docker/browser; optional integrations are reported as skipped. |
+| `npm test` | Builds assets, then API, protocol, safety, diagnostics, scenarios, bandwidth/jitter timing and evidence regressions. | No Docker/browser; optional integrations are reported as skipped. |
 | `npm run test:ui` | Real control-page JS, authentication, settings, latency and HLS/DASH viewer, stream status, clipboard and exact download interactions. | Google Chrome. DASH viewer responses use a local fixture here. |
 | `npm run test:docker` | Actual pinned livesim2, A/V resources and period-boundary timelines, clock headers and owned-container cleanup. | Docker and pinned image already present. |
 | `npm run scenario:verify -- --protocol hls` | Generated HLS HTTP 404/retry scenario and diagnostics. | Node only. |

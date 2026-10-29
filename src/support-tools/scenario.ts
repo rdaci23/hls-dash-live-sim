@@ -269,7 +269,8 @@ export class ScenarioEngine {
         key === "latencyMs" ? Number(value) > 0 : value !== "off",
       ) ||
       Object.values(config.drm ?? {}).some((value) => value !== "off") ||
-      config.manifest?.freeze !== "off"
+      config.manifest?.freeze !== "off" ||
+      Object.values(config.network ?? {}).some(value => Number(value) > 0)
     )
       this.invalid = "manual_fault_conflict";
     if (this.invalid)

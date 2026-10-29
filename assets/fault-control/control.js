@@ -44,17 +44,23 @@
     }
     return data;
   }
-  function latency() {
-    const input = document.querySelector('[data-key="segment.latencyMs"]');
-    const value = Number(input.value);
-    if (!input.value.trim() || !Number.isFinite(value) || value < 0 || value > 60000) throw new Error('Enter a latency between 0 and 60,000 ms.');
+  function numeric(field) {
+    const value = Number(field.value);
+    if (!field.value.trim() || !Number.isFinite(value) || value < Number(field.min) || value > Number(field.max) || (field.step !== 'any' && !Number.isInteger(value))) {
+      if (field.dataset.key === 'segment.latencyMs') throw new Error('Enter a latency between 0 and 60,000 ms.');
+      throw new Error((field.dataset.key === 'network.bandwidthKbps' ? 'Bandwidth' : 'Jitter') + ' must be a whole number from 0 to ' + Number(field.max).toLocaleString() + '.');
+    }
     return value;
+  }
+  function latency() { return numeric(document.querySelector('[data-key="segment.latencyMs"]')); }
+  function networkConfig() {
+    return { bandwidthKbps: numeric(document.querySelector('[data-key="network.bandwidthKbps"]')), jitterMs: numeric(document.querySelector('[data-key="network.jitterMs"]')) };
   }
   function collectConfig() {
     const result = {};
     for (const field of fields) {
       const [group, key] = field.dataset.key.split('.');
-      (result[group] ||= {})[key] = field.type === 'number' ? latency() : field.value;
+      (result[group] ||= {})[key] = field.type === 'number' ? numeric(field) : field.value;
     }
     return result;
   }
@@ -65,7 +71,7 @@
         ' -H "Content-Type: application/json"' +
         ($('control-token').value ? ' -H "Authorization: Bearer $HLS_DASH_CONTROL_TOKEN"' : '') +
         ' --data ' + shellQuote(JSON.stringify(collectConfig()));
-    } catch { $('curl-example').textContent = 'Enter a valid latency to generate this command.'; }
+    } catch { $('curl-example').textContent = 'Enter valid numeric settings to generate this command.'; }
   }
   async function fetchConfig() {
     const data = await apiRequest('/config');
@@ -143,10 +149,20 @@
     const lines = rules.filter(([, mode]) => mode && mode !== 'off').map(([key, mode]) =>
       faultNames[key] + ' — ' + (mode === 'once' ? 'once configured; check stream consumption below' : mode === 'random' ? 'random (40% per matching request)' : 'always'));
     if (cfg.segment?.latencyMs) lines.push('Response latency — ' + cfg.segment.latencyMs + ' ms');
+    if (cfg.network?.bandwidthKbps) lines.push('Shared media bandwidth — ' + cfg.network.bandwidthKbps + ' kbps');
+    if (cfg.network?.jitterMs) lines.push('Additional jitter — 0–' + cfg.network.jitterMs + ' ms');
     if (cfg.manifest?.freeze === 'always') lines.push('Manifest freeze — enabled');
     listItems('active-faults', lines.length ? lines : ['No manual faults enabled in saved controls.']);
   }
 
+  $('apply-network').addEventListener('click', () => run(async () => {
+    await apiRequest('/config', { network: networkConfig() });
+    await fetchConfig(); status('Network conditions applied');
+  }));
+  $('clear-network').addEventListener('click', () => run(async () => {
+    await apiRequest('/config', { network: { bandwidthKbps: 0, jitterMs: 0 } });
+    await fetchConfig(); status('Network conditions cleared');
+  }));
   $('save-config').addEventListener('click', () => run(async () => {
     await apiRequest('/config', collectConfig());
     await fetchConfig(); status('Configuration saved');
@@ -212,6 +228,8 @@
     else {
       for (const rule of faults.rules) lines.push((faultNames[rule.fault] || rule.fault) + ' — ' + rule.mode + ' · ' + rule.state);
       if (faults.latencyMs) lines.push('Response latency — ' + faults.latencyMs + ' ms');
+      if (faults.bandwidthKbps) lines.push('Shared media bandwidth — ' + faults.bandwidthKbps + ' kbps');
+      if (faults.jitterMs) lines.push('Additional jitter — 0–' + faults.jitterMs + ' ms');
       if (faults.manifestFreeze) lines.push('Manifest freeze — enabled');
       if (!lines.length) lines.push('No manual faults enabled in this simulator.');
     }
@@ -333,7 +351,7 @@
     pending = controller;
     const request = ++generation;
     if (reset) { currentUrl = undefined; rootUrl = undefined; streamSnapshot = undefined; $('stream-details').hidden = true; $('stream-fault-panel').hidden = true; $('playlist-label').hidden = true; }
-    const timer = setTimeout(() => controller.abort(), 75000);
+    const timer = setTimeout(() => controller.abort(), 135000);
     clearManifest();
     enableControls();
     manifestStatus('Reading simulator… Intentional latency can delay this request.');

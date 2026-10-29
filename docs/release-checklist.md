@@ -15,6 +15,8 @@ maintainer decision after the remaining requirements are satisfied.
 - [x] Recorded full browser playback/recovery gates for both protocols.
 - [x] Recorded healthy/startup-404/during-playback-404 passes on Roku Express 4K
   3940EU, OS 16.0.4 build 842, using a standalone native tester.
+- [x] Shared media bandwidth and response jitter controls, with HTTP timing,
+  cancellation and real-engine integration checks; broader player recovery remains unverified.
 - [x] Control-page startup regression, configurable latency and actual HLS/DASH
   manifest inspection, with dedicated browser checks.
 - [x] Current support/limits documentation, quick start and contributor guidance.

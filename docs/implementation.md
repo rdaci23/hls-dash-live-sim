@@ -84,7 +84,8 @@ no player exception is hidden or filtered to make baseline playback pass.
 ## Faults, scenarios and diagnostics
 
 Manual faults cover media 403/404, completed malformed media, fixed delay and
-manifest freeze. Corrupt range responses preserve Content-Range and byte length.
+manifest freeze. Network settings add a shared media bandwidth ceiling and
+additional random media/manifest GET delay; see [network conditions](network-conditions.md). Corrupt range responses preserve Content-Range and byte length.
 Client disconnect/shutdown cancels artificial delay and upstream work.
 
 Freeze captures the latest observed HLS child playlist or DASH MPD and accepts
@@ -132,7 +133,8 @@ session replacement and failed/in-flight manifest reads invalidate exports.
 Raw exported relative URLs require the original simulator base.
 
 Both protocols' `/health` responses expose a read-only manual-fault snapshot:
-configured rules, one-shot armed/consumed state, response latency and freeze.
+configured rules, one-shot armed/consumed state, response latency, jitter, shared
+bandwidth ceiling and freeze.
 Reading it does not call fault selection or consume/rearm anything. No config
 path or credentials are returned. Scenario mode reports the scenario state instead.
 The page distinguishes saved controls, unsaved edits and last-observed runtime

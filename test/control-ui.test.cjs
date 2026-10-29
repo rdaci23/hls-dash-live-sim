@@ -257,3 +257,54 @@ test('stream details, saved/runtime faults and exact manifest exports work for H
   await page.setViewportSize({ width: 360, height: 780 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'narrow viewport has no horizontal page overflow');
 });
+
+test('network API validates limits and reset clears shaping', async t => {
+  const url = await control(t);
+  const post = (route, value) => fetch(url + route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+  assert.equal((await post('/config', { network: { bandwidthKbps: 800, jitterMs: 30 } })).status, 200);
+  for (const network of [{ bandwidthKbps: -1 }, { bandwidthKbps: 1000001 }, { bandwidthKbps: '800' }, { bandwidthKbps: 0.5 }, { jitterMs: 60001 }, { jitterMs: null }]) {
+    assert.equal((await post('/config', { network })).status, 400);
+    assert.deepEqual((await (await fetch(url + '/config')).json()).config.network, { bandwidthKbps: 800, jitterMs: 30 });
+  }
+  assert.equal((await post('/reset', {})).status, 200);
+  assert.deepEqual((await (await fetch(url + '/config')).json()).config.network, { bandwidthKbps: 0, jitterMs: 0 });
+});
+
+test('network controls save independent values, report saved/runtime settings and clear safely', uiOptions, async t => {
+  const url = await control(t);
+  const sim = await simulator(t);
+  const page = await browserPage(t);
+  await page.goto(url);
+  await status(page, 'Connected');
+  const bandwidth = page.getByLabel('Bandwidth limit (kbps)', { exact: true });
+  const jitter = page.getByLabel('Jitter (ms)', { exact: true });
+  await bandwidth.fill('800'); await jitter.fill('30');
+  await page.getByRole('button', { name: 'Apply Network Conditions', exact: true }).click();
+  await status(page, 'Network conditions applied');
+  assert.deepEqual((await (await fetch(url + '/config')).json()).config.network, { bandwidthKbps: 800, jitterMs: 30 });
+  assert.match(await page.locator('#active-faults').innerText(), /800 kbps/);
+  assert.match(await page.locator('#active-faults').innerText(), /0–30 ms/);
+  await bandwidth.fill('800.5');
+  await page.getByRole('button', { name: 'Apply Network Conditions', exact: true }).click();
+  await status(page, 'whole number');
+  await bandwidth.fill('800');
+  sim.faults({ rules: [], latencyMs: 0, manifestFreeze: false, bandwidthKbps: 800, jitterMs: 30 });
+  await page.getByLabel('Simulator manifest URL', { exact: true }).fill(sim.url + '/proxy.m3u8');
+  await page.getByRole('button', { name: 'Load Manifest', exact: true }).click();
+  await status(page, 'HLS · fetched', 'manifest-status');
+  assert.match(await page.locator('#stream-faults').innerText(), /800 kbps/);
+  assert.match(await page.locator('#stream-faults').innerText(), /0–30 ms/);
+  await page.getByRole('button', { name: 'Clear Network Conditions', exact: true }).click();
+  await status(page, 'Network conditions cleared');
+  assert.deepEqual((await (await fetch(url + '/config')).json()).config.network, { bandwidthKbps: 0, jitterMs: 0 });
+  await bandwidth.fill('1000'); await jitter.fill('50');
+  await page.getByRole('button', { name: 'Save Config', exact: true }).click();
+  await status(page, 'Configuration saved');
+  assert.deepEqual((await (await fetch(url + '/config')).json()).config.network, { bandwidthKbps: 1000, jitterMs: 50 });
+  await page.getByRole('button', { name: 'Reset (all off)', exact: true }).click();
+  await status(page, 'Configuration reset');
+  assert.equal(await bandwidth.inputValue(), '0');
+  assert.equal(await jitter.inputValue(), '0');
+  await page.setViewportSize({ width: 360, height: 780 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+});

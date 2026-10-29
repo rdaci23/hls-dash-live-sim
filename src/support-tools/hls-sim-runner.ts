@@ -319,7 +319,9 @@ export async function startHlsim(
       if (scenario) scenario.assertCompatible();
       else {
         freezeState();
-        await faults.delay(signal, trace);
+        await faults.delay(signal, trace, req.method,
+          dummy ? /\.(m3u8|ts)$/.test(url.pathname)
+            : ["playlist", "segment"].includes(lookupResource(url)?.kind));
       }
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
@@ -395,7 +397,7 @@ export async function startHlsim(
               : body.length - 1;
           if (start > finish || start >= body.length)
             throw new HttpError(416, "Range is outside the segment");
-          send(
+          await faults.sendMedia(
             res,
             206,
             req.method === "HEAD" || scenario
@@ -411,18 +413,18 @@ export async function startHlsim(
               "Content-Range": `bytes ${start}-${finish}/${body.length}`,
               "Accept-Ranges": "bytes",
             },
-            req.method,
+            req.method, signal, trace, !scenario,
           );
           return;
         }
         if (req.method !== "HEAD" && !scenario)
           body = faults.corrupt(body, url.pathname, false, trace);
-        send(
+        await faults.sendMedia(
           res,
           200,
           body,
           { "Content-Type": "video/mp2t", "Accept-Ranges": "bytes" },
-          req.method,
+          req.method, signal, trace, !scenario,
         );
         return;
       }
@@ -514,7 +516,9 @@ export async function startHlsim(
         )
       )
         body = Buffer.alloc(16, 0xff);
-      send(res, remote.status, body, headers, req.method);
+      if (resource.kind === "segment")
+        await faults.sendMedia(res, remote.status, body, headers, req.method, signal, trace, !scenario);
+      else send(res, remote.status, body, headers, req.method);
     } catch (error) {
       if (!signal.aborted)
         trace.record("request.error", {
@@ -522,6 +526,7 @@ export async function startHlsim(
             error instanceof HttpError ? "resource_rejected" : "origin_failure",
           status: error instanceof HttpError ? error.status : 502,
         });
+      if (res.headersSent && !res.writableEnded && !res.destroyed) res.destroy();
       if (!res.destroyed && !res.headersSent)
         send(
           res,

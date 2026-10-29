@@ -124,3 +124,16 @@ The standalone `SessionDiagnostics` class also accepts bounded `maxEvents` and
 File capture uses synchronous local writes; slow storage and verbose console
 output can add timing overhead. Diagnostic duration measures the server's observed
 request lifetime, rather than an isolated network-latency measurement.
+
+## Network shaping events
+
+`response.jitter` records configured `jitterMs` and the actual sampled extra
+`delayMs`, with action `delay`. Fixed `response.latency` remains a separate effect.
+Their combined wait is cancellable; `fault.applied` means that wait completed.
+
+`response.bandwidth` uses action `throttle` and records the configured
+`bandwidthKbps` when the response starts shaping. The shared session ceiling can
+change during transfer; that initial field is not a measurement of average wire
+throughput. Application is recorded on completed responses. Disconnect/shutdown
+records cancellation instead, even if some bytes have already been sent. There
+are no per-chunk diagnostic events. Existing byte limits/redaction remain in force.

@@ -124,7 +124,7 @@ responses. Reports remain inspectable through `session.scenario.report()` after
   Number/Time SegmentTemplates and finite SegmentTimelines. Empty timelines at a
   period boundary are allowed. Media requests without an observed identity
   invalidate an active run with HTTP 409, rather than consuming a guessed target.
-- Manual faults must be off at startup. Changing them during an active scenario
+- Manual faults, including network bandwidth/jitter, must be off at startup. Changing them during an active scenario
   invalidates the run. Scenario mode owns fault behavior for that session; it does
   not mix manual faults with scenario rules. Settled results are retained, and
   finite completed scenarios allow healthy playback to continue.

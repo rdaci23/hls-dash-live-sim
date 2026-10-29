@@ -109,6 +109,7 @@ beforeEach(() =>
       malformed: "off",
       latencyMs: 0,
     },
+    network: { bandwidthKbps: 0, jitterMs: 0 },
     drm: { licenseFailure: "off", keyRotationMismatch: "off" },
     manifest: { freeze: "off" },
     logging: { verbose: false },
@@ -538,4 +539,13 @@ test("manual fault conflicts and unidentified DASH media invalidate a run instea
   config.applyConfigOverride({ segment: { missing: "always" } });
   assert.throws(() => h.request(media(1)), /manual faults/);
   assert.equal(h.engine.report().invalidReason, "manual_fault_conflict");
+});
+
+test("active HTTP scenarios reject manual network shaping instead of silently ignoring it", t => {
+  for (const network of [{ bandwidthKbps: 800 }, { jitterMs: 30 }]) {
+    config.applyConfigOverride({ network: { bandwidthKbps: 0, jitterMs: 0, ...network } });
+    const diagnostics = new SessionDiagnostics("hls");
+    assert.throws(() => new ScenarioEngine(parseScenario(definition()), diagnostics), /manual faults off/);
+    diagnostics.close();
+  }
 });

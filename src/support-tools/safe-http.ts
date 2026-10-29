@@ -317,14 +317,23 @@ export function send(
 ): void {
   if (res.destroyed) return;
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+  sendHeaders(res, status, buffer.length, headers);
+  res.end(method === "HEAD" ? undefined : buffer);
+}
+
+export function sendHeaders(
+  res: http.ServerResponse,
+  status: number,
+  length: number,
+  headers: Record<string, string> = {},
+): void {
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
     "Cache-Control": "no-store",
     ...headers,
-    "Content-Length": String(buffer.length),
+    "Content-Length": String(length),
   });
-  res.end(method === "HEAD" ? undefined : buffer);
 }
 
 export function preflight(

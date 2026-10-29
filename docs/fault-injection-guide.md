@@ -18,9 +18,14 @@ pass the same absolute `--fault-config` path to both commands. See
 | Segment forbidden    | HTTP 403 before fetching or serving media.                                                                                               |
 | Malformed segment    | Truncated media bytes in a completed full response; range responses instead corrupt bytes in place, preserving Content-Range and length. |
 | Latency              | Fixed response delay from 0 to 60000 ms; cancelled on disconnect or session shutdown. This is not bandwidth throttling.                  |
+| Bandwidth limit | Shared per-session ceiling for successful media/init GET bodies, 0–1,000,000 decimal kbps; 0 disables. |
+| Jitter | Additional uniformly sampled 0–N ms before media/manifest GET responses, N = 0–60,000 ms. |
 | Manifest freeze      | Holds live HLS timelines/child playlists or the latest observed DASH MPD. Unfreezing resumes current live time.                          |
 | HLS key HTTP failure | HTTP 403 on a remote HLS key request.                                                                                                    |
 | HLS key mismatch     | A mismatching 16-byte HLS key response. Requires actual encrypted origin content.                                                        |
+
+For network units, scope, cancellation and timing examples, see
+[bandwidth and jitter](network-conditions.md).
 
 ## Inspecting current state
 

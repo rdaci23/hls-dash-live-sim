@@ -95,6 +95,8 @@ test(
       const periods = array(xml.MPD.Period);
       assert.ok(periods.length >= 2, "live window spans the period boundary");
       const types = new Set();
+      const { applyConfigOverride } = require("../dist/support-tools/live-stream-fault-config.js");
+      applyConfigOverride({ network: { bandwidthKbps: 10000, jitterMs: 10 } });
       for (const period of periods)
         for (const adaptation of array(period.AdaptationSet)) {
           types.add(adaptation["@_contentType"]);
@@ -113,9 +115,11 @@ test(
             segmentUrl.searchParams.set("nowMS", String(at));
             const response = await fetch(segmentUrl);
             assert.equal(response.status, 200, segmentUrl.pathname);
+            assert.ok(response.headers.get("x-sim-fault-ids"), "real initialization/media responses are shaped");
             assert.ok((await response.arrayBuffer()).byteLength > 100);
           }
         }
+      applyConfigOverride({ network: { bandwidthKbps: 0, jitterMs: 0 } });
       assert.deepEqual([...types].sort(), ["audio", "video"]);
       const foreign = name + "-foreign";
       const foreignId = execFileSync("docker", [

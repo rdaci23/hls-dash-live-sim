@@ -123,7 +123,7 @@ export async function startDashFaultProxy(
         snapshots = frozen ? new Map(latest) : new Map();
       }
       // Media/manifest latency faults must not skew the UTC reference itself.
-      if (!scenario && (manifest || segment)) await faults.delay(signal, trace);
+      if (!scenario && (manifest || segment)) await faults.delay(signal, trace, req.method);
       if (manifest && frozen && snapshots.has(manifestKey)) {
         const cached = snapshots.get(manifestKey);
         faults.frozen(trace);
@@ -194,7 +194,9 @@ export async function startDashFaultProxy(
               trace,
             )
           : remote.body;
-      send(res, remote.status, body, remote.headers, req.method);
+      if (segment)
+        await faults.sendMedia(res, remote.status, body, remote.headers, req.method, signal, trace, !scenario);
+      else send(res, remote.status, body, remote.headers, req.method);
     } catch (error) {
       if (!signal.aborted)
         trace.record("request.error", {
@@ -202,6 +204,7 @@ export async function startDashFaultProxy(
             error instanceof HttpError ? "resource_rejected" : "origin_failure",
           status: error instanceof HttpError ? error.status : 502,
         });
+      if (res.headersSent && !res.writableEnded && !res.destroyed) res.destroy();
       if (!res.destroyed && !res.headersSent)
         send(
           res,

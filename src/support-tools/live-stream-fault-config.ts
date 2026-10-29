@@ -39,6 +39,7 @@ export function oneShotFaultId(
 export interface FaultConfig {
   profile?: string;
   segment?: SegmentFaultConfig;
+  network?: { bandwidthKbps?: number; jitterMs?: number };
   drm?: DRMFaultConfig;
   manifest?: ManifestFaultConfig;
   logging?: { verbose?: boolean };
@@ -50,6 +51,7 @@ export class ConfigConflictError extends Error {}
 const DEFAULT_CONFIG: FaultConfig = {
   profile: "default",
   segment: { malformed: "off", forbidden: "off", missing: "off", latencyMs: 0 },
+  network: { bandwidthKbps: 0, jitterMs: 0 },
   drm: { licenseFailure: "off", keyRotationMismatch: "off" },
   manifest: { freeze: "off" },
   logging: { verbose: false },
@@ -62,6 +64,7 @@ const schema = {
     missing: "mode",
     latencyMs: "delay",
   },
+  network: { bandwidthKbps: "bandwidth", jitterMs: "jitter" },
   drm: { licenseFailure: "mode", keyRotationMismatch: "mode" },
   manifest: { freeze: "freeze" },
   logging: { verbose: "boolean" },
@@ -112,6 +115,14 @@ export function validateFaultConfig(
           `${label} must be between 0 and 60000 ms`,
         );
       else if (
+        (rule === "bandwidth" || rule === "jitter") &&
+        (!Number.isInteger(entry) || Number(entry) < 0 ||
+          Number(entry) > (rule === "bandwidth" ? 1000000 : 60000))
+      )
+        throw new ConfigValidationError(
+          `${label} must be an integer between 0 and ${rule === "bandwidth" ? 1000000 : 60000}`,
+        );
+      else if (
         rule === "string" &&
         (typeof entry !== "string" || entry.length > 128)
       )
@@ -129,6 +140,7 @@ function merge(base: FaultConfig, patch: FaultConfig): FaultConfig {
     ...base,
     ...patch,
     segment: { ...base.segment, ...patch.segment },
+    network: { ...base.network, ...patch.network },
     drm: { ...base.drm, ...patch.drm },
     manifest: { ...base.manifest, ...patch.manifest },
     logging: { ...base.logging, ...patch.logging },
