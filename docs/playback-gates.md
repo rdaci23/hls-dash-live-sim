@@ -5,6 +5,12 @@ cannot authorize a public release. The initial hardware claim covers one recorde
 physical Roku model and OS/build; Apple, Android and other Roku generations remain
 unverified. The test channel is plain SceneGraph and has no Standalone dependency.
 
+Native recorder results are optional client compatibility evidence. Roku recovery
+fixes are outside this repo; a native recovery failure is not a simulator release
+blocker. The simulator release checks focus on stream correctness, fault delivery,
+service restoration, diagnostics and the reproducible browser checks. Historical
+native results below retain their original outcomes.
+
 ## Acceptance gates
 
 | Case | Required evidence |

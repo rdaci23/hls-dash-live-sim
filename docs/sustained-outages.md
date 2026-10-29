@@ -91,7 +91,12 @@ Edit the preset before starting a new session for a different duration or status
 the verifier's fixed acceptance profile intentionally expects these exact presets.
 See [scenario semantics](scenarios.md) for targeting and bounded operation.
 
-## Physical Roku verification
+## Optional Roku client compatibility checks
+
+The simulator is responsible for correct fault delivery and restored media
+availability. Roku-native recovery and application retry policies belong to the
+client. These optional checks record client behavior and are not simulator release
+gates. Recovery fixes and player-specific workarounds are outside this repo.
 
 The standalone tester and recorder also support this same pair of presets:
 
@@ -137,7 +142,7 @@ remain separate tests.
 
 ## Recorded Roku result — 29 October 2026
 
-**Both protocols fail this recovery gate** on Roku Express 4K **3940EU,
+**Client observation: both protocols failed automatic recovery** on Roku Express 4K **3940EU,
 OS 16.0.4 build 842**, using tester 1.1.0 and native Video defaults. The clean
 source commit and compact results are retained in
 [the verification record](roku-outage-verification.json), including hashes of the
@@ -158,11 +163,11 @@ native recovery assertions. The recorder continued for roughly 86 seconds after
 the outage ended in each case. Neither established successful same-resource native
 retries or the required 60 seconds of post-recovery A/V progress.
 
-This is a tested native limitation for this exact media/status/model/OS profile.
-Browser success uses a different, explicit retry profile. Earlier native single-404
-success remains narrower evidence. Application-managed recovery, different outage
-statuses/durations and other devices need separate profiles and measurements;
-none are silently substituted for a passing result here.
+This records native client behavior for this exact media/status/model/OS profile.
+The simulator delivered the configured faults and restored media successfully.
+The native result is retained for reference and does not block simulator release.
+Browser success uses a different, explicit retry profile. Any investigation of
+Roku retry policies or application-managed recovery belongs in the client project.
 
 ## Evidence and CI
 

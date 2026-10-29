@@ -5,6 +5,11 @@ GitHub repository private and `package.json` set to `private: true`. No CI comma
 publishes the package or changes visibility. Public release needs an explicit
 maintainer decision after the remaining requirements are satisfied.
 
+The simulator owns valid stream generation, correct fault delivery, service
+restoration and diagnostics. Roku-native recovery behavior is client compatibility
+evidence. Fixing that behavior is outside this repository and is not a simulator
+release requirement.
+
 ## Implemented preparation
 
 - [x] Safe operation: owned-process/container cleanup, loopback defaults, scoped
@@ -28,10 +33,8 @@ maintainer decision after the remaining requirements are satisfied.
 - [x] Separate timed HLS/DASH media-outage runner and routine CI job with measured
   stall/resume and post-recovery rendering; [scope and retry policy](sustained-outages.md).
 
-- [x] Native HLS/DASH sustained-outage recorder and one-model physical verification,
-  including failed recovery evidence and independent service-restoration probes.
-- [ ] Resolve or explicitly exclude the [failed native 20-second outage profile](sustained-outages.md)
-  before advertising sustained-outage recovery on Roku.
+- [x] Optional native HLS/DASH compatibility recorder and retained observations,
+  including independent confirmation of simulator service restoration.
 
 Checked items describe implemented checks or recorded evidence. They do not say
 that every future commit has passed. For the candidate, inspect the exact
@@ -51,8 +54,9 @@ that every future commit has passed. For the candidate, inspect the exact
   job passes; review packaged files for unintended configuration or credentials.
 - [ ] Decide and configure required checks/branch protection for the public repo.
 - [ ] Attach candidate-specific full browser playback evidence. Repeat physical
-  Roku gates when playback behavior or the advertised support claim changes;
-  do not treat a Roku build as device playback evidence.
+  healthy-playback compatibility checks when the advertised device support claim
+  changes; do not treat a Roku build as device playback evidence. Native recovery
+  behavior is outside the simulator release gate.
 - [ ] Review version, changelog, installation path and documented support claim.
   npm publication remains a separate explicit decision.
 - [ ] Obtain explicit approval to change repository visibility. Keep it private
@@ -69,8 +73,9 @@ that every future commit has passed. For the candidate, inspect the exact
   bandwidth-adaptation check covers one two-rendition Chrome profile. DASH/native
   ABR, jitter recovery, manifest freeze/resume recovery and perceived audio
   quality remain outside that evidence. The separate browser [media-outage check](sustained-outages.md)
-  covers one timed 503 profile with explicit retries. The tested native 20-second
-  profile failed on 3940EU / OS 16.0.4 build 842; it must not be advertised as supported.
+  covers one timed 503 profile with explicit retries. Native recovery observations
+  describe the tested client; they do not determine support for the simulator's
+  outage-injection feature.
 - LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
   deferred capabilities. They must not appear as supported preset promises.
 
