@@ -7,23 +7,23 @@ function decodeNativeRecord(row) {
   }
   return row;
 }
+function renderedTrackSamples(records, field) {
+  const samples = records.filter(r => r.event === 'sample');
+  const result = [];
+  for (const sample of samples) {
+    const position = sample[field];
+    if (sample.state !== 'playing' || !Number.isFinite(position)) continue;
+    // A zero UTC position means this track has not rendered yet. Audio can
+    // become ready after video; relative (epoch=0) position zero stays valid.
+    if (sample.epoch === 1 && position <= 0) continue;
+    if (!result.length || position !== result.at(-1)[field]) result.push(sample);
+  }
+  return result;
+}
 function metricsFromSamples(records, periods) {
   const start = records.find(r => r.event === 'start');
-  const samples = records.filter(r => r.event === 'sample');
-  function advancingSamples(field) {
-    const result = [];
-    for (const sample of samples) {
-      const position = sample[field];
-      if (sample.state !== 'playing' || !Number.isFinite(position)) continue;
-      // A zero UTC position means this track has not rendered yet. Audio can
-      // become ready after video; relative (epoch=0) position zero stays valid.
-      if (sample.epoch === 1 && position <= 0) continue;
-      if (!result.length || position !== result.at(-1)[field]) result.push(sample);
-    }
-    return result;
-  }
-  const rendered = advancingSamples('videoPosition');
-  const audioRendered = advancingSamples('audioPosition');
+  const rendered = renderedTrackSamples(records, 'videoPosition');
+  const audioRendered = renderedTrackSamples(records, 'audioPosition');
   const firstAudio = audioRendered[0], lastAudio = audioRendered.at(-1);
   const first = rendered[0], last = rendered.at(-1), gaps = [], playedPeriods = [], regressions = [];
   for (let i = 0; i < rendered.length; i++) {
@@ -89,4 +89,4 @@ function evaluateRoku({ protocol, test, records, periods, events, scenario, iden
     firstFrameMeasurement: 'upper bound from native last-rendered positionInfo, sampled every 250ms',
     nativeClockUseVerified: clockRequests.length > 0 };
 }
-module.exports = { decodeNativeRecord, metricsFromSamples, evaluateRoku };
+module.exports = { decodeNativeRecord, metricsFromSamples, renderedTrackSamples, evaluateRoku };

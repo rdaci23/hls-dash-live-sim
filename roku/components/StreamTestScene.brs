@@ -40,7 +40,9 @@ sub startRun()
     m.video.SetFocus(true)
     m.status.text = "Testing " + config.protocol + " - " + config.runId
     m.active = true
-    emitMetric({ event: "start", protocol: config.protocol })
+    startMetric = { event: "start", protocol: config.protocol }
+    startMetric["testerVersion"] = "1.1.0"
+    emitMetric(startMetric)
     m.sampler.control = "start"
     m.video.control = "play"
 end sub
@@ -59,6 +61,11 @@ sub stateChanged()
     if m.video.state = "error"
         data["errorCode"] = m.video.errorCode
         data["errorMessage"] = m.video.errorMsg
+        info = m.video.errorInfo
+        if info <> invalid
+            data["errorCategory"] = info.category
+            data["errorInternalCode"] = info.errcode
+        end if
     end if
     emitMetric(data)
 end sub

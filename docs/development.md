@@ -38,6 +38,7 @@ use your existing Chrome installation.
 | `npm run scenario:verify -- --protocol hls` | Generated HLS HTTP 404/retry scenario and diagnostics. | Node only. |
 | `npm run scenario:verify` | Both HLS/DASH HTTP scenario checks. | Docker and pinned image. |
 | `npm run test:package` | Builds, packs locally, installs with production dependencies into a fresh temporary directory, invokes the executable, serves HLS media and control assets. | npm registry access for production dependencies; never publishes. |
+| `npm run roku:suite -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --case outage` | Sequential native HLS/DASH sustained media-outage evidence. | Dedicated physical Roku with tester 1.1.0 installed; Docker and pinned image; about six minutes. |
 | `npm run roku:build` | Compiles/packages the standalone SceneGraph tester. | Development dependencies; no device contacted. |
 | `npm run browser:abr` | Automatic HLS 1,500 → 450 → 1,500 kbps adaptation with rendered high/low/high evidence. | Chrome; no Docker; several minutes. |
 | `npm run browser:outage` | Timed 20-second HLS/DASH media outage, rendered stall, automatic recovery and 60 seconds afterward. | Chrome, Docker, pinned image; about three minutes. |

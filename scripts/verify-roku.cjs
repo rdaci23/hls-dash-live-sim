@@ -5,11 +5,13 @@ const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 const { XMLParser } = require('fast-xml-parser');
 const { startLivesim2, DEFAULT_IMAGE } = require('../dist/support-tools/dash-sim-runner.js');
 const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { evaluateRoku, decodeNativeRecord } = require('./roku/evidence.cjs');
+const { evaluateRokuOutage } = require('./roku/outage-evidence.cjs');
 const { parseDuration } = require('../dist/support-tools/mpd.js');
 const args = process.argv.slice(2), root = path.resolve(__dirname, '..');
 function option(key, fallback) { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; }
@@ -21,8 +23,10 @@ async function unusedPort() {
 }
 async function main() {
   const device = option('--device'), serverHost = option('--server-host'), protocol = option('--protocol'), test = option('--case');
-  if (!lanIp(device) || !lanIp(serverHost) || !['hls', 'dash'].includes(protocol) || !['healthy', 'startup', 'during'].includes(test))
-    throw Error('Usage: node scripts/verify-roku.cjs --device ROKU_LAN_IP --server-host MAC_LAN_IP --protocol hls|dash --case healthy|startup|during');
+  if (!lanIp(device) || !lanIp(serverHost) || !['hls', 'dash'].includes(protocol) || !['healthy', 'startup', 'during', 'outage'].includes(test))
+    throw Error('Usage: node scripts/verify-roku.cjs --device ROKU_LAN_IP --server-host MAC_LAN_IP --protocol hls|dash --case healthy|startup|during|outage');
+  const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root }).toString().trim();
+  const workingTreeModified = !!execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim();
   const base = `http://${device}:8060`, parser = new XMLParser({ ignoreAttributes: false });
   async function ecp(endpoint, options = {}) {
     const response = await fetch(base + endpoint, { ...options, signal: AbortSignal.timeout(5000) });
@@ -43,7 +47,7 @@ async function main() {
   process.once('SIGINT', () => abort.abort()); process.once('SIGTERM', () => abort.abort());
   let session, socket, report, clockResourceId, clockProbeId, buffer = '', consoleFailure, harnessError, consoleBytes = 0, launchAttempted = false;
   nativeLog.on('error', () => { consoleFailure = 'Native console capture failed'; });
-  const durationMs = test === 'healthy' ? 195000 : test === 'during' ? 145000 : 85000;
+  const durationMs = test === 'outage' ? 165000 : test === 'healthy' ? 195000 : test === 'during' ? 145000 : 85000;
   try {
     socket = net.createConnection({ host: device, port: 8085 });
     await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); socket.setTimeout(5000, () => reject(Error('Roku debug console connection timed out'))); });
@@ -75,7 +79,8 @@ async function main() {
     await delay(200, undefined, { signal: abort.signal });
     if (consoleFailure) throw Error(consoleFailure);
     const scenarioFile = path.join(directory, 'scenario.json');
-    if (test !== 'healthy') await fs.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, rules: [{ id: test,
+    if (test === 'outage') await fs.copyFile(path.join(root, 'examples/scenarios', protocol + '-sustained-outage.json'), scenarioFile);
+    else if (test !== 'healthy') await fs.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, rules: [{ id: test,
       target: { track: 'video', segment: 'next' }, attempts: [1], status: 404, maxApplications: 1, expectRetry: true,
       afterMs: test === 'during' ? 60000 : 0 }] }));
     const options = { host: '0.0.0.0', port: await unusedPort(), faultConfigPath: path.join(directory, 'faults.json'),
@@ -124,9 +129,9 @@ async function main() {
   }
   const diagnosticText = await fs.readFile(path.join(directory, 'requests.jsonl'), 'utf8').catch(() => '');
   const events = diagnosticText.trim().split('\n').filter(Boolean).map(JSON.parse);
-  report = { schemaVersion: 1, recordedAt: new Date().toISOString(), protocol, test, identity,
+  report = { schemaVersion: 1, recordedAt: new Date().toISOString(), protocol, test, identity, commit, workingTreeModified,
     engineImage: protocol === 'dash' ? DEFAULT_IMAGE : undefined,
-    ...evaluateRoku({ protocol, test, records, periods: [...periods.values()], events, scenario: session?.scenario?.report(), identity, clockResourceId, clockProbeId, consoleErrors }),
+    ...(test === 'outage' ? evaluateRokuOutage : evaluateRoku)({ protocol, test, records, periods: [...periods.values()], events, scenario: session?.scenario?.report(), identity, clockResourceId, clockProbeId, consoleErrors }),
     harnessError, scenario: session?.scenario?.report() };
   if (harnessError) { report.passed = false; report.releaseQualified = false; report.failures.push('Harness failure: ' + harnessError); }
   await fs.writeFile(path.join(directory, 'native.json'), JSON.stringify({ records, periods: [...periods.values()], consoleErrors }, null, 2) + '\n');

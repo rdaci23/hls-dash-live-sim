@@ -85,6 +85,45 @@ Edit the preset before starting a new session for a different duration or status
 the verifier's fixed acceptance profile intentionally expects these exact presets.
 See [scenario semantics](scenarios.md) for targeting and bounded operation.
 
+## Physical Roku verification
+
+The standalone tester and recorder also support this same pair of presets:
+
+```sh
+npm run roku:build
+# Install the built tester 1.1.0 using the dedicated device's developer installer,
+# or set ROKU_DEV_PASSWORD and use roku:deploy as described in playback-gates.md.
+npm run roku:suite -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --case outage --output output/my-roku-outage-run
+```
+
+The suite runs HLS then DASH on that one device. It requires the standalone
+`HLS DASH Stream Tester` channel and checks its version from native telemetry.
+Installation replaces the developer slot; the recorder itself never sideloads.
+`--case` defaults to the original six-case suite when omitted. A single case can
+also be selected with `roku:verify -- --protocol hls --case outage` and the same
+device/server/output arguments. Stop other recorders first: port 8085 allows one
+debug console connection, and the suite refuses an occupied console.
+
+The native profile uses **SceneGraph Video defaults**, with one play command and
+no application-driven retry, seek, source replacement or restart. It does not apply
+the browser retry settings. The recorder checks uninterrupted 250ms heartbeat
+samples and advancing last-rendered audio/video positions, a real video stall,
+nonempty successful downloads of the same failed resources, recovery within 10
+seconds after restoration, and at least 60 seconds of subsequent healthy progress
+in both tracks. A one-second allowance for host/native clock alignment is charged
+against the recovery bound and excluded from pre/post measurements. Measured
+native request/retry cadence is retained; it is not forced to the browser cadence.
+A native terminal error fails even when the injected HTTP error was intentional.
+
+Reports retain exact model/OS/build, commit/dirty-tree provenance, native error
+codes, state changes, request IDs and audio/video timing. Error category/internal
+code come from the Video node's documented
+[errorInfo](https://developer.roku.com/dev/docs/video) fields; arbitrary diagnostic
+strings and URLs are not added to the compact error record. A native test can fail
+while browser tests pass: use the recorded result rather than extending browser
+support claims to the device. Native UTC use and whole-device internet isolation
+remain separate tests.
+
 ## Evidence and CI
 
 Each worker retains its scenario, complete server JSONL diagnostics, raw browser
