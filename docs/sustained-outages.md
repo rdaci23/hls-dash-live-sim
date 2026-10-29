@@ -115,6 +115,11 @@ against the recovery bound and excluded from pre/post measurements. Measured
 native request/retry cadence is retained; it is not forced to the browser cadence.
 A native terminal error fails even when the injected HTTP error was intentional.
 
+At session time 85 seconds, the host fetches fresh media to independently prove
+that service returned after the 80-second outage end. These probes have separate
+request IDs and are excluded from all native retry/recovery assertions. Successful
+host downloads cannot make a failed native player pass.
+
 Reports retain exact model/OS/build, commit/dirty-tree provenance, native error
 codes, state changes, request IDs and audio/video timing. Error category/internal
 code come from the Video node's documented

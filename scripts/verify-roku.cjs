@@ -12,6 +12,7 @@ const { startLivesim2, DEFAULT_IMAGE } = require('../dist/support-tools/dash-sim
 const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { evaluateRoku, decodeNativeRecord } = require('./roku/evidence.cjs');
 const { evaluateRokuOutage } = require('./roku/outage-evidence.cjs');
+const { probeRestoration } = require('./roku/restoration-probe.cjs');
 const { parseDuration } = require('../dist/support-tools/mpd.js');
 const args = process.argv.slice(2), root = path.resolve(__dirname, '..');
 function option(key, fallback) { const i = args.indexOf(key); return i < 0 ? fallback : args[i + 1]; }
@@ -46,6 +47,7 @@ async function main() {
   const abort = new AbortController();
   process.once('SIGINT', () => abort.abort()); process.once('SIGTERM', () => abort.abort());
   let session, socket, report, clockResourceId, clockProbeId, buffer = '', consoleFailure, harnessError, consoleBytes = 0, launchAttempted = false;
+  let restorationProbes = [];
   nativeLog.on('error', () => { consoleFailure = 'Native console capture failed'; });
   const durationMs = test === 'outage' ? 165000 : test === 'healthy' ? 195000 : test === 'during' ? 145000 : 85000;
   try {
@@ -102,6 +104,8 @@ async function main() {
       abort.signal.throwIfAborted();
       if (consoleFailure) throw Error(consoleFailure);
       if (!records.length && Date.now() - launchedAt > 10000) throw Error('No accepted native telemetry within 10 seconds');
+      if (test === 'outage' && !restorationProbes.length && session.scenario.report().elapsedMs >= 85000)
+        restorationProbes = await probeRestoration(session, protocol);
       if (protocol === 'dash') {
         const response = await fetch(session.url, { signal: AbortSignal.timeout(5000) });
         const mpd = parser.parse(await response.text()).MPD;
@@ -131,10 +135,10 @@ async function main() {
   const events = diagnosticText.trim().split('\n').filter(Boolean).map(JSON.parse);
   report = { schemaVersion: 1, recordedAt: new Date().toISOString(), protocol, test, identity, commit, workingTreeModified,
     engineImage: protocol === 'dash' ? DEFAULT_IMAGE : undefined,
-    ...(test === 'outage' ? evaluateRokuOutage : evaluateRoku)({ protocol, test, records, periods: [...periods.values()], events, scenario: session?.scenario?.report(), identity, clockResourceId, clockProbeId, consoleErrors }),
+    ...(test === 'outage' ? evaluateRokuOutage : evaluateRoku)({ protocol, test, records, periods: [...periods.values()], events, scenario: session?.scenario?.report(), identity, clockResourceId, clockProbeId, consoleErrors, restorationProbes }),
     harnessError, scenario: session?.scenario?.report() };
   if (harnessError) { report.passed = false; report.releaseQualified = false; report.failures.push('Harness failure: ' + harnessError); }
-  await fs.writeFile(path.join(directory, 'native.json'), JSON.stringify({ records, periods: [...periods.values()], consoleErrors }, null, 2) + '\n');
+  await fs.writeFile(path.join(directory, 'native.json'), JSON.stringify({ records, periods: [...periods.values()], consoleErrors, restorationProbes }, null, 2) + '\n');
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(`${report.passed ? 'PASS' : 'FAIL'}: ${path.join(directory, 'report.json')}`);
   if (!report.passed) process.exitCode = 1;

@@ -1,9 +1,11 @@
 const { metricsFromSamples, renderedTrackSamples } = require('./evidence.cjs');
 const { OUTAGE_GATES } = require('../browser/outage-acceptance.cjs');
 const ROKU_OUTAGE_GATES = Object.freeze({ ...OUTAGE_GATES, clockMarginMs: 1000, sampleGapMs: 1000 });
-function evaluateRokuOutage({ protocol, records = [], periods = [], events = [], scenario, identity = {}, consoleErrors = [] }) {
+function evaluateRokuOutage({ protocol, records = [], periods = [], events: capturedEvents = [], scenario, identity = {}, consoleErrors = [], restorationProbes = [], clockResourceId, clockProbeId }) {
   const failures = [], check = (ok, why) => { if (!ok) failures.push(why); };
   const m = metricsFromSamples(records, periods), margin = ROKU_OUTAGE_GATES.clockMarginMs;
+  const probeIds = new Set(restorationProbes.map(p => p.requestId));
+  const events = capturedEvents.filter(e => !probeIds.has(e.requestId));
   const start = records.find(r => r.event === 'start'), complete = records.find(r => r.event === 'complete');
   const samples = records.filter(r => r.event === 'sample');
   check(!!(identity.modelNumber && identity.softwareVersion && identity.softwareBuild), 'Exact model and OS/build missing');
@@ -23,6 +25,10 @@ function evaluateRokuOutage({ protocol, records = [], periods = [], events = [],
   const at = e => Date.parse(e?.timestamp) - m.startHostEpochMs;
   const beginMs = at(started) + rules[0]?.afterMs, endMs = at(started) + rules[0]?.beforeMs;
   const tracks = protocol === 'dash' ? ['video', 'audio'] : ['video'];
+  const serverRestored = tracks.every(track => restorationProbes.some(p => p.kind === track && p.status === 200 && p.bodyBytes > 0 &&
+    p.completedEpochMs - m.startHostEpochMs >= endMs && p.completedEpochMs - m.startHostEpochMs <= endMs + 10000 &&
+    capturedEvents.some(e => e.requestId === p.requestId && e.event === 'request.completed' && e.status === p.status && e.bodyBytes === p.bodyBytes)));
+  check(serverRestored, 'Independent host probes did not verify restored media service');
   check(endMs - beginMs === ROKU_OUTAGE_GATES.durationMs && rules.length === tracks.length && tracks.every(track => rules.some(r =>
     r.kind === 'outage' && r.target?.track === track && r.target.segment === 'each' && r.attempts === 'all' &&
     r.afterMs === rules[0].afterMs && r.beforeMs === rules[0].beforeMs && r.status === 503 && r.probability === 1)), 'Expected 20-second outage rules for all media tracks');
@@ -75,15 +81,18 @@ function evaluateRokuOutage({ protocol, records = [], periods = [], events = [],
       (complete?.atMs ?? Infinity) - (post.at(-1)?.atMs ?? -Infinity) <= ROKU_OUTAGE_GATES.healthyStallMs, `Less than 60 seconds healthy rendered ${track} after recovery`);
     progress[track] = { before, after, stalls: gaps };
   }
+  const clockRequests = events.filter(e => e.event === 'request.completed' && clockResourceId && e.resourceId === clockResourceId && e.requestId !== clockProbeId && e.status === 200);
   return { passed: !failures.length, releaseQualified: false, failures, ...m, gates: ROKU_OUTAGE_GATES,
     testerVersion: start?.testerVersion, playerSettings: 'Native SceneGraph Video defaults; one play command, no application retry, seek or restart',
     nativeErrors: records.filter(r => r.state === 'error').map(({ atMs, errorCode, errorMessage, errorCategory, errorInternalCode }) =>
       ({ atMs, errorCode, errorMessage, errorCategory, errorInternalCode })),
     outageStartMs: beginMs, outageEndMs: endMs, outageDurationMs: endMs - beginMs,
     injectedResponses: faults.length, failureTraffic, retries, renderResumedAtMs, recoveredAtMs,
+    serverRestored, restorationProbes,
     resumeAfterOutageMs: renderResumedAtMs - endMs, resumeUpperBoundMs: renderResumedAtMs - endMs + margin,
     postRecoveryMs: Math.min(progress.video.after.durationMs, progress.audio.after.durationMs), trackProgress: progress,
     clockAlignment: 'Host receipt of native start; 1000ms reserved for both pre-fault and recovery bounds',
-    firstFrameMeasurement: 'Native last-rendered positionInfo sampled every 250ms', nativeClockUseVerified: false };
+    firstFrameMeasurement: 'Native last-rendered positionInfo sampled every 250ms',
+    localUtcRequests: clockRequests.length, nativeClockUseVerified: clockRequests.length > 0 };
 }
 module.exports = { ROKU_OUTAGE_GATES, evaluateRokuOutage };
