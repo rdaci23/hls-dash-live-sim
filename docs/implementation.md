@@ -153,13 +153,15 @@ verified healthy rendering for each protocol. Normal browser UTC synchronization
 remained enabled. [Exact acceptance gates and evidence](playback-gates.md).
 
 Strict HLS retry cases use one rendition; healthy HLS checks use the two-rendition
-ladder. ABR fallback is not established by same-download retry evidence. Browser
+ladder. Same-download retry evidence does not establish ABR fallback. The separate
+[HLS ABR runner](hls-abr.md) verifies bandwidth-driven automatic downshift/upshift
+on the two-rendition sample, with played-frame and server-download correlation. Browser
 frame measurements do not establish perceived audio quality. Native audio/video
 progress is sampled separately, excluding uninitialized UTC zeros.
 
 No Roku requests to local UTC were observed. Its internal synchronization strategy
 and internet-isolated playback remain unverified. Apple, Android, other Roku
-models/OS versions, broader ABR recovery, real DRM, ads, 4K and low-latency streaming
+models/OS versions, DASH/native or broader HLS ABR recovery, real DRM, ads, 4K and low-latency streaming
 remain outside the verified support claim. Sports/news/OTT/mobile presets report
 the sample's actual renditions/windows rather than promising those features.
 

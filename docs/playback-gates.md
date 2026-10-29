@@ -19,7 +19,8 @@ unverified. The test channel is plain SceneGraph and has no Standalone dependenc
 Healthy checks use the HLS 180p/360p ladder and DASH 360p H.264 with separate AAC.
 Strict HLS retry checks use the single 180p rendition. The ladder can recover by
 switching rendition, which is useful but does not prove the required same-download
-retry. ABR fallback recovery needs a separate scenario and acceptance rule.
+retry. Bandwidth-driven HLS adaptation has a [separate runner and acceptance gates](hls-abr.md).
+It does not establish HTTP-error rendition fallback or DASH/native ABR coverage.
 
 ## Browser runner
 

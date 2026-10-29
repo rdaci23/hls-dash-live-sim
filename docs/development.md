@@ -39,6 +39,7 @@ use your existing Chrome installation.
 | `npm run scenario:verify` | Both HLS/DASH HTTP scenario checks. | Docker and pinned image. |
 | `npm run test:package` | Builds, packs locally, installs with production dependencies into a fresh temporary directory, invokes the executable, serves HLS media and control assets. | npm registry access for production dependencies; never publishes. |
 | `npm run roku:build` | Compiles/packages the standalone SceneGraph tester. | Development dependencies; no device contacted. |
+| `npm run browser:abr` | Automatic HLS 1,500 → 450 → 1,500 kbps adaptation with rendered high/low/high evidence. | Chrome; no Docker; several minutes. |
 | `npm run browser:verify` | Full six-case rendered browser playback/recovery gate. | Chrome, Docker, pinned image; several minutes. |
 
 Regular tests and package smoke use isolated temporary fault files. Do not run tests
@@ -64,6 +65,8 @@ procedural assets. Stop sessions first. [Provenance](../assets/README.md).
 and manual dispatch. Linux/macOS matrix jobs run docs, types, regular tests, Roku
 compilation, HLS HTTP scenarios and the packaged-CLI smoke. Separate Linux jobs
 run Chrome control UI tests and real DASH integration plus both HTTP scenarios.
+A dedicated Linux/Node 24 job runs the [HLS automatic ABR check](hls-abr.md) on
+every CI invocation and retains its raw/report/screenshot evidence for seven days.
 The run is successful only when all selected jobs pass; logs retain individual
 failures. Inspect [repository Actions](https://github.com/rdaci23/hls-dash-live-sim/actions)
 for the actual commit result rather than treating workflow presence as proof.

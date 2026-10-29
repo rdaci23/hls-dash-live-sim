@@ -1,6 +1,6 @@
 # Bandwidth limits and jitter
 
-Both the generated HLS server, HLS origin proxy and DASH fault proxy support these
+The generated HLS server, HLS origin proxy and DASH fault proxy support these
 manual network settings. Defaults are zero, preserving ordinary playback. The
 DASH `--no-fault-proxy` path and HLS Docker MP4 VoD do not provide these controls.
 
@@ -97,8 +97,9 @@ bounds and diagnostics, live clearing, cancellation, shutdown, capacity limits,
 metadata/clock/key exclusions and UI/API validation. The real livesim2 integration
 also fetches shaped initialization and media for audio/video around periods.
 
-These checks establish server shaping behavior. They do not add a verified ABR
-fallback or player stall/recovery claim for these profiles. The bundled HLS sample
+These HTTP checks establish server shaping behavior. The separate
+[HLS automatic ABR check](hls-abr.md) measures bandwidth-driven rendered adaptation
+and restoration for the two-rendition sample. Broader player recovery remains unverified. The bundled HLS sample
 has two renditions; the bundled DASH sample has one video rendition. Broader
 player/network acceptance gates need suitable ladders and separate evidence.
 The [release checklist](release-checklist.md) retains those limits; the repository

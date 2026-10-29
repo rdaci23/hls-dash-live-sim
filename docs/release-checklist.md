@@ -23,6 +23,8 @@ maintainer decision after the remaining requirements are satisfied.
 - [x] CI definitions for Linux/macOS Node 22/24/26, Chrome UI, pinned DASH engine,
   HTTP scenarios, Roku compilation and production-only package-install smoke.
 - [x] Optional manual CI full-browser gate with retained run evidence.
+- [x] Separate automatic HLS bandwidth-adaptation runner and CI job with rendered
+  high/low/high evidence; see [its exact scope and gates](hls-abr.md).
 
 Checked items describe implemented checks or recorded evidence. They do not say
 that every future commit has passed. For the candidate, inspect the exact
@@ -56,8 +58,10 @@ that every future commit has passed. For the candidate, inspect the exact
 - Roku internal UTC synchronization and internet-isolated playback are unverified;
   make no native offline-clock claim. Browser local UTC traffic was verified with
   external player requests blocked, not with the whole computer disconnected.
-- Same-download 404 recovery does not establish ABR fallback, bandwidth/jitter
-  recovery, sustained outages, freeze/resume recovery or perceived audio quality.
+- Same-download 404 recovery does not establish ABR fallback. The separate HLS
+  bandwidth-adaptation check covers one two-rendition Chrome profile. DASH/native
+  ABR, jitter recovery, sustained outages, freeze/resume recovery and perceived
+  audio quality remain outside that evidence.
 - LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
   deferred capabilities. They must not appear as supported preset promises.
 

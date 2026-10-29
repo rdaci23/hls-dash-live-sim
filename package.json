@@ -34,7 +34,8 @@
     "roku:suite": "npm run build && node scripts/verify-roku-suite.cjs",
     "test:ui": "npm run build && node scripts/run-ui-tests.cjs",
     "docs:check": "node scripts/check-docs.cjs",
-    "test:package": "npm run build && node scripts/verify-package.cjs"
+    "test:package": "npm run build && node scripts/verify-package.cjs",
+    "browser:abr": "npm run build && node scripts/verify-hls-abr.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
