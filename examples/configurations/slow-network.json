@@ -1,0 +1,8 @@
+{
+  "profile": "slow-network",
+  "segment": { "malformed": "off", "forbidden": "off", "missing": "off", "latencyMs": 0 },
+  "network": { "bandwidthKbps": 450, "jitterMs": 150 },
+  "drm": { "licenseFailure": "off", "keyRotationMismatch": "off" },
+  "manifest": { "freeze": "off" },
+  "logging": { "verbose": false }
+}

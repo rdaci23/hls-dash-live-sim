@@ -1,0 +1,10 @@
+{
+  "name": "require-relative",
+  "version": "0.8.7",
+  "author": "Valerio Proietti <@kamicane> (http://mad4milk.net)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/kamicane/require-relative.git"
+  }
+}

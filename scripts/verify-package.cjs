@@ -34,6 +34,9 @@ async function ready(url, child, logs) {
     assert.ok(files.includes('dist/support-tools/assets/fault-control/control.js'));
     assert.ok(files.some(file => file.startsWith('dist/support-tools/assets/hls-sample/') && file.endsWith('.ts')));
     assert.ok(files.includes('docs/release-checklist.md'));
+    for (const file of ['SECURITY.md','THIRD_PARTY_NOTICES.md','third-party/npm-manifest.json','docs/getting-started.md','docs/configuration.md','docs/scenario-recipes.md','docs/images/control-demo.png','examples/configurations/healthy.json','examples/request-segment.cjs']) assert.ok(files.includes(file), 'Missing release material: ' + file);
+    const inventory = JSON.parse(await fs.readFile(path.join(root,'third-party/npm-manifest.json'),'utf8'));
+    for (const entry of inventory.packages) for (const notice of entry.notices) assert.ok(files.includes(notice.path), 'Missing packaged notice: ' + notice.path);
     for (const location of ['assets/dash-abr-sample', 'dist/support-tools/assets/dash-abr-sample']) {
       assert.ok(files.includes(location + '/manifest.mpd'));
       for (const id of [0, 1, 2]) {

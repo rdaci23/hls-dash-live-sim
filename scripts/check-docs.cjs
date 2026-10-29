@@ -7,7 +7,7 @@ function markdown(directory) {
     return entry.isDirectory() ? markdown(file) : entry.name.endsWith('.md') ? [file] : [];
   });
 }
-const files = [path.join(root, 'README.md'), path.join(root, 'CONTRIBUTING.md'), ...markdown(path.join(root, 'docs')), ...markdown(path.join(root, 'assets'))];
+const files = [path.join(root, 'README.md'), path.join(root, 'CONTRIBUTING.md'), path.join(root, 'SECURITY.md'), path.join(root, 'THIRD_PARTY_NOTICES.md'), ...markdown(path.join(root, 'docs')), ...markdown(path.join(root, 'assets'))];
 let checked = 0;
 const errors = [];
 for (const file of files) {

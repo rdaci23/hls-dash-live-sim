@@ -29,6 +29,14 @@ release requirement.
   [scope](network-scenarios.md).
 - [x] Simulator manifest freeze/resume verification for HLS/DASH, including media
   availability, current-time resume, local UTC and concurrent-response regressions.
+- [x] Setup/configuration guides, real-UI demo, three scenario recipes and
+  contribution instructions for new users.
+- [x] Locked dependency notice inventory and preserved upstream license texts,
+  including a documented development-only metadata exception.
+- [x] Repeatable clean-clone history/package scan and full browser review command;
+  inspect its exact candidate report. [Scope and outstanding decisions](release-review.md).
+- [x] Security-reporting policy documents the planned private route and current
+  enablement limitation; actual contact/activation remains a publication step.
 - [x] Current support/limits documentation, quick start and contributor guidance.
 - [x] CI definitions for Linux/macOS Node 22/24/26, Chrome UI, pinned DASH engine,
   HTTP scenarios, Roku compilation and production-only package-install smoke.
@@ -54,8 +62,10 @@ that every future commit has passed. For the candidate, inspect the exact
 
 - [ ] Choose the public license and verify rights to the extracted source.
   Fixture provenance is documented, but does not settle the source license.
-- [ ] Review upstream licenses and add required notices for distributed code,
-  dependencies and media. Record the pinned livesim2 redistribution/use boundary.
+- [x] Inventory locked dependency notices and record the external livesim2
+  redistribution/use boundary. [Notices and exceptions](../THIRD_PARTY_NOTICES.md).
+- [ ] Resolve project source licensing and historical-media provenance; dependency
+  attribution does not settle those rights.
 - [ ] Establish a private vulnerability-reporting route and document it before
   opening public issues. Do not invent a contact address or assume advisory
   reporting is enabled.

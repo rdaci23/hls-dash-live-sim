@@ -31,6 +31,7 @@ use your existing Chrome installation.
 | Command | Coverage | Requirements |
 | --- | --- | --- |
 | `npm run docs:check` | Local documentation link targets exist. Does not verify remote URLs or heading fragments. | Node; no network. |
+| `npm run notices:check` | Lockfile inventory, preserved license/NOTICE hashes and scope match. | Node; no network or installed optional platform packages needed. |
 | `npm run typecheck` | TypeScript checking. | Development dependencies. |
 | `npm test` | Builds assets, then API, protocol, safety, diagnostics, scenarios, bandwidth/jitter timing and evidence regressions. | No Docker/browser; optional integrations are reported as skipped. |
 | `npm run test:ui` | Real control-page JS, authentication, settings, latency and HLS/DASH viewer, stream status, clipboard and exact download interactions. | Google Chrome. DASH viewer responses use a local fixture here. |

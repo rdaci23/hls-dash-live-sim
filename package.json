@@ -41,7 +41,10 @@
     "manifest:verify": "npm run build && node scripts/verify-manifest-freeze.cjs",
     "browser:dash-abr": "npm run build && node scripts/verify-dash-abr.cjs",
     "browser:dash-fallback": "npm run build && node scripts/verify-dash-abr.cjs --case fallback",
-    "network:verify": "npm run build && node scripts/verify-network-scenarios.cjs"
+    "network:verify": "npm run build && node scripts/verify-network-scenarios.cjs",
+    "notices:generate": "node scripts/third-party-notices.cjs --write",
+    "notices:check": "node scripts/third-party-notices.cjs",
+    "release:review": "node scripts/release-review.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
@@ -65,6 +68,9 @@
     "examples",
     "README.md",
     "CONTRIBUTING.md",
-    "docs"
+    "docs",
+    "SECURITY.md",
+    "THIRD_PARTY_NOTICES.md",
+    "third-party"
   ]
 }

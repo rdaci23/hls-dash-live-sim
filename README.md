@@ -8,6 +8,10 @@ It has no external framework dependency.
 disabled. See the [release checklist](docs/release-checklist.md) for outstanding
 requirements. A passing CI run does not publish anything or approve a release.
 
+New here? Follow [setup](docs/getting-started.md), the [three-minute demo](docs/demo.md),
+then [three scenario recipes](docs/scenario-recipes.md). See [configuration](docs/configuration.md)
+for ready-to-copy settings, access controls and independent sessions.
+
 ## Quick start
 
 Use Node.js 24 LTS; CI also checks Node 22 and 26 on Linux and macOS.
@@ -175,6 +179,13 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 
 | Document | Purpose |
 | --- | --- |
+| [Setup](docs/getting-started.md) | Prerequisites, first HLS/DASH stream, ports and troubleshooting. |
+| [Demo](docs/demo.md) | A short real-UI walkthrough with a one-shot HTTP retry. |
+| [Configuration](docs/configuration.md) | Manual files, scenario files, sample settings and protected access. |
+| [Scenario recipes](docs/scenario-recipes.md) | One 404/retry, sustained outage and scheduled network/freeze cycle. |
+| [Release review](docs/release-review.md) | History/package audit, clean-clone browser checks and publication decisions. |
+| [Dependency notices](THIRD_PARTY_NOTICES.md) | Locked runtime/development inventory and preserved upstream license texts. |
+| [Security policy](SECURITY.md) | Private-reporting procedure and current enablement status. |
 | [Implementation](docs/implementation.md) | Current behavior, supported imports and explicit limits. |
 | [Development and CI](docs/development.md) | Install, checks, CI matrix and packaged-CLI smoke test. |
 | [Network scenario timelines](docs/network-scenarios.md) | Scheduled bandwidth, seeded jitter, freeze/resume and HTTP replay evidence. |
