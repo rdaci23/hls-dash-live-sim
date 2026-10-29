@@ -8,7 +8,7 @@ function evaluate({ metrics: m, events = [], audit: captured = [], profiles = []
   if (!['probeErrors', 'videoErrors', 'regressions', 'playerErrors', 'runs', 'levels', 'fragments', 'phases', 'gaps', 'emergencyAborts', 'seeks', 'jumps'].every(key => Array.isArray(m[key])) ||
       !m.runs.every(run => run && Array.isArray(run.confirmed))) return { passed: false, releaseReady: false, failures: ['Incomplete ABR telemetry'] };
   check(expectedRunId === undefined || m.runId === expectedRunId, 'Run identity mismatch');
-  check(['startEpochMs', 'elapsedMs', 'firstFrameMs', 'lastFrameMs', 'firstMediaTime', 'mediaTime', 'frames'].every(key => Number.isFinite(m[key])) &&
+  check(['startEpochMs', 'elapsedMs', 'firstFrameMs', 'lastFrameMs', 'firstMediaTime', 'mediaTime', 'frames', 'maxFrameGapMs'].every(key => Number.isFinite(m[key])) &&
     m.frames > 0 && m.elapsedMs >= m.lastFrameMs && m.lastFrameMs > m.firstFrameMs, 'Invalid frame timing/count telemetry');
   const audit = captured.filter(event => event.epochMs === undefined || event.epochMs <= m.startEpochMs + m.elapsedMs);
   check(m.complete && !harnessError, harnessError || 'Probe did not complete');
@@ -70,18 +70,43 @@ function evaluate({ metrics: m, events = [], audit: captured = [], profiles = []
   const high = m.runs.filter(run => run.level === 1).map(run => clip(run, restore?.acknowledgedMs ?? Infinity, m.elapsedMs))
     .find(run => span(run) >= GATES.afterMs && run.confirmed.every(entry => served(entry, PROFILES.restored, restore.appliedEpochMs)));
   check(!!high && high.confirmed[0].firstFrameMs - restore.requestMs <= GATES.upshiftMs, 'No timely rendered high-rendition recovery held for 60 seconds');
+  // A low-buffer observation is expected only during the proven, bandwidth-
+  // limited downshift and with independent bounded rendered-frame recovery.
+  const expectedUnderruns = m.playerErrors.flatMap(error => {
+    if (!drop || !low || error.type !== 'mediaError' || error.details !== 'bufferStalledError' || error.fatal !== false ||
+        error.atMs < drop.acknowledgedMs || error.atMs > low.confirmed[0].firstFrameMs ||
+        !Number.isFinite(error.stalledSinceMs) || error.stalledSinceMs < drop.requestMs - 250 || error.stalledSinceMs > error.atMs ||
+        !Number.isFinite(error.bufferInfo?.len) || error.bufferInfo.len < 0 || error.bufferInfo.len > 0.5 ||
+        !Number.isFinite(error.lastFrameMs) || !Number.isFinite(error.nextFrameMs) ||
+        error.lastFrameMs > error.atMs || error.nextFrameMs < error.atMs || error.nextFrameMs - error.lastFrameMs > GATES.stallMs ||
+        !(error.nextFrameMediaTime > error.lastFrameMediaTime) || m.maxFrameGapMs + 1 < error.nextFrameMs - error.lastFrameMs) return [];
+    const epoch = m.startEpochMs + error.atMs;
+    const cause = m.fragments.find(fragment => {
+      const response = responses.get(fragment.requestId);
+      const requested = start.get(fragment.requestId);
+      const completed = events.find(event => event.requestId === fragment.requestId && event.event === 'request.completed' && event.status === 200 && event.bodyBytes === fragment.bytes);
+      return fragment.level === 1 && fragment.bytes > 0 && response?.url === fragment.url && response.status === 200 &&
+        Date.parse(requested?.timestamp) >= drop.appliedEpochMs && Date.parse(requested?.timestamp) <= epoch + 250 && Date.parse(completed?.timestamp) >= epoch - 250 &&
+        events.some(event => event.requestId === fragment.requestId && event.event === 'fault.applied' && event.fault === 'response.bandwidth' &&
+          event.bandwidthKbps === PROFILES.restricted && response.faultIds?.split(/,\s*/).includes(event.faultId));
+    });
+    return cause ? [{ error, requestId: cause.requestId, bufferSeconds: error.bufferInfo.len, frameGapMs: error.nextFrameMs - error.lastFrameMs }] : [];
+  });
   const expectedAborts = m.emergencyAborts.filter(e => drop && restore && e.level === 1 && e.atMs >= drop.requestMs && e.atMs <= drop.requestMs + GATES.downshiftMs &&
     audit.some(a => a.kind === 'response' && a.url === e.url && a.status === 200 &&
       events.some(server => server.requestId === a.requestId && server.event === 'fault.selected' && server.fault === 'response.bandwidth' && server.bandwidthKbps === PROFILES.restricted && a.faultIds?.split(/,\s*/).includes(server.faultId)) &&
       events.some(server => server.requestId === a.requestId && server.event === 'request.cancelled' && server.reason === 'client_disconnect' && Math.abs(Date.parse(server.timestamp) - m.startEpochMs - e.atMs) <= 1500)) &&
     audit.some(a => a.kind === 'requestfailed' && a.url === e.url && a.text === 'net::ERR_ABORTED' && Math.abs(a.epochMs - m.startEpochMs - e.atMs) <= 1500));
-  check(!m.playerErrors.some(e => e.fatal || !['aborted'].includes(e.details) || !expectedAborts.some(a => a.url === e.url && Math.abs(a.atMs - e.atMs) <= 1500)), 'Unexplained player error');
+  check(!m.playerErrors.some(e => !expectedUnderruns.some(observation => observation.error === e) && (e.fatal || !['aborted'].includes(e.details) || !expectedAborts.some(a => a.url === e.url && Math.abs(a.atMs - e.atMs) <= 1500))), 'Unexplained player error');
   check(!audit.some(e => e.kind === 'pageerror' || (e.kind === 'console' && e.level === 'error') ||
     (e.kind === 'requestfailed' && !expectedAborts.some(a => a.url === e.url && e.text === 'net::ERR_ABORTED' && Math.abs(e.epochMs - m.startEpochMs - a.atMs) <= 1500))), 'Unexplained browser error or cancelled request');
   return { passed: failures.length === 0, releaseReady: false, failures, gates: GATES, profiles: PROFILES,
     firstFrameMs: m.firstFrameMs, downshiftMs: low && drop ? low.confirmed[0].firstFrameMs - drop.requestMs : null,
     upshiftMs: high && restore ? high.confirmed[0].firstFrameMs - restore.requestMs : null,
     lowRenderedMs: span(low), recoveredHighMs: span(high), frames: m.frames,
-    longestFrameGapMs: Math.max(m.maxFrameGapMs ?? 0, ...gaps.map(g => g.durationMs)), expectedEmergencyAborts: expectedAborts.length };
+    longestFrameGapMs: Math.max(m.maxFrameGapMs ?? 0, ...gaps.map(g => g.durationMs)), expectedEmergencyAborts: expectedAborts.length,
+    expectedDegradationObservations: expectedUnderruns.map(({ error, ...observation }) => ({ ...observation, atMs: error.atMs, details: error.details, stalledSinceMs: error.stalledSinceMs })),
+    unexpectedPlayerErrors: m.playerErrors.filter(error => !expectedUnderruns.some(observation => observation.error === error) &&
+      !expectedAborts.some(aborted => error.details === 'aborted' && !error.fatal && aborted.url === error.url && Math.abs(aborted.atMs - error.atMs) <= 1500)) };
 }
 module.exports = { GATES, PROFILES, evaluate };

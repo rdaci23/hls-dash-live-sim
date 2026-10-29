@@ -63,6 +63,16 @@ so buffered low-quality frames after restoration do not inflate the restricted h
 Only a tightly correlated high-fragment emergency abort during the downshift
 window can be classified as an expected cancellation: player event, browser
 request failure, response fault ID and server client-disconnect event must agree.
+A nonfatal `bufferStalledError` can be an expected observation of this deliberate
+bandwidth drop. It qualifies only before the proven low-rendition fallback, with
+a buffer no larger than 0.5 seconds, a stall beginning after the drop, and a
+matching high-rendition download actually being capped at 450 kbps at that time.
+The client response/fault IDs, completed server byte count and request interval
+must agree. Rendered frames must independently advance again within four seconds,
+with no seek or restart. The event and its correlated request/frame-gap details
+remain visible under `expectedDegradationObservations` and in raw telemetry.
+Baseline, fatal, late, uncorrelated or unmeasurable stalls remain failures.
+
 Cleanup cancellations, arbitrary load failures and late errors are not accepted.
 
 ## Evidence and CI

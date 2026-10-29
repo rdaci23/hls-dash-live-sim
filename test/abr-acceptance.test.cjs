@@ -6,7 +6,7 @@ function baseline() {
   const phase = (name, at) => ({ name, requestMs: at, acknowledgedMs: at + 20, appliedEpochMs: epoch + at + 10, bandwidthKbps: PROFILES[name] });
   const phases = [phase('restricted', 31000), phase('restored', 68000)];
   const m = { runId: 'run', startEpochMs: epoch, firstFrameMs: 1000, lastFrameMs: 136000, elapsedMs: 136010,
-    firstMediaTime: 0, mediaTime: 135, frames: 3200, levels: [{ width: 320, height: 180, bitrate: 301000 }, { width: 640, height: 360, bitrate: 763000 }],
+    firstMediaTime: 0, mediaTime: 135, frames: 3200, maxFrameGapMs: 100, levels: [{ width: 320, height: 180, bitrate: 301000 }, { width: 640, height: 360, bitrate: 763000 }],
     runs: [], fragments: [], gaps: [], regressions: [], seeks: [], jumps: [], playerErrors: [], videoErrors: [], probeErrors: [], phases, complete: true, autoLevelEnabled: true, emergencyAborts: [] };
   const events = [], audit = [];
   function run(level, begin, end, rate) {
@@ -105,5 +105,35 @@ test('only correlated adaptive high-fragment cancellations in the downshift wind
     x => { x.events.at(-1).reason = 'session_shutdown'; },
     x => { x.events.at(-1).timestamp = new Date(1135000).toISOString(); },
     x => { x.audit.at(-2).faultIds = 'different'; },
+  ]) { const data = input(); edit(data); assert.equal(evaluate(data).passed, false); }
+});
+
+test('only proven downshift buffer underruns with low buffer and measured frame recovery are expected', () => {
+  function input() {
+    const data = baseline();
+    const url = 'http://127.0.0.1/live/1/slow.ts';
+    data.metrics.playerErrors.push({ atMs: 34000, type: 'mediaError', details: 'bufferStalledError', fatal: false,
+      stalledSinceMs: 33800, bufferInfo: { len: 0.05 }, lastFrameMs: 33950, nextFrameMs: 34050, lastFrameMediaTime: 32.95, nextFrameMediaTime: 33.05 });
+    data.metrics.fragments.push({ requestId: 'slow-high', url, level: 1, sn: 999, bytes: 10000 });
+    data.audit.push({ kind: 'response', requestId: 'slow-high', url, status: 200, faultIds: 'fault-slow', epochMs: 1032100 });
+    data.events.push({ event: 'request.started', requestId: 'slow-high', timestamp: new Date(1032000).toISOString() },
+      { event: 'request.completed', requestId: 'slow-high', timestamp: new Date(1034100).toISOString(), status: 200, bodyBytes: 10000 },
+      { event: 'fault.applied', requestId: 'slow-high', fault: 'response.bandwidth', bandwidthKbps: 450, faultId: 'fault-slow' });
+    return data;
+  }
+  assert.equal(evaluate(input()).passed, true);
+  assert.equal(evaluate(input()).expectedDegradationObservations.length, 1);
+  for (const edit of [
+    x => { x.metrics.playerErrors[0].fatal = true; },
+    x => { x.metrics.playerErrors[0].atMs = 10000; },
+    x => { x.metrics.playerErrors[0].atMs = 50000; },
+    x => { x.metrics.playerErrors[0].stalledSinceMs = 30000; },
+    x => { x.metrics.playerErrors[0].bufferInfo.len = 2; },
+    x => { x.metrics.playerErrors[0].nextFrameMs = null; },
+    x => { x.metrics.playerErrors[0].nextFrameMs = 39000; },
+    x => { x.metrics.playerErrors[0].nextFrameMediaTime = 32.95; },
+    x => { x.audit.at(-1).faultIds = 'wrong'; },
+    x => { x.events.at(-1).bandwidthKbps = 1500; },
+    x => { x.events.at(-2).timestamp = new Date(1033000).toISOString(); },
   ]) { const data = input(); edit(data); assert.equal(evaluate(data).passed, false); }
 });

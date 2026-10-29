@@ -30,7 +30,9 @@
   player.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => m.switches.push({ atMs: now(), level: data.level }));
   player.on(Hls.Events.FRAG_LOAD_EMERGENCY_ABORTED, (_event, data) => m.emergencyAborts.push({ ...fragment(data.frag), atMs: now(), bytes: data.stats.loaded }));
   player.on(Hls.Events.ERROR, (_event, data) => m.playerErrors.push({ atMs: now(), details: data.details, type: data.type,
-    fatal: data.fatal, status: data.response?.code, url: data.frag?.url, reason: data.reason }));
+    fatal: data.fatal, status: data.response?.code, url: data.frag?.url, reason: data.reason || data.error?.message,
+    bufferInfo: data.bufferInfo, stalledSinceMs: Number.isFinite(data.stalled?.start) ? data.stalled.start - started : null,
+    lastFrameMs: m.lastFrameMs, lastFrameMediaTime: m.mediaTime, nextFrameMs: null, nextFrameMediaTime: null }));
   video.addEventListener('seeking', () => m.seeks.push({ atMs: now(), mediaTime: video.currentTime }));
   video.addEventListener('error', () => m.videoErrors.push({ atMs: now(), code: video.error?.code, message: video.error?.message }));
   function frame(_at, metadata) {
@@ -43,6 +45,9 @@
       }
       if (m.lastFrameMs !== null && at - m.lastFrameMs > 500) m.gaps.push({ startMs: m.lastFrameMs, endMs: at, durationMs: at - m.lastFrameMs });
       if (m.firstFrameMs === null) { m.firstFrameMs = at; m.firstMediaTime = metadata.mediaTime; }
+      for (const error of m.playerErrors) if (error.nextFrameMs === null && at >= error.atMs) {
+        error.nextFrameMs = at; error.nextFrameMediaTime = metadata.mediaTime;
+      }
       m.lastFrameMs = at; m.mediaTime = metadata.mediaTime; m.frames++;
       const level = m.levels.find(entry => entry.width === metadata.width && entry.height === metadata.height)?.index ?? -1;
       const download = playing && loaded.get(playing.url);
