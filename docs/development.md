@@ -34,7 +34,7 @@ use your existing Chrome installation.
 | `npm run typecheck` | TypeScript checking. | Development dependencies. |
 | `npm test` | Builds assets, then API, protocol, safety, diagnostics, scenarios, bandwidth/jitter timing and evidence regressions. | No Docker/browser; optional integrations are reported as skipped. |
 | `npm run test:ui` | Real control-page JS, authentication, settings, latency and HLS/DASH viewer, stream status, clipboard and exact download interactions. | Google Chrome. DASH viewer responses use a local fixture here. |
-| `npm run test:docker` | Actual pinned livesim2, A/V resources and period-boundary timelines, clock headers and owned-container cleanup. | Docker and pinned image already present. |
+| `npm run test:docker` | Actual pinned livesim2, A/V resources and period-boundary timelines, clock headers, multi-rendition fault isolation and owned-container cleanup. | Docker and pinned image already present. |
 | `npm run manifest:verify` | Two 20-second manifest freeze/resume cycles for both protocols, with live media and local UTC checks. | Node; DASH requires Docker and pinned image; about two minutes. |
 | `npm run scenario:verify -- --protocol hls` | Generated HLS HTTP 404/retry scenario and diagnostics. | Node only. |
 | `npm run scenario:verify` | Both HLS/DASH HTTP scenario checks. | Docker and pinned image. |
@@ -42,6 +42,8 @@ use your existing Chrome installation.
 | `npm run roku:suite -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --case outage` | Sequential native HLS/DASH sustained media-outage evidence. | Dedicated physical Roku with tester 1.1.0 installed; Docker and pinned image; about six minutes. |
 | `npm run roku:build` | Compiles/packages the standalone SceneGraph tester. | Development dependencies; no device contacted. |
 | `npm run browser:abr` | Automatic HLS 1,500 → 450 → 1,500 kbps adaptation with rendered high/low/high evidence. | Chrome; no Docker; several minutes. |
+| `npm run browser:dash-abr` | Automatic DASH 1,500 → 450 → 1,500 kbps adaptation with served/rendered high/low/high evidence and default UTC. | Chrome, Docker and pinned image; several minutes. |
+| `npm run browser:dash-fallback` | Optional high-rendition 503 compatibility probe; currently fails default dash.js client fallback and retains that evidence. | Chrome, Docker and pinned image; up to 165 seconds. |
 | `npm run browser:outage` | Timed 20-second HLS/DASH media outage, rendered stall, automatic recovery and 60 seconds afterward. | Chrome, Docker, pinned image; about three minutes. |
 | `npm run browser:verify` | Full six-case rendered browser playback/recovery gate. | Chrome, Docker, pinned image; several minutes. |
 
@@ -60,7 +62,8 @@ hls-dash-live-sim fault-control
 ```
 
 Fixture regeneration is separate: `npm run fixtures` requires FFmpeg and replaces
-procedural assets. Stop sessions first. [Provenance](../assets/README.md).
+procedural assets. `npm run fixtures:dash-abr` regenerates just the optional
+DASH ladder. Stop sessions first. [Provenance](../assets/README.md).
 
 ## GitHub Actions
 
@@ -72,6 +75,9 @@ The DASH integration job also runs the [simulator freeze/resume check](manifest-
 and retains its evidence for seven days.
 A dedicated Linux/Node 24 job runs the [HLS automatic ABR check](hls-abr.md) on
 every CI invocation and retains its raw/report/screenshot evidence for seven days.
+A separate Linux/Node 24 **DASH automatic ABR switching** job runs the
+[DASH ladder check](dash-abr.md) on every invocation with seven-day evidence
+retention. Its optional HTTP-error player probe is separate and is not a CI pass.
 Another dedicated job runs the [sustained HLS/DASH outage pair](sustained-outages.md)
 on every invocation with the same seven-day evidence retention.
 The run is successful only when all selected jobs pass; logs retain individual

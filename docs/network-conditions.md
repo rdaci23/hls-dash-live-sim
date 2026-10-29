@@ -98,9 +98,12 @@ metadata/clock/key exclusions and UI/API validation. The real livesim2 integrati
 also fetches shaped initialization and media for audio/video around periods.
 
 These HTTP checks establish server shaping behavior. The separate
-[HLS automatic ABR check](hls-abr.md) measures bandwidth-driven rendered adaptation
-and restoration for the two-rendition sample. Broader player recovery remains unverified. The bundled HLS sample
-has two renditions; the bundled DASH sample has one video rendition. Broader
-player/network acceptance gates need suitable ladders and separate evidence.
+[HLS automatic ABR check](hls-abr.md) and [DASH ladder check](dash-abr.md) measure
+bandwidth-driven rendered adaptation and restoration for their two-rendition
+fixtures. The default DASH sample remains single-rendition; select `--asset abr`
+for its ladder. Broader player recovery remains unverified. In particular,
+bandwidth downshift does not prove HTTP-error fallback; the DASH compatibility
+probe retains a failed default dash.js result separately from verified server
+fault isolation. Broader network profiles need separate evidence.
 The [release checklist](release-checklist.md) retains those limits; the repository
 and npm package remain private.

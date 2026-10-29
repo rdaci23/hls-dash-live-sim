@@ -278,7 +278,7 @@ const program = yargs(hideBin(process.argv))
         .option("asset", {
           type: "string",
           description:
-            "DASH asset directory containing manifest.mpd (default sample)",
+            "DASH asset: bundled sample (default), abr ladder, or a directory under --vodroot",
         })
         .option("vodroot", { type: "string" })
         .option("source", { type: "string" })

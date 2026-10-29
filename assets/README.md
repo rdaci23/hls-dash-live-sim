@@ -11,7 +11,16 @@ prototype samples, whose regeneration history was not present.
   uses complete AAC access units; livesim2 handles the small padded tail while
   deriving live audio timing from the media. The MPD moves each representation's
   SegmentTemplate to AdaptationSet level for the validated livesim2 adapter.
-- The DASH generator uses unformatted `$Number$` filenames, as required by that
+- Optional DASH ABR: `scripts/generate-dash-abr.cjs` creates
+  `assets/dash-abr-sample` with aligned 180p/360p H.264 Baseline video at
+  180/600 kbps and separate 64 kbps stereo AAC. It uses the same procedural
+  pattern/tone, 24 fps, twelve-second source and two-second random-access chunks.
+  Both video representations share an AdaptationSet SegmentTemplate; coded
+  dimensions and every source video fragment's timing/keyframe start are tested.
+  The initial fixture was encoded with FFmpeg 7.1.1/libx264. Run
+  `npm run fixtures:dash-abr` to regenerate only this optional ladder, leaving the
+  existing HLS and single-rendition DASH baselines untouched. Rebuild afterward.
+- The DASH generators use unformatted `$Number$` filenames, as required by that
   engine version. It does not rewrite source encodings to pretend to have different
   bitrates, resolutions or codecs.
 

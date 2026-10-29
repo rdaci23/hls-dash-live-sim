@@ -107,7 +107,9 @@ fixture, Chrome version and pinned hls.js version. It supplements the
 [existing playback gates](playback-gates.md); it does not replace their six cases
 or the physical Roku gate.
 
-DASH ABR needs a validated multi-rendition fixture. HLS origin playback, HTTP-error
+The optional [DASH ladder and ABR check](dash-abr.md) now provides separate
+DASH bandwidth evidence and documents the failed HTTP-error fallback probe.
+HLS origin playback, HTTP-error
 rendition fallback, jitter-driven recovery, sustained outages, measured manifest
 freeze/resume and native-device bandwidth recovery require separate evidence.
 Audio is muxed; rendered video measurements do not establish perceived audio

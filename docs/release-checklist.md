@@ -32,6 +32,10 @@ release requirement.
 - [x] Optional manual CI full-browser gate with retained run evidence.
 - [x] Separate automatic HLS bandwidth-adaptation runner and CI job with rendered
   high/low/high evidence; see [its exact scope and gates](hls-abr.md).
+- [x] Optional multi-rendition DASH fixture, automatic bandwidth adaptation and
+  routine CI, plus real-engine high-rendition HTTP fault isolation. The optional
+  default dash.js HTTP fallback probe fails and remains a client compatibility
+  observation; [scope and evidence](dash-abr.md).
 - [x] Separate timed HLS/DASH media-outage runner and routine CI job with measured
   stall/resume and post-recovery rendering; [scope and retry policy](sustained-outages.md).
 
@@ -72,8 +76,10 @@ that every future commit has passed. For the candidate, inspect the exact
   make no native offline-clock claim. Browser local UTC traffic was verified with
   external player requests blocked, not with the whole computer disconnected.
 - Same-download 404 recovery does not establish ABR fallback. The separate HLS
-  bandwidth-adaptation check covers one two-rendition Chrome profile. DASH/native
-  ABR, jitter recovery, client recovery from frozen manifests and perceived audio
+  and [DASH](dash-abr.md) bandwidth-adaptation checks each cover one two-rendition
+  Chrome profile. Default dash.js HTTP-error rendition fallback failed its optional
+  probe; server fault isolation passed independently. Native ABR, jitter recovery,
+  client recovery from frozen manifests and perceived audio
   quality remain outside that evidence. The separate browser [media-outage check](sustained-outages.md)
   covers one timed 503 profile with explicit retries. Native recovery observations
   describe the tested client; they do not determine support for the simulator's

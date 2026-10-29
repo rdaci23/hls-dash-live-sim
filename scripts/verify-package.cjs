@@ -34,6 +34,13 @@ async function ready(url, child, logs) {
     assert.ok(files.includes('dist/support-tools/assets/fault-control/control.js'));
     assert.ok(files.some(file => file.startsWith('dist/support-tools/assets/hls-sample/') && file.endsWith('.ts')));
     assert.ok(files.includes('docs/release-checklist.md'));
+    for (const location of ['assets/dash-abr-sample', 'dist/support-tools/assets/dash-abr-sample']) {
+      assert.ok(files.includes(location + '/manifest.mpd'));
+      for (const id of [0, 1, 2]) {
+        assert.ok(files.includes(location + '/init-' + id + '.m4s'));
+        assert.ok(files.includes(location + '/chunk-' + id + '-6.m4s'));
+      }
+    }
     const included = new Set(files);
     for (const file of files.filter(file => file.endsWith('.md'))) {
       const source = await fs.readFile(path.join(root, file), 'utf8');

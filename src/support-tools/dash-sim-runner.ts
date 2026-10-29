@@ -228,14 +228,15 @@ export async function startLivesim2(
       : undefined);
   const asset = options.asset ?? "sample";
   const manifestPath = buildLivesimPath(asset, info, periods, options.utc);
-  const sourceFixture = path.resolve(__dirname, "../../assets/dash-sample");
+  const bundled = asset === "abr" ? "dash-abr-sample" : "dash-sample";
+  const sourceFixture = path.resolve(__dirname, "../../assets", bundled);
   const vodroot = options.vodroot
     ? path.resolve(options.vodroot)
     : fs.existsSync(sourceFixture)
       ? sourceFixture
-      : path.resolve(__dirname, "assets/dash-sample");
+      : path.resolve(__dirname, "assets", bundled);
   const assetRoot = options.vodroot ? path.join(vodroot, asset) : vodroot;
-  if (asset !== "sample" && !options.vodroot)
+  if (!["sample", "abr"].includes(asset) && !options.vodroot)
     throw new Error(
       "A custom asset requires --vodroot containing that asset directory",
     );
@@ -300,7 +301,7 @@ export async function startLivesim2(
     "-p",
     `${options.faultProxy === false ? host : "127.0.0.1"}:${internalPort}:8888`,
     "-v",
-    `${vodroot}:${options.vodroot ? "/vod" : "/vod/sample"}:ro`,
+    `${vodroot}:${options.vodroot ? "/vod" : "/vod/" + asset}:ro`,
   ];
   if (options.noPull) args.push("--pull=never");
   args.push(image, "--vodroot=/vod", "--repdataroot=-");

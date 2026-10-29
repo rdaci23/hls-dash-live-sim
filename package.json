@@ -25,7 +25,8 @@
     "fault-control": "node dist/cli.js fault-control",
     "test": "npm run build && node --test test/*.test.cjs",
     "test:docker": "npm run build && node scripts/run-docker-tests.cjs",
-    "fixtures": "node scripts/generate-fixtures.cjs",
+    "fixtures": "node scripts/generate-fixtures.cjs && node scripts/generate-dash-abr.cjs",
+    "fixtures:dash-abr": "node scripts/generate-dash-abr.cjs",
     "scenario:verify": "npm run build && node scripts/verify-scenarios.cjs",
     "browser:verify": "npm run build && node scripts/verify-browser.cjs",
     "roku:build": "bsc --project roku/bsconfig.json",
@@ -37,7 +38,9 @@
     "test:package": "npm run build && node scripts/verify-package.cjs",
     "browser:abr": "npm run build && node scripts/verify-hls-abr.cjs",
     "browser:outage": "npm run build && node scripts/verify-browser.cjs --case outage",
-    "manifest:verify": "npm run build && node scripts/verify-manifest-freeze.cjs"
+    "manifest:verify": "npm run build && node scripts/verify-manifest-freeze.cjs",
+    "browser:dash-abr": "npm run build && node scripts/verify-dash-abr.cjs",
+    "browser:dash-fallback": "npm run build && node scripts/verify-dash-abr.cjs --case fallback"
   },
   "dependencies": {
     "express": "^4.19.2",

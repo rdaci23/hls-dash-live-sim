@@ -218,3 +218,44 @@ test(
     }
   },
 );
+
+test('real DASH ladder serves both coded renditions and isolates high-rendition faults from low video, init and audio',
+  { skip: process.env.RUN_DOCKER_TESTS !== '1', timeout: 60000 }, async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'dash-ladder-'));
+    let session;
+    try {
+      const scenarioFile = path.join(directory, 'scenario.json');
+      await fs.writeFile(scenarioFile, JSON.stringify({version:1,seed:42,rules:[{kind:'outage',target:{track:'video:1',segment:'each'},status:503,afterMs:0,beforeMs:60000}]}));
+      session = await startLivesim2({ port: await unusedPort(), asset: 'abr', noPull: true, periodsPerHour: 60,
+        faultConfigPath: path.join(directory, 'faults.json'), scenarioFile });
+      const response = await fetch(session.url); assert.equal(response.status, 200);
+      const root = new XMLParser({ignoreAttributes:false,parseAttributeValue:false}).parse(await response.text()).MPD;
+      const period = array(root.Period).at(-1);
+      const adaptations = array(period.AdaptationSet);
+      const video = adaptations.find(a=>a['@_contentType']==='video');
+      assert.deepEqual(array(video.Representation).map(r=>[r['@_width'],r['@_height']]), [['320','180'],['640','360']]);
+      const { initialization } = require('../scripts/dash-abr/fixture.cjs');
+      for (const a of adaptations) {
+        const template = a.SegmentTemplate;
+        let time = 0n, last = 0n;
+        for (const s of array(template.SegmentTimeline.S)) {
+          time = BigInt(s['@_t'] ?? time); const duration = BigInt(s['@_d']), repeats = BigInt(s['@_r'] || 0);
+          last = time + duration * repeats; time = last + duration;
+        }
+        for (const r of array(a.Representation)) {
+          const replace = v=>v.replaceAll('$RepresentationID$',String(r['@_id'])).replaceAll('$Time$',String(last));
+          const init = await fetch(new URL(replace(template['@_initialization']),session.url)); assert.equal(init.status,200);
+          const bytes=Buffer.from(await init.arrayBuffer()); assert.ok(bytes.length>100);
+          if(a['@_contentType']==='video') assert.deepEqual([initialization(bytes).width,initialization(bytes).height],[Number(r['@_width']),Number(r['@_height'])]);
+          const url=new URL(replace(template['@_media']),session.url);
+          const media=await fetch(url); const high=a['@_contentType']==='video'&&r['@_width']==='640';
+          assert.equal(media.status,high?503:200);
+          assert.ok((await media.arrayBuffer()).byteLength>0);
+          if(high){url.searchParams.set('cb','retry');assert.equal((await fetch(url)).status,503);}
+        }
+      }
+      const events=session.diagnostics.snapshot().events;
+      assert.ok(events.filter(e=>e.event==='request.completed'&&e.status===503).every(e=>e.trackId==='video:1'));
+      assert.equal(session.scenario.report().invalidReason,undefined);
+    } finally { if(session)await session.close(); await fs.rm(directory,{recursive:true,force:true}); }
+  });

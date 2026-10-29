@@ -41,6 +41,8 @@ To run DASH instead:
 
 ```sh
 npm run dash
+# Optional 180p/360p video ladder, with separate AAC:
+npm run dash -- --asset abr
 ```
 
 Use the actual MPD URL printed at startup. First start downloads the pinned
@@ -59,19 +61,21 @@ files for independent sessions. Stop sessions before regenerating sample assets.
 | HLS samples | H.264/AAC, muxed audio/video, 180p/360p renditions, two-second segments, LIVE/EVENT/VOD. |
 | HLS live timing | Sliding window, increasing sequences, loop discontinuities and retained segments after window removal. |
 | HLS origin proxy | Signed child playlists, alternate audio, init resources, keys, ranges and declared CDN origins. |
-| DASH samples | livesim2 v1.15.3 at an immutable digest, H.264 video plus separate AAC, live windows and supported period options. |
+| DASH samples | livesim2 v1.15.3 at an immutable digest, H.264 video plus separate AAC, optional `--asset abr` 180p/360p ladder, live windows and supported period options. |
 | Clock | Coherent real-time DASH availability and local UTC by default; external UTC is opt-in. |
 | Manual faults | Segment 403/404, malformed media, fixed response delay, manifest freeze, and limited encrypted-origin HLS key faults. |
 | Network conditions | Shared per-session media bandwidth ceiling and additional random media/manifest response jitter. |
 | Scenarios | Seeded HTTP status rules targeting logical tracks, segments, attempts and session-time windows; same-download retry assertions. |
 | Inspection | Actual HLS/DASH manifests in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
-| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS bandwidth-adaptation and timed HLS/DASH media-outage checks. |
+| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS/DASH bandwidth-adaptation and timed HLS/DASH media-outage checks. |
 
 **Limits:** no LL-HLS/LL-DASH, commercial DRM, ads or shared
 virtual clock. DASH source import analyzes supported metadata; it does not clone
 arbitrary source media. HLS origin scenarios and broader ABR/fault recovery remain
-outside verified coverage. [Automatic HLS bandwidth adaptation](docs/hls-abr.md)
-has a separate two-rendition Chrome check. Player-specific recovery behavior is
+outside verified coverage. Automatic [HLS](docs/hls-abr.md) and [DASH](docs/dash-abr.md)
+bandwidth adaptation have separate two-rendition Chrome checks. Default dash.js
+HTTP-error rendition fallback failed its optional compatibility probe; simulator
+fault isolation is verified independently. Player-specific recovery behavior is
 recorded as compatibility evidence; Roku recovery fixes are outside this repo.
 Apple, Android and additional Roku models remain unverified. [Detailed capabilities and limits](docs/implementation.md).
 
@@ -176,6 +180,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Manifest freeze/resume](docs/manifest-freeze.md) | Simulator snapshot stability, live media availability, local clock and current-timeline resume. |
 | [Sustained media outages](docs/sustained-outages.md) | Timed HLS/DASH 503 outages, measured stall/resume and explicit retry settings. |
 | [HLS automatic ABR](docs/hls-abr.md) | Reproducible bandwidth drop/restoration with rendered downshift/upshift evidence. |
+| [DASH ladder and ABR](docs/dash-abr.md) | Optional multi-rendition sample, automatic bandwidth switching and separate HTTP fallback compatibility probe. |
 | [Playback gates](docs/playback-gates.md) | Numeric acceptance gates, reproducible browser/Roku commands and recorded hardware results. |
 | [Release checklist](docs/release-checklist.md) | Completed preparation and unresolved public-release requirements. |
 | [Contributing](CONTRIBUTING.md) | Change scope, validation and handling sensitive test inputs. |

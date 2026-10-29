@@ -25,8 +25,10 @@ native results below retain their original outcomes.
 Healthy checks use the HLS 180p/360p ladder and DASH 360p H.264 with separate AAC.
 Strict HLS retry checks use the single 180p rendition. The ladder can recover by
 switching rendition, which is useful but does not prove the required same-download
-retry. Bandwidth-driven HLS adaptation has a [separate runner and acceptance gates](hls-abr.md).
-It does not establish HTTP-error rendition fallback or DASH/native ABR coverage.
+retry. Bandwidth-driven [HLS](hls-abr.md) and [DASH](dash-abr.md) adaptation have
+separate runners and acceptance gates; the DASH runner explicitly selects the
+optional `abr` asset. These do not establish HTTP-error rendition fallback or
+native ABR coverage.
 
 ## Browser runner
 

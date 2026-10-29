@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "kind": "outage",
+      "target": { "track": "video:1", "segment": "each" },
+      "afterMs": 60000,
+      "beforeMs": 150000,
+      "status": 503
+    }
+  ]
+}
