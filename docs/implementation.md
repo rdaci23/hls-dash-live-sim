@@ -247,3 +247,27 @@ verified with external player requests blocked.
 See [playback gates](playback-gates.md) for reproducible commands and the remaining
 release requirements. Historical JSON reports above retain their original engine
 versions and limitations. The repository and npm package remain private.
+
+## Fault control page
+
+The control shell and client script are static assets copied during the build.
+Only those two files are public on protected control sessions; configuration and
+local-interface discovery require the existing control authentication. The client
+keeps native `fetch` intact, gates actions on a successful connection, and handles
+control errors without recursive global wrappers.
+
+Latency accepts 0–60,000 ms in both the page and injection API. An omitted injection
+value retains the 3,000 ms API default; explicit zero clears the delay. Invalid
+explicit values return 400 without changing configuration.
+
+Manifest inspection reads directly from a local simulator in the browser, with
+no credentials, no redirects and a 4 MiB response limit. A ready `/health` response
+and matching simulator session headers are required. HLS child options come only
+from variant/rendition declarations on the same simulator origin; inspection does
+not fetch segments or keys. A refresh reads the actual response, including frozen
+manifests. No server-side arbitrary URL fetch endpoint is introduced.
+
+`npm run test:ui` runs the installed-Chrome regression suite for control startup,
+authentication, settings, latency and HLS/DASH inspection. The normal test suite
+also covers latency API validation. These UI checks supplement the playback gates;
+they do not substitute for browser or physical Roku playback evidence.

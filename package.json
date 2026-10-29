@@ -31,7 +31,8 @@
     "roku:build": "bsc --project roku/bsconfig.json",
     "roku:verify": "npm run build && node scripts/verify-roku.cjs",
     "roku:deploy": "npm run roku:build && node scripts/deploy-roku.cjs",
-    "roku:suite": "npm run build && node scripts/verify-roku-suite.cjs"
+    "roku:suite": "npm run build && node scripts/verify-roku-suite.cjs",
+    "test:ui": "npm run build && node scripts/run-ui-tests.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

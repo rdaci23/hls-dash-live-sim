@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HLS / DASH Fault Control</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 24px; background: #f7f8fa; color: #1d1f23; }
+    h1 { margin-bottom: 0.25rem; }
+    .container { max-width: 880px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 10px 35px rgba(15,23,42,0.1); }
+    section { margin-top: 24px; }
+    section h2 { font-size: 1.1rem; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+    .card { border: 1px solid #d9dee7; border-radius: 10px; padding: 16px; background: #fafbff; }
+    label { display: flex; align-items: center; justify-content: space-between; font-size: 0.95rem; margin-bottom: 10px; }
+    select, input[type="number"] { width: 120px; padding: 6px 8px; border-radius: 6px; border: 1px solid #c5c9d6; font-size: 0.9rem; }
+    button { background: #2563eb; color: #fff; border: none; padding: 10px 18px; border-radius: 8px; font-size: 0.95rem; cursor: pointer; }
+    button.secondary { background: #475569; }
+    button.warning { background: #f97316; }
+    button.danger { background: #dc2626; }
+    .quick-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+    .quick-grid button { flex: 1 1 220px; min-width: 200px; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
+    [hidden] { display: none !important; }
+    fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    input[type="url"] { box-sizing: border-box; width: 100%; padding: 8px; margin: 8px 0; }
+    .help { color: #475569; font-size: .9rem; line-height: 1.5; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+    #manifest-output { max-height: 420px; white-space: pre; }
+    #manifest-url-label { display: block; }
+    #playlist-select { width: 100%; margin-top: 12px; }
+    summary { cursor: pointer; }
+    .status { overflow-wrap: anywhere; font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; font-size: 0.85rem; color: #475569; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <label>Control token (only for protected sessions) <input type="password" id="control-token" autocomplete="off" /></label>
+    <button id="connect-control">Connect</button>
+    <h1>HLS / DASH Fault Control</h1>
+    <p class="status">Active config path: <span id="config-path">loading…</span></p>
+    <p class="status" id="action-status" role="status" aria-live="polite">Connecting…</p>
+    <fieldset id="control-fields" disabled>
+
+    <section>
+      <h2>Session label</h2>
+      <div class="card">
+        <label>
+          Label
+          <input type="text" id="profile-input" placeholder="default" />
+        </label>
+        <button id="apply-profile">Apply Label</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Quick Inject</h2>
+      <div class="card">
+        <p style="margin-top:0; margin-bottom:12px; font-size:0.9rem; color:#475569;">Updates the shared configuration. Once applies to one matching request; Quick Inject rearms it. HLS key faults require a remote encrypted stream and do not apply to clear samples or DASH.</p>
+        <div class="quick-grid">
+          <button class="warning" data-inject="segment.malformed">Inject Malformed Segment</button>
+          <button class="warning" data-inject="segment.forbidden">Inject 403 Segment</button>
+          <button class="warning" data-inject="segment.missing">Inject 404 Segment</button>
+          <button class="warning" data-inject="drm.licenseFailure">HLS Key HTTP Failure</button>
+          <button class="warning" data-inject="drm.keyRotationMismatch">HLS Key Response Mismatch</button>
+        </div>
+        <div style="margin-top:16px;">
+          <label>Latency (ms)
+            <input type="number" min="0" max="60000" step="any" value="0" required data-key="segment.latencyMs" aria-describedby="latency-help" />
+          </label>
+          <p class="help" id="latency-help">Delay matching media and manifest responses by 0–60,000 ms (1,000 ms = 1 second). It stays active until cleared. This adds response delay; it does not limit bandwidth.</p>
+          <div class="actions">
+            <button class="warning" data-inject="segment.latencySpike">Apply Latency</button>
+            <button class="secondary" data-inject="segment.latencyReset">Clear Latency</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Segment Faults</h2>
+      <div class="grid">
+        <div class="card">
+          <label>Malformed
+            <select data-key="segment.malformed">
+              <option value="off">Off</option>
+              <option value="once">Once</option>
+              <option value="random">Random</option>
+              <option value="always">Always</option>
+            </select>
+          </label>
+          <label>Forbidden (403)
+            <select data-key="segment.forbidden">
+              <option value="off">Off</option>
+              <option value="once">Once</option>
+              <option value="random">Random</option>
+              <option value="always">Always</option>
+            </select>
+          </label>
+          <label>Missing (404)
+            <select data-key="segment.missing">
+              <option value="off">Off</option>
+              <option value="once">Once</option>
+              <option value="random">Random</option>
+              <option value="always">Always</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="card">
+          <label>Manifest Freeze
+            <select data-key="manifest.freeze">
+              <option value="off">Off</option>
+              <option value="always">Always</option>
+            </select>
+          </label>
+          <label>HLS key HTTP failure
+            <select data-key="drm.licenseFailure">
+              <option value="off">Off</option>
+              <option value="once">Once</option>
+              <option value="random">Random</option>
+              <option value="always">Always</option>
+            </select>
+          </label>
+          <label>Key Rotation Mismatch
+            <select data-key="drm.keyRotationMismatch">
+              <option value="off">Off</option>
+              <option value="once">Once</option>
+              <option value="random">Random</option>
+              <option value="always">Always</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div style="margin-top:12px; display:flex; gap:12px;">
+        <button id="save-config">Save Config</button>
+        <button class="secondary" id="reset-config">Reset (all off)</button>
+      </div>
+    </section>
+
+    </fieldset>
+
+    <section>
+      <h2>Generated manifest</h2>
+      <p class="help">Inspect the live HLS playlist or DASH MPD served by a simulator on this computer. Paste the manifest URL printed when you start it. Refresh manually to see changes, including an intentional manifest freeze. Inspection requests can exercise manifest faults.</p>
+      <fieldset id="manifest-fields" disabled>
+        <label id="manifest-url-label">Simulator manifest URL
+          <input id="manifest-url" type="url" placeholder="http://127.0.0.1:PORT/proxy.m3u8" autocomplete="off" />
+        </label>
+        <div class="actions">
+          <button id="load-manifest">Load Manifest</button>
+          <button id="refresh-manifest" class="secondary" disabled>Refresh Manifest</button>
+        </div>
+        <div hidden id="playlist-label">
+          <label for="playlist-select">HLS playlist</label>
+          <select id="playlist-select"></select>
+        </div>
+      </fieldset>
+      <p class="status" id="manifest-status" role="status" aria-live="polite">Connect to fault control, then load a simulator manifest.</p>
+      <pre id="manifest-output" hidden></pre>
+    </section>
+
+    <section>
+      <details>
+        <summary>Advanced: equivalent curl command</summary>
+        <p class="help">Optional terminal alternative to Save Config. This command sends the fault settings currently shown above to the control API. You do not need it when using this page. For protected sessions, set HLS_DASH_CONTROL_TOKEN in your terminal first; your token is never included here.</p>
+        <pre id="curl-example">Connect to load the current fault settings.</pre>
+      </details>
+    </section>
+  </div>
+
+  <script src="/control.js" defer></script>
+</body>
+</html>

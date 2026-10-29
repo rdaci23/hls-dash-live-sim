@@ -80,6 +80,27 @@ accurate Content-Length; ranged responses corrupt bytes without changing their
 range length. Delayed requests are cancelled when the client disconnects or the
 session closes.
 
+The page connects automatically for local sessions. For protected sessions, enter the
+control token and select **Connect**; fault controls stay disabled until connected.
+Set **Latency (ms)** to any value from 0 to 60,000 and select **Apply Latency**.
+This delays matching media and manifest responses until **Clear Latency** (or a
+value of zero) is applied. It does not simulate a bandwidth limit; local UTC
+requests stay unaffected.
+
+Use **Generated manifest** to inspect the actual playlist or MPD returned by a
+running simulator. Paste the `.m3u8` or `.mpd` URL printed at startup, then select
+**Load Manifest**. For HLS, choose a child playlist to inspect its segment list.
+**Refresh Manifest** fetches a new snapshot; there is no automatic polling.
+Inspection exercises active manifest faults, and frozen manifests remain frozen.
+The viewer supports simulators on this computer with their default proxy enabled;
+it verifies the session and does not forward the control token or cookies.
+Remote origins and DASH `--no-fault-proxy` sessions are outside this viewer's scope.
+
+**Advanced: equivalent curl command** is an optional terminal alternative to
+**Save Config**, generated from the displayed fault settings. Protected commands
+reference `$HLS_DASH_CONTROL_TOKEN`; set it in your terminal before running them.
+The page never inserts your token into a command.
+
 Both processes must share `--fault-config /absolute/path/faults.json` when started
 from different directories. Invalid settings fail validation. Atomic saves are
 watched; malformed edits retain the last valid configuration. `once` consumes one
@@ -240,3 +261,8 @@ The standalone native SceneGraph tester has no Standalone dependency. Its instal
 ZIP is `output/roku/hls-dash-stream-tester.zip`. All six playback/recovery cases
 pass on the tested Express 4K model/OS. See [verification instructions and limits](docs/playback-gates.md).
 Repository visibility and npm `private: true` remain unchanged.
+
+The control-page browser regression checks run with `npm run test:ui` (installed
+Google Chrome required). They exercise connection, protected sessions, fault
+settings, configurable latency and live-manifest inspection. `npm test` runs API
+validation and skips these optional browser checks.
