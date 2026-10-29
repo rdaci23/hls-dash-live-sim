@@ -101,3 +101,46 @@ test('the 60-second recovery hold starts after rendering and both DASH tracks ha
   stale.events.find(e => e.event === 'request.started' && e.requestId === 'videoretry').timestamp = new Date(1039000).toISOString();
   assert.equal(evaluateOutage(stale).passed, false);
 });
+
+function catchup() {
+  const data = baseline();
+  data.events = data.events.filter(e => e.requestId !== 'videoretry');
+  data.audit = data.audit.filter(e => e.requestId !== 'videoretry');
+  data.metrics.gaps[0].toMediaTime = 57; data.metrics.mediaTime = 118;
+  const url = 'http://localhost/live/low/segment-40.ts';
+  data.metrics.seeks.push({ atMs: 59000, mediaTime: 57 });
+  data.metrics.loadedFragments = [{ requestId: 'catchup', url, level: 0, start: 56, end: 58, bytes: 1000 }];
+  data.metrics.renderedFragments = [{ requestId: 'catchup', url, level: 0, width: 320, height: 180,
+    fragmentStart: 56, fragmentEnd: 58, firstFrameMs: 61000, lastFrameMs: 61200, firstMediaTime: 57, mediaTime: 57.2, frames: 5 }];
+  data.events.push({ event: 'request.started', requestId: 'catchup', timestamp: new Date(1060200).toISOString() },
+    { event: 'request.completed', requestId: 'catchup', status: 200, bodyBytes: 1000, resourceId: 'new-live-media', resourceKind: 'segment', resourceSource: 'sample', timestamp: new Date(1060300).toISOString() });
+  data.audit.push({ kind: 'response', requestId: 'catchup', status: 200, url, epochMs: 1060300 });
+  return data;
+}
+test('automatic HLS live catch-up requires the replacement download to be independently served and rendered', () => {
+  const result = evaluateOutage(catchup());
+  assert.equal(result.passed, true, result.failures.join('; '));
+  assert.equal(result.retries.length, 0);
+  assert.equal(result.recoveryDownloads[0].mode, 'rendered-live-catchup');
+  for (const edit of [
+    x => { x.metrics.loadedFragments = []; },
+    x => { x.metrics.renderedFragments = []; },
+    x => { x.metrics.loadedFragments[0].bytes = 0; },
+    x => { x.metrics.loadedFragments[0].requestId = 'wrong'; },
+    x => { x.metrics.renderedFragments[0].width = 640; },
+    x => { x.metrics.renderedFragments[0].level = 1; },
+    x => { x.metrics.renderedFragments[0].frames = 0; },
+    x => { x.metrics.renderedFragments[0].mediaTime = 57; },
+    x => { x.metrics.renderedFragments[0].firstMediaTime = 50; },
+    x => { x.metrics.renderedFragments[0].firstFrameMs = 100000; },
+    x => { x.metrics.loadedFragments[0].start = 1; },
+    x => { x.metrics.seeks = []; },
+    x => { x.metrics.seeks[0].mediaTime = 1; },
+    x => { x.metrics.gaps[0].toMediaTime = 44.1; },
+    x => { x.events.at(-1).resourceSource = 'origin'; },
+    x => { x.events.at(-1).bodyBytes = 0; },
+    x => { x.events.at(-2).timestamp = new Date(1059000).toISOString(); },
+    x => { x.audit.at(-1).url = 'wrong'; },
+    x => { x.metrics.playerStarts = 2; },
+  ]) { const data = catchup(); edit(data); assert.equal(evaluateOutage(data).passed, false, edit.toString()); }
+});

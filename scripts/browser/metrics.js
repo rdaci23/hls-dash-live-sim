@@ -6,7 +6,9 @@
   const now = () => performance.now() - start;
   const metrics = { startEpochMs, firstFrameMs: null, lastFrameMs: null, firstMediaTime: null,
     mediaTime: null, frames: 0, gaps: [], regressions: [], playerErrors: [], videoErrors: [], periodCandidates: [], playedPeriods: [], utcSettings: null, utcCorsDate: null,
-    playerStarts: 0, retryPolicy: null, seeks: [], jumps: [] };
+    playerStarts: 0, retryPolicy: null, seeks: [], jumps: [], loadedFragments: [], renderedFragments: [] };
+  const loaded = new Map();
+  let playing;
   video.addEventListener('seeking', () => metrics.seeks.push({ atMs: now(), mediaTime: video.currentTime }));
   const periods = new Map();
   function frame(_at, metadata) {
@@ -21,6 +23,17 @@
         metrics.gaps.push({ startMs: metrics.lastFrameMs, endMs: at, durationMs: at - metrics.lastFrameMs,
           fromMediaTime: metrics.mediaTime, toMediaTime: metadata.mediaTime });
       metrics.lastFrameMs = at; metrics.mediaTime = metadata.mediaTime; metrics.frames++;
+      const download = playing && loaded.get(playing.url);
+      if (download?.requestId && metadata.mediaTime >= playing.start - 0.25 && metadata.mediaTime <= playing.end + 0.25) {
+        let entry = metrics.renderedFragments.at(-1);
+        if (!entry || entry.requestId !== download.requestId) {
+          entry = { requestId: download.requestId, url: playing.url, level: playing.level,
+            fragmentStart: playing.start, fragmentEnd: playing.end, width: metadata.width, height: metadata.height,
+            firstFrameMs: at, lastFrameMs: at, firstMediaTime: metadata.mediaTime, mediaTime: metadata.mediaTime, frames: 0 };
+          metrics.renderedFragments.push(entry);
+        }
+        entry.lastFrameMs = at; entry.mediaTime = metadata.mediaTime; entry.frames++;
+      }
       for (const [id, p] of periods)
         if (!metrics.playedPeriods.some(x => x.id === id) && metadata.mediaTime >= p.start && metadata.mediaTime < p.start + p.duration)
           metrics.playedPeriods.push({ ...p, firstFrameMs: at, renderedMediaTime: metadata.mediaTime });
@@ -37,6 +50,17 @@
     } } } : {});
     metrics.playerStarts++;
     if (config.test === 'outage') metrics.retryPolicy = player.config.fragLoadPolicy.default.errorRetry;
+    if (config.test === 'outage') {
+      const fragment = f => ({ url: f.url, level: f.level, start: f.startPTS ?? f.start, end: f.endPTS ?? f.end });
+      player.on(Hls.Events.FRAG_LOADED, (_event, data) => {
+        if (data.frag.type !== 'main' || data.frag.sn === 'initSegment') return;
+        const network = data.networkDetails;
+        const entry = { ...fragment(data.frag), bytes: data.frag.stats.loaded,
+          requestId: network?.getResponseHeader?.('X-Sim-Request-Id') ?? network?.headers?.get?.('X-Sim-Request-Id') ?? null };
+        metrics.loadedFragments.push(entry); loaded.set(entry.url, entry);
+      });
+      player.on(Hls.Events.FRAG_CHANGED, (_event, data) => { playing = fragment(data.frag); });
+    }
     player.on(Hls.Events.ERROR, (_event, e) => metrics.playerErrors.push({ atMs: now(), type: e.type, details: e.details,
       fatal: e.fatal, status: e.response?.code, url: e.frag?.url,
       mediaTime: video.currentTime, reason: e.reason, bufferInfo: e.bufferInfo }));

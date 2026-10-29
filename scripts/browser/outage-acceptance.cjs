@@ -42,17 +42,6 @@ function evaluateOutage({ protocol, metrics: m, samples = [], events = [], audit
   check(faults.every(e => at(e) >= startMs - 2 && at(e) < endMs + 250), 'Injected response outside the outage window');
   const attempts = events.filter(e => e.event === 'scenario.attempt' && at(e) >= startMs && at(e) < endMs);
   check(attempts.length > 0 && attempts.every(e => faultIds.has(e.requestId)), 'A matching outage attempt escaped the injected failure');
-  const retries = [];
-  for (const track of tracks) {
-    const failed = faults.filter(e => e.trackId?.split(':')[0] === track);
-    const times = failed.map(at).sort((a, b) => a - b);
-    check(times.length >= 10 && times[0] <= startMs + 3000 && times.at(-1) >= endMs - 2500 &&
-      times.every((t, i) => !i || t - times[i - 1] <= 3000), `No sustained ${track} failure/retry traffic throughout the outage`);
-    const retry = completed.find(e => at(requests.get(e.requestId) || {}) >= endMs && [200, 206].includes(e.status) && e.bodyBytes > 0 &&
-      failed.some(f => f.resourceId === e.resourceId) && responses.some(r => r.requestId === e.requestId && r.status === e.status));
-    check(!!retry && at(retry) <= endMs + OUTAGE_GATES.recoveryMs, `No successful same-resource ${track} retry within 10 seconds after outage`);
-    if (retry) retries.push({ track, requestId: retry.requestId, atMs: at(retry), bodyBytes: retry.bodyBytes });
-  }
   const gaps = [...m.gaps];
   if (m.lastFrameMs !== null && m.elapsedMs - m.lastFrameMs > 500)
     gaps.push({ startMs: m.lastFrameMs, endMs: m.elapsedMs, durationMs: m.elapsedMs - m.lastFrameMs, ongoing: true });
@@ -65,7 +54,44 @@ function evaluateOutage({ protocol, metrics: m, samples = [], events = [], audit
   check(![...m.seeks, ...m.jumps].some(e => e.atMs > m.firstFrameMs + 1000 &&
     !(e.atMs >= startMs && e.atMs <= renderResumedAtMs + 1000)), 'Seek or media-time jump outside outage recovery');
   check(Number.isFinite(renderResumedAtMs) && renderResumedAtMs <= endMs + OUTAGE_GATES.recoveryMs, 'Rendering did not resume within 10 seconds after outage ended');
-  const recoveredAtMs = Math.max(renderResumedAtMs, ...retries.map(r => r.atMs));
+  const downloads = [];
+  for (const track of tracks) {
+    const failed = faults.filter(e => e.trackId?.split(':')[0] === track);
+    const times = failed.map(at).sort((a, b) => a - b);
+    check(times.length >= 10 && times[0] <= startMs + 3000 && times.at(-1) >= endMs - 2500 &&
+      times.every((t, i) => !i || t - times[i - 1] <= 3000), `No sustained ${track} failure/retry traffic throughout the outage`);
+    let retry = completed.find(e => at(requests.get(e.requestId) || {}) >= endMs && at(e) <= endMs + OUTAGE_GATES.recoveryMs && [200, 206].includes(e.status) && e.bodyBytes > 0 &&
+      failed.some(f => f.resourceId === e.resourceId) && responses.some(r => r.requestId === e.requestId && r.status === e.status));
+    let mode = 'same-resource', playedAtMs;
+    if (!retry && protocol === 'hls') {
+      // Default live-edge catch-up can abandon old failed segments. A new URI
+      // counts only when its actual bytes and rendered fragment are both proven.
+      for (const played of m.renderedFragments || []) {
+        const loaded = (m.loadedFragments || []).find(f => f.requestId === played.requestId && f.url === played.url);
+        const served = completed.find(e => e.requestId === played.requestId && e.resourceKind === 'segment' &&
+          e.resourceSource === 'sample' && e.resourceId && [200, 206].includes(e.status) &&
+          at(requests.get(e.requestId) || {}) >= endMs && at(e) <= endMs + OUTAGE_GATES.recoveryMs);
+        const response = responses.find(e => e.requestId === played.requestId && e.url === played.url && e.status === served?.status);
+        const span = played.mediaTime - played.firstMediaTime;
+        if (loaded && served && response && served.bodyBytes > 0 && loaded.bytes === served.bodyBytes &&
+            played.level === 0 && loaded.level === 0 && played.width === 320 && played.height === 180 &&
+            Number.isFinite(played.fragmentStart) && played.fragmentEnd > played.fragmentStart &&
+            Math.abs(loaded.start - played.fragmentStart) <= 0.25 && Math.abs(loaded.end - played.fragmentEnd) <= 0.25 &&
+            played.frames >= 2 && span > 0 && span <= (played.lastFrameMs - played.firstFrameMs) / 1000 + 0.25 && played.lastFrameMs > played.firstFrameMs &&
+            played.firstMediaTime >= played.fragmentStart - 0.25 && played.mediaTime <= played.fragmentEnd + 0.25 &&
+            played.firstFrameMs >= renderResumedAtMs && played.firstFrameMs <= renderResumedAtMs + 1000 &&
+            played.firstFrameMs <= endMs + OUTAGE_GATES.recoveryMs &&
+            affected[0]?.toMediaTime - affected[0]?.fromMediaTime > 1 &&
+            m.seeks.some(e => e.atMs >= firstFaultMs && e.atMs <= played.firstFrameMs &&
+              Math.abs(e.mediaTime - played.firstMediaTime) <= 1)) {
+          retry = served; mode = 'rendered-live-catchup'; playedAtMs = played.firstFrameMs; break;
+        }
+      }
+    }
+    check(!!retry && at(retry) <= endMs + OUTAGE_GATES.recoveryMs, `No proven ${track} retry or rendered live catch-up within 10 seconds after outage`);
+    if (retry) downloads.push({ track, requestId: retry.requestId, atMs: at(retry), bodyBytes: retry.bodyBytes, mode, playedAtMs });
+  }
+  const recoveredAtMs = Math.max(renderResumedAtMs, ...downloads.map(r => Math.max(r.atMs, r.playedAtMs ?? 0)));
   const postRecoveryMs = m.lastFrameMs - recoveredAtMs;
   check(postRecoveryMs >= OUTAGE_GATES.afterRecoveryMs && m.mediaTime - affected[0]?.toMediaTime >= postRecoveryMs / 1000 - 4, 'Less than 60 seconds healthy rendered progress after recovery');
   // Only failures backed by the injected response and the measured stall are expected.
@@ -88,7 +114,7 @@ function evaluateOutage({ protocol, metrics: m, samples = [], events = [], audit
     preFaultMs: startMs - m.firstFrameMs, renderResumedAtMs, recoveredAtMs, resumeAfterOutageMs: renderResumedAtMs - endMs,
     postRecoveryMs, outageStallMs: affected[0]?.durationMs,
     mediaAdvanceAcrossStallSeconds: affected[0] ? affected[0].toMediaTime - affected[0].fromMediaTime : null,
-    stalls: gaps.filter(g => g.durationMs > 1000), retries, injectedResponses: faultResponses.length,
+    stalls: gaps.filter(g => g.durationMs > 1000), recoveryDownloads: downloads, retries: downloads.filter(d => d.mode === 'same-resource'), injectedResponses: faultResponses.length,
     playerStarts: m.playerStarts, retryPolicy: policy, seeks: m.seeks, localUtcRequests: utc.length,
     expectedRecoveryObservations: expected.map(({ url, ...e }) => e), unexpectedPlayerErrors, unexpectedConsole };
 }

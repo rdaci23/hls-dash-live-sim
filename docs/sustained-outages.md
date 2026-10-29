@@ -33,9 +33,15 @@ stays unchanged; `--case outage` selects this additional case explicitly.
   server request/fault IDs.
 - Video actually stalls for more than 4 seconds. Buffered playback that never
   stalls does not establish freeze/resume recovery and fails this check.
-- After service is restored, the same failed resource downloads successfully with
-  nonempty media bytes, for both DASH tracks, within 10 seconds. Video rendering
-  also resumes within 10 seconds of the scheduled outage end.
+- After service is restored, media downloads recover within 10 seconds. DASH
+  requires a successful same-resource retry for each track. HLS accepts that
+  retry or automatic live-edge catch-up to a newly downloaded and rendered
+  segment. Catch-up requires matching client/server request IDs and byte counts,
+  frame timestamps inside the loaded fragment, the expected 180p dimensions, and
+  the recorded automatic recovery seek. The report labels these alternatives
+  `same-resource` or `rendered-live-catchup`; a replacement does not establish
+  a retry of the old segment. Video rendering also resumes within 10 seconds
+  of the scheduled outage end.
 - At least 60 more seconds of advancing rendered video follow recovery, with no
   unexplained stall longer than 4 seconds, video error or browser exception.
 - The player is created once. The harness never seeks, reloads the source or
