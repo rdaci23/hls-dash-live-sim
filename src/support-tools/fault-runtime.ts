@@ -84,6 +84,25 @@ export class FaultRuntime {
       ...extra,
     });
   }
+  // Observation only: reading status must never select or consume a fault.
+  snapshot() {
+    const config = getFaultConfig();
+    return {
+      rules: Object.entries(faultModes(config))
+        .filter(([, mode]) => mode && mode !== "off")
+        .map(([category, mode]) => ({
+          fault: names[category],
+          mode,
+          state: mode === "once"
+            ? (this.consumed.has(category) && this.modes.get(category) === mode &&
+               this.arms.get(category) === config._oneShot?.[category]
+                ? "consumed" : "armed")
+            : "enabled",
+        })),
+      latencyMs: config.segment?.latencyMs ?? 0,
+      manifestFreeze: config.manifest?.freeze === "always",
+    };
+  }
   close(): void {
     this.unsubscribe();
   }

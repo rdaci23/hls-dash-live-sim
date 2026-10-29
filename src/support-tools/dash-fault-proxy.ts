@@ -66,6 +66,7 @@ export async function startDashFaultProxy(
             protocol: "dash",
             status: "ready",
             scenario: scenario?.report().result,
+            faults: scenario ? undefined : faults.snapshot(),
           }),
           { "Content-Type": "application/json" },
           req.method,

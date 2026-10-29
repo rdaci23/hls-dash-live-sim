@@ -8,6 +8,10 @@
   let manifestHosts = new Set();
   let connected = false;
   let busy = false;
+  let savedConfig;
+  let streamSnapshot;
+  let manifestSnapshot;
+
 
   function status(message, error = false) {
     $('action-status').textContent = message;
@@ -18,6 +22,12 @@
     $('manifest-fields').disabled = !connected;
     $('connect-control').disabled = busy;
     $('control-token').disabled = busy;
+    $('refresh-controls').disabled = !connected || busy;
+    $('refresh-stream').disabled = !connected || !rootUrl || !!pending;
+    $('copy-playback').disabled = !connected || !streamSnapshot;
+    for (const id of ['copy-manifest', 'download-manifest', 'copy-selected']) $(id).disabled = !connected || !manifestSnapshot || !!pending;
+    $('refresh-manifest').disabled = !connected || !currentUrl || !!pending;
+    $('playlist-select').disabled = !connected || !!pending;
   }
   async function apiRequest(url, body) {
     const token = $('control-token').value;
@@ -67,6 +77,10 @@
     }
     $('profile-input').value = data.config.profile || '';
     manifestHosts = new Set(data.manifestHosts);
+    savedConfig = data.config;
+    $('fault-source').textContent = 'Saved control settings · refreshed ' + new Date().toLocaleTimeString();
+    renderSavedFaults();
+    $('fault-draft').hidden = true;
     connected = true;
     enableControls();
     updateCurl();
@@ -81,6 +95,7 @@
   }
   async function connect() {
     connected = false;
+    disconnectStream();
     enableControls();
     status('Connecting…');
     try { await fetchConfig(); status('Connected — fault controls are ready.'); }
@@ -89,11 +104,49 @@
   $('connect-control').addEventListener('click', () => run(connect));
   $('control-token').addEventListener('input', () => {
     connected = false;
+    disconnectStream();
     enableControls();
     status('Token changed. Select Connect to authenticate.');
     updateCurl();
   });
-  fields.forEach(field => field.addEventListener('input', updateCurl));
+  fields.forEach(field => field.addEventListener('input', () => {
+    updateCurl();
+    try { $('fault-draft').hidden = JSON.stringify(collectConfig()) === JSON.stringify(savedFields()); }
+    catch { $('fault-draft').hidden = false; }
+  }));
+  $('refresh-controls').addEventListener('click', () => run(async () => {
+    await fetchConfig(); status('Saved settings refreshed');
+  }));
+  function savedFields() {
+    const result = {};
+    for (const field of fields) {
+      const [group, key] = field.dataset.key.split('.');
+      (result[group] ||= {})[key] = savedConfig?.[group]?.[key] ?? (field.type === 'number' ? 0 : 'off');
+    }
+    return result;
+  }
+  const faultNames = {
+    'segment.malformed': 'Malformed media', 'segment.forbidden': 'Media HTTP 403',
+    'segment.missing': 'Media HTTP 404', 'hls.keyFailure': 'HLS key HTTP failure',
+    'hls.keyMismatch': 'HLS key mismatch',
+  };
+  function listItems(id, lines) {
+    $(id).replaceChildren(...lines.map(text => { const item = document.createElement('li'); item.textContent = text; return item; }));
+  }
+  function renderSavedFaults() {
+    const cfg = savedConfig;
+    const rules = [
+      ['segment.malformed', cfg.segment?.malformed], ['segment.forbidden', cfg.segment?.forbidden],
+      ['segment.missing', cfg.segment?.missing], ['hls.keyFailure', cfg.drm?.licenseFailure],
+      ['hls.keyMismatch', cfg.drm?.keyRotationMismatch],
+    ];
+    const lines = rules.filter(([, mode]) => mode && mode !== 'off').map(([key, mode]) =>
+      faultNames[key] + ' — ' + (mode === 'once' ? 'once configured; check stream consumption below' : mode === 'random' ? 'random (40% per matching request)' : 'always'));
+    if (cfg.segment?.latencyMs) lines.push('Response latency — ' + cfg.segment.latencyMs + ' ms');
+    if (cfg.manifest?.freeze === 'always') lines.push('Manifest freeze — enabled');
+    listItems('active-faults', lines.length ? lines : ['No manual faults enabled in saved controls.']);
+  }
+
   $('save-config').addEventListener('click', () => run(async () => {
     await apiRequest('/config', collectConfig());
     await fetchConfig(); status('Configuration saved');
@@ -121,6 +174,104 @@
   let protocol;
   let pending;
   let generation = 0;
+  function clearManifest() {
+    manifestSnapshot = undefined;
+    $('manifest-output').hidden = true;
+    $('manifest-output').textContent = '';
+    $('selected-url-row').hidden = true;
+    $('export-status').textContent = '';
+  }
+  function disconnectStream() {
+    pending?.abort(); pending = undefined; generation++;
+    rootUrl = undefined; currentUrl = undefined; sessionId = undefined;
+    streamSnapshot = undefined;
+    clearManifest();
+    $('stream-details').hidden = true;
+    $('stream-fault-panel').hidden = true;
+    $('playlist-label').hidden = true;
+    $('stream-status').textContent = 'No stream connected.';
+    manifestStatus('No manifest loaded. Load a simulator URL to inspect it.');
+    $('playback-copy-status').textContent = '';
+    enableControls();
+  }
+  function showStream(health, id, url) {
+    streamSnapshot = { health, id, url: new URL(url), checked: new Date() };
+    $('stream-details').hidden = false;
+    $('stream-protocol').textContent = health.protocol.toUpperCase();
+    $('stream-mode').textContent = health.mode || 'DASH engine';
+    $('stream-session').textContent = id;
+    $('stream-checked').textContent = streamSnapshot.checked.toLocaleString();
+    $('playback-url').value = url.href;
+    $('stream-status').textContent = 'Connected — simulator ready. Playback must be checked in your player.';
+    $('stream-fault-panel').hidden = false;
+    $('stream-fault-source').textContent = 'Observed from the simulator at ' + streamSnapshot.checked.toLocaleTimeString() + '. Refresh to update; saved controls and stream may use different fault files.';
+    const faults = health.faults;
+    const lines = [];
+    if (health.scenario) lines.push('Scenario mode — ' + health.scenario + '. Manual controls do not govern this session.');
+    else if (!faults || !Array.isArray(faults.rules)) lines.push('Runtime fault status unavailable. Restart the simulator with the current build.');
+    else {
+      for (const rule of faults.rules) lines.push((faultNames[rule.fault] || rule.fault) + ' — ' + rule.mode + ' · ' + rule.state);
+      if (faults.latencyMs) lines.push('Response latency — ' + faults.latencyMs + ' ms');
+      if (faults.manifestFreeze) lines.push('Manifest freeze — enabled');
+      if (!lines.length) lines.push('No manual faults enabled in this simulator.');
+    }
+    listItems('stream-faults', lines);
+  }
+  async function healthAt(target, signal, reset) {
+    const response = await simulatorRequest(new URL('/health', target), signal);
+    const health = JSON.parse(await readText(response));
+    const id = response.headers.get('X-Sim-Session-Id');
+    if (health.status !== 'ready' || !['hls', 'dash'].includes(health.protocol) || !/^[0-9a-f-]{36}$/i.test(id || '')) throw new Error('This URL is not a ready simulator with the default fault proxy.');
+    if (!reset && sessionId !== id) {
+      throw Object.assign(new Error('The simulator session changed. Load its manifest URL again.'), { sessionChanged: true });
+    }
+    return { health, id };
+  }
+  async function refreshStream() {
+    if (!connected || !rootUrl || pending) return;
+    const request = generation;
+    $('refresh-stream').disabled = true;
+    $('stream-status').textContent = 'Refreshing stream status…';
+    try {
+      const { health, id } = await healthAt(rootUrl, AbortSignal.timeout(10000), false);
+      if (request !== generation) return;
+      showStream(health, id, rootUrl);
+    } catch (error) {
+      if (request !== generation) return;
+      if (error.sessionChanged) disconnectStream();
+      streamSnapshot = undefined;
+      clearManifest();
+      $('stream-status').textContent = error.message + ' Select Load Manifest to reconnect.';
+      $('stream-fault-panel').hidden = true;
+      $('stream-details').hidden = true;
+    } finally { enableControls(); }
+  }
+  $('refresh-stream').addEventListener('click', refreshStream);
+  $('manifest-url').addEventListener('input', disconnectStream);
+  async function copy(value, label, destination = 'export-status') {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error();
+      await navigator.clipboard.writeText(value);
+      $(destination).textContent = label + ' copied.';
+    } catch { $(destination).textContent = 'Clipboard unavailable or permission denied. Select the URL or displayed manifest and copy manually.'; }
+  }
+  $('copy-playback').addEventListener('click', () => { if (connected && streamSnapshot) copy(streamSnapshot.url.href, 'Playback URL', 'playback-copy-status'); });
+  $('copy-selected').addEventListener('click', () => { if (connected && manifestSnapshot) copy(manifestSnapshot.url, 'Displayed manifest URL'); });
+  $('copy-manifest').addEventListener('click', () => { if (connected && manifestSnapshot) copy(manifestSnapshot.text, 'Manifest snapshot'); });
+  $('download-manifest').addEventListener('click', () => {
+    if (!connected || !manifestSnapshot || pending) return;
+    const snapshot = manifestSnapshot;
+    const hls = snapshot.protocol === 'hls';
+    const blob = new Blob([snapshot.text], { type: (hls ? 'application/vnd.apple.mpegurl' : 'application/dash+xml') + ';charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = hls ? (snapshot.text.includes('#EXT-X-STREAM-INF:') ? 'hls-master.m3u8' : 'hls-playlist.m3u8') : 'dash-manifest.mpd';
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('export-status').textContent = 'Manifest snapshot download requested. This is raw text; relative URLs need the original simulator URL as their base.';
+  });
+
   const playlists = new Map();
   function manifestStatus(message, error = false) {
     $('manifest-status').textContent = message;
@@ -181,25 +332,19 @@
     const controller = new AbortController();
     pending = controller;
     const request = ++generation;
-    if (reset) { currentUrl = undefined; $('playlist-label').hidden = true; }
+    if (reset) { currentUrl = undefined; rootUrl = undefined; streamSnapshot = undefined; $('stream-details').hidden = true; $('stream-fault-panel').hidden = true; $('playlist-label').hidden = true; }
     const timer = setTimeout(() => controller.abort(), 75000);
-    $('manifest-output').hidden = true;
-    $('manifest-output').textContent = '';
-    $('refresh-manifest').disabled = true;
+    clearManifest();
+    enableControls();
     manifestStatus('Reading simulator… Intentional latency can delay this request.');
+    $('stream-status').textContent = 'Loading stream and manifest…';
     try {
       if (!connected) throw new Error('Connect to fault control first.');
       const target = localUrl(reset ? $('manifest-url').value.trim() : currentUrl.href);
       if (reset && !/\.(m3u8|mpd)$/i.test(target.pathname)) throw new Error('Paste the simulator’s .m3u8 or .mpd manifest URL.');
-      const healthResponse = await simulatorRequest(new URL('/health', target), controller.signal);
-      const health = JSON.parse(await readText(healthResponse));
-      const id = healthResponse.headers.get('X-Sim-Session-Id');
-      if (health.status !== 'ready' || !['hls', 'dash'].includes(health.protocol) || !/^[0-9a-f-]{36}$/i.test(id || '')) {
-        throw new Error('This URL is not a ready simulator with the default fault proxy.');
-      }
-      if (!reset && sessionId !== id) throw new Error('The simulator session changed. Load its manifest URL again.');
+      const { health, id } = await healthAt(target, controller.signal, reset);
       const response = await simulatorRequest(target, controller.signal);
-      if (response.headers.get('X-Sim-Session-Id') !== id) throw new Error('Manifest and simulator session do not match.');
+      if (response.headers.get('X-Sim-Session-Id') !== id) throw Object.assign(new Error('Manifest and simulator session do not match. Load the manifest URL again.'), { sessionChanged: true });
       const text = await readText(response);
       if (health.protocol === 'hls' ? !/^\s*#EXTM3U(?:\s|$)/.test(text) : !/<(?:\w+:)?MPD(?:\s|>)/.test(text)) {
         throw new Error('The response is not an HLS playlist or DASH MPD. An intentional manifest fault may be active.');
@@ -209,15 +354,21 @@
       currentUrl = target; sessionId = id; protocol = health.protocol;
       if (protocol === 'hls') addChildren(text, target);
       else { playlists.clear(); $('playlist-label').hidden = true; }
+      showStream(health, id, rootUrl);
+      manifestSnapshot = { text, url: target.href, protocol };
+      $('selected-url').value = target.href;
+      $('selected-url-row').hidden = false;
       $('manifest-output').textContent = text;
       $('manifest-output').hidden = false;
       manifestStatus(protocol.toUpperCase() + ' · fetched ' + new Date().toLocaleTimeString() + ' · ' + target.href);
     } catch (error) {
       if (request !== generation) return;
+      if (error.sessionChanged) disconnectStream();
+      $('stream-status').textContent = error.message || 'Stream inspection failed.';
       manifestStatus((error.name === 'AbortError' ? 'Manifest request cancelled or timed out.' : error.message) + ' Start a local simulator with its default proxy and check that it is reachable.', true);
     } finally {
       clearTimeout(timer);
-      if (request === generation) { pending = undefined; $('refresh-manifest').disabled = !currentUrl; }
+      if (request === generation) { pending = undefined; enableControls(); }
     }
   }
   $('load-manifest').addEventListener('click', () => loadManifest(true));

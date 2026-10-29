@@ -31,6 +31,15 @@
     #manifest-url-label { display: block; }
     #playlist-select { width: 100%; margin-top: 12px; }
     summary { cursor: pointer; }
+    .stream-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+    .stream-details dt { color: #475569; }
+    .stream-details dd { margin: 0; overflow-wrap: anywhere; }
+    .url-row { margin-top: 16px; }
+    .url-row label { display: block; }
+    .url-row input { box-sizing: border-box; width: 100%; padding: 8px; font: inherit; border: 1px solid #c5c9d6; border-radius: 6px; }
+    .fault-list { padding-left: 20px; line-height: 1.7; }
+    section h3 { font-size: 1rem; margin: 16px 0 8px; }
+    @media (max-width: 480px) { body { padding: 12px; } .container { padding: 16px; } label { gap: 10px; } .grid { grid-template-columns: minmax(0, 1fr); } .stream-details { grid-template-columns: 1fr; gap: 4px; } .stream-details dd { margin-bottom: 8px; } #control-token { max-width: 45%; } }
     .status { overflow-wrap: anywhere; font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; font-size: 0.85rem; color: #475569; margin-top: 8px; }
   </style>
 </head>
@@ -41,6 +50,51 @@
     <h1>HLS / DASH Fault Control</h1>
     <p class="status">Active config path: <span id="config-path">loading…</span></p>
     <p class="status" id="action-status" role="status" aria-live="polite">Connecting…</p>
+    <section aria-labelledby="stream-heading">
+      <h2 id="stream-heading">Connected stream</h2>
+      <p class="help">Paste the local simulator’s manifest URL. Inspection is read-only and can exercise manifest faults. Use a LAN-bound URL for devices; loopback URLs work only on this computer.</p>
+      <fieldset id="manifest-fields" disabled>
+        <label id="manifest-url-label">Simulator manifest URL
+          <input id="manifest-url" type="url" placeholder="http://127.0.0.1:PORT/proxy.m3u8" autocomplete="off" />
+        </label>
+        <div class="actions">
+          <button id="load-manifest">Load Manifest</button>
+          <button id="refresh-stream" class="secondary" disabled>Refresh Stream Status</button>
+        </div>
+      </fieldset>
+      <p class="status" id="stream-status" role="status" aria-live="polite">No stream connected.</p>
+      <div class="card" id="stream-details" hidden>
+        <dl class="stream-details">
+          <dt>Protocol</dt><dd id="stream-protocol"></dd>
+          <dt>Mode</dt><dd id="stream-mode"></dd>
+          <dt>Session ID</dt><dd id="stream-session"></dd>
+          <dt>Last checked</dt><dd id="stream-checked"></dd>
+        </dl>
+        <div class="url-row">
+          <label for="playback-url">Playback URL</label>
+          <input id="playback-url" type="text" readonly />
+          <div class="actions"><button id="copy-playback" class="secondary" disabled>Copy Playback URL</button></div>
+          <p id="playback-copy-status" class="status" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="fault-heading">
+      <h2 id="fault-heading">Active faults</h2>
+      <div class="card">
+        <p class="help" id="fault-source">Connect to load saved settings.</p>
+        <ul class="fault-list" id="active-faults"></ul>
+        <div id="stream-fault-panel" hidden>
+          <h3>Connected stream snapshot</h3>
+          <p class="help" id="stream-fault-source"></p>
+          <ul class="fault-list" id="stream-faults"></ul>
+        </div>
+        <p class="help" id="fault-draft" hidden>Unsaved edits — the summary shows the last saved settings. Select Save Config to apply them.</p>
+        <p class="help">Controls use the config path shown above. Start the simulator with the same fault file. Stream status is a snapshot; refresh after requests to see one-shot consumption. HLS key faults require an encrypted origin.</p>
+        <button id="refresh-controls" class="secondary" disabled>Refresh Saved Settings</button>
+      </div>
+    </section>
+
     <fieldset id="control-fields" disabled>
 
     <section>
@@ -143,22 +197,24 @@
 
     <section>
       <h2>Generated manifest</h2>
-      <p class="help">Inspect the live HLS playlist or DASH MPD served by a simulator on this computer. Paste the manifest URL printed when you start it. Refresh manually to see changes, including an intentional manifest freeze. Inspection requests can exercise manifest faults.</p>
-      <fieldset id="manifest-fields" disabled>
-        <label id="manifest-url-label">Simulator manifest URL
-          <input id="manifest-url" type="url" placeholder="http://127.0.0.1:PORT/proxy.m3u8" autocomplete="off" />
-        </label>
-        <div class="actions">
-          <button id="load-manifest">Load Manifest</button>
-          <button id="refresh-manifest" class="secondary" disabled>Refresh Manifest</button>
-        </div>
-        <div hidden id="playlist-label">
-          <label for="playlist-select">HLS playlist</label>
-          <select id="playlist-select"></select>
-        </div>
-      </fieldset>
+      <p class="help">The response displayed below is the snapshot exported by Copy or Download. Refresh manually to inspect changes; frozen manifests stay frozen.</p>
+      <div class="actions">
+        <button id="refresh-manifest" class="secondary" disabled>Refresh Manifest</button>
+        <button id="copy-manifest" class="secondary" disabled>Copy Manifest</button>
+        <button id="download-manifest" class="secondary" disabled>Download Manifest</button>
+      </div>
+      <div hidden id="playlist-label">
+        <label for="playlist-select">HLS playlist</label>
+        <select id="playlist-select"></select>
+      </div>
+      <div class="url-row" id="selected-url-row" hidden>
+        <label for="selected-url">Displayed manifest URL</label>
+        <input id="selected-url" type="text" readonly />
+        <div class="actions"><button id="copy-selected" class="secondary" disabled>Copy Displayed URL</button></div>
+      </div>
       <p class="status" id="manifest-status" role="status" aria-live="polite">Connect to fault control, then load a simulator manifest.</p>
       <pre id="manifest-output" hidden></pre>
+      <p class="status" id="export-status" role="status" aria-live="polite"></p>
     </section>
 
     <section>

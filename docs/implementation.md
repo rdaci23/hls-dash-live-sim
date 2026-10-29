@@ -125,6 +125,19 @@ to 4 MiB. HLS child choices come from same-origin variant/rendition declarations
 segments and keys are not fetched. Refresh is manual and respects manifest freeze.
 The control server does not expose an arbitrary-URL fetching endpoint.
 
+Connected details retain a root playback URL separately from the displayed HLS
+child URL. Copy/download exports the successful displayed snapshot without a
+network request and uses a fixed safe `.m3u8`/`.mpd` filename. URL/token edits,
+session replacement and failed/in-flight manifest reads invalidate exports.
+Raw exported relative URLs require the original simulator base.
+
+Both protocols' `/health` responses expose a read-only manual-fault snapshot:
+configured rules, one-shot armed/consumed state, response latency and freeze.
+Reading it does not call fault selection or consume/rearm anything. No config
+path or credentials are returned. Scenario mode reports the scenario state instead.
+The page distinguishes saved controls, unsaved edits and last-observed runtime
+state; it never assumes a pasted URL shares the control process's fault file.
+
 ## Verification and release scope
 
 Automated API/protocol tests, the control-page browser checks, real Docker

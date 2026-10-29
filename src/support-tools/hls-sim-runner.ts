@@ -266,6 +266,7 @@ export async function startHlsim(
             mode: dummy ? mode : "proxy",
             status: "ready",
             scenario: scenario?.report().result,
+            faults: scenario ? undefined : faults.snapshot(),
           }),
           { "Content-Type": "application/json" },
           req.method,

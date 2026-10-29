@@ -29,9 +29,13 @@ npm run fault-control
 
 Open `http://127.0.0.1:19090` to change faults. Under **Generated manifest**, paste
 the stream URL and select **Load Manifest**. HLS offers master/child selection;
-DASH displays its MPD. **Refresh Manifest** reads the current response manually,
+DASH displays its MPD. The stream card shows protocol, mode, session ID and a
+copyable root playback URL. **Refresh Manifest** reads the current response manually,
 including an intentional freeze. The viewer supports simulators on this computer
-with the default proxy enabled; it does not fetch media or keys.
+with the default proxy enabled; it does not fetch media or keys. **Copy Manifest**
+and **Download Manifest** export the displayed snapshot without another request.
+HLS downloads use `.m3u8`; DASH uses `.mpd`. These are raw manifests, not media
+bundles; relative URLs still need the original simulator URL as their base.
 
 To run DASH instead:
 
@@ -72,7 +76,12 @@ unverified. [Detailed capabilities and limits](docs/implementation.md).
 
 The page connects automatically for unprotected local sessions. For protected
 sessions, enter the control token and select **Connect**. Actions stay disabled
-until configuration loads successfully.
+until configuration loads successfully. **Active faults** separates the saved
+control settings from the connected simulator's runtime snapshot. Unsaved edits
+are marked. **Refresh Saved Settings** reloads the control file; **Refresh Stream
+Status** checks the simulator without requesting media or consuming a one-shot.
+Runtime one-shots show armed or consumed. Always use the same fault file for the
+stream and controls; inspecting a stream does not retarget its configuration.
 
 Set **Latency (ms)** between 0 and 60,000, then **Apply Latency**. This delays
 matching media and manifest responses until **Clear Latency** or zero is applied.

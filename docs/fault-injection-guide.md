@@ -22,6 +22,38 @@ pass the same absolute `--fault-config` path to both commands. See
 | HLS key HTTP failure | HTTP 403 on a remote HLS key request.                                                                                                    |
 | HLS key mismatch     | A mismatching 16-byte HLS key response. Requires actual encrypted origin content.                                                        |
 
+## Inspecting current state
+
+The connected-stream card reports the verified protocol, mode, session ID and last
+check time. **Copy Playback URL** copies the root manifest URL, which stays fixed
+when an HLS child is selected. **Copy Displayed URL** copies the selected playlist
+or MPD URL. A loopback URL is for this computer; use a deliberately LAN-bound
+simulator URL on another device. The UI does not invent unverified LAN aliases.
+
+**Active faults** shows two distinct sources: saved control settings and the last
+runtime snapshot read from the connected simulator. Unsaved dropdown/latency edits
+do not change the saved summary. A saved `once` setting can remain configured
+after consumption; runtime status distinguishes `armed` and `consumed`. Random
+or always settings report `enabled`, which does not mean a particular request was
+faulted. HLS key rules still require an encrypted origin. Scenario sessions show
+the scenario result instead of claiming manual faults apply.
+
+**Refresh Saved Settings** reloads settings into the form and replaces unsaved
+edits. **Refresh Stream Status** only reads `/health`; it does not request a
+manifest, media or key, nor select/consume faults. Snapshots show their observation
+time and are not automatic live monitoring. The control and simulator processes
+must share a fault file; loading a URL does not attach the controls to that file.
+
+**Copy Manifest** and **Download Manifest** export exactly the displayed text,
+without refreshing the stream. Master/child HLS files use `.m3u8`; DASH uses
+`.mpd`. Exports are disabled while loading, after failures, after a session change,
+or when the URL/token changes. Clipboard denial offers manual-copy guidance.
+The snapshot is raw text, with its original relative URLs; opening it as a local
+playback file is not guaranteed to work. Use the original simulator URL as the
+base, and keep that simulator session running for its resources.
+
+## Modes and API
+
 Segment and key fault modes are `off`, `once`, `always` and `random`. Freeze accepts
 only `off` and `always`; other values return HTTP 400. DASH freeze identifies a
 stream by its path, so changing cache-busting or time query parameters does not

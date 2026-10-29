@@ -69,12 +69,13 @@ async function simulator(t) {
   let version = 1;
   let protocol = 'hls';
   let ready = true;
+  let faults = { rules: [], latencyMs: 0, manifestFreeze: false };
   const server = http.createServer((req, res) => {
     requests.push({ path: req.url, auth: req.headers.authorization, cookie: req.headers.cookie });
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Expose-Headers', 'X-Sim-Session-Id');
     res.setHeader('X-Sim-Session-Id', id);
-    if (req.url === '/health') return res.end(JSON.stringify({ status: ready ? 'ready' : 'stopped', protocol }));
+    if (req.url === '/health') return res.end(JSON.stringify({ status: ready ? 'ready' : 'stopped', protocol, mode: 'live', faults }));
     if (req.url === '/manifest.mpd') return res.end('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"><Period id="' + version + '"/></MPD>');
     if (req.url === '/proxy.m3u8') return res.end('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",URI="/audio.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\n/r/video\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=100000,URI="/iframe.m3u8"\n#EXT-X-MEDIA:TYPE=AUDIO,URI="https://example.com/external.m3u8"\n');
     if (req.url === '/redirect.m3u8') { res.writeHead(302, { Location: '/unexpected' }); return res.end(); }
@@ -83,7 +84,7 @@ async function simulator(t) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
-  return { url: `http://127.0.0.1:${server.address().port}`, requests, update: () => version++, restart: () => id = randomUUID(), dash: () => protocol = 'dash', ready: value => ready = value };
+  return { url: `http://127.0.0.1:${server.address().port}`, requests, update: () => version++, restart: () => id = randomUUID(), dash: () => protocol = 'dash', ready: value => ready = value, faults: value => faults = value };
 }
 const uiOptions = { skip: !process.env.RUN_UI_TESTS, timeout: 30000 };
 
@@ -181,4 +182,78 @@ test('protected control and local manifest inspection keep credentials separate'
   assert.ok(!sim.requests.some(req => req.path === '/unexpected'));
   assert.equal(await page.locator('#manifest-output').isVisible(), true);
   assert.equal((await fetch(url + '/config')).status, 401);
+});
+
+test('stream details, saved/runtime faults and exact manifest exports work for HLS and DASH', uiOptions, async t => {
+  const url = await control(t);
+  const sim = await simulator(t);
+  const page = await browserPage(t);
+  page.setDefaultTimeout(5000);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto(url);
+  await status(page, 'Connected');
+  assert.match(await page.locator('#active-faults').innerText(), /No manual faults/);
+  await page.locator('select[data-key="segment.missing"]').selectOption('always');
+  assert.equal(await page.locator('#fault-draft').isVisible(), true);
+  assert.doesNotMatch(await page.locator('#active-faults').innerText(), /404/);
+  await page.getByRole('button', { name: 'Save Config', exact: true }).click();
+  await status(page, 'Configuration saved');
+  assert.match(await page.locator('#active-faults').innerText(), /404.*always/);
+  assert.equal(await page.locator('#fault-draft').isHidden(), true);
+  const input = page.getByLabel('Simulator manifest URL', { exact: true });
+  await input.fill(sim.url + '/proxy.m3u8');
+  await page.getByRole('button', { name: 'Load Manifest', exact: true }).click();
+  await status(page, 'HLS · fetched', 'manifest-status');
+  assert.equal(await page.locator('#stream-protocol').innerText(), 'HLS');
+  assert.equal(await page.locator('#stream-mode').innerText(), 'live');
+  assert.match(await page.locator('#stream-session').innerText(), /^[0-9a-f-]{36}$/);
+  assert.equal(await page.getByLabel('Playback URL', { exact: true }).inputValue(), sim.url + '/proxy.m3u8');
+  await page.getByRole('button', { name: 'Copy Playback URL', exact: true }).click();
+  await status(page, 'Playback URL copied', 'playback-copy-status');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), sim.url + '/proxy.m3u8');
+  await page.getByLabel('HLS playlist', { exact: true }).selectOption(sim.url + '/r/video');
+  await page.waitForFunction(() => document.getElementById('manifest-output').textContent.includes('version 1'));
+  await page.getByRole('button', { name: 'Copy Displayed URL', exact: true }).click();
+  await status(page, 'Displayed manifest URL copied', 'export-status');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), sim.url + '/r/video');
+  assert.equal(await page.getByLabel('Playback URL', { exact: true }).inputValue(), sim.url + '/proxy.m3u8');
+  const snapshot = await page.locator('#manifest-output').innerText();
+  const requestsBefore = sim.requests.length;
+  sim.update();
+  await page.getByRole('button', { name: 'Copy Manifest', exact: true }).click();
+  await status(page, 'Manifest snapshot copied', 'export-status');
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), snapshot);
+  async function download(name, expected) {
+    const event = page.waitForEvent('download', { timeout: 5000 });
+    await page.getByRole('button', { name: 'Download Manifest', exact: true }).click();
+    const result = await event;
+    assert.equal(result.suggestedFilename(), name);
+    const stream = await result.createReadStream();
+    const parts = [];
+    for await (const part of stream) parts.push(part);
+    assert.equal(Buffer.concat(parts).toString(), expected);
+  }
+  await download('hls-playlist.m3u8', snapshot);
+  assert.equal(sim.requests.length, requestsBefore, 'copy/download do not re-fetch or consume faults');
+  sim.faults({ rules: [{ fault: 'segment.missing', mode: 'once', state: 'consumed' }], latencyMs: 0, manifestFreeze: false });
+  await page.getByRole('button', { name: 'Refresh Stream Status', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('stream-faults').textContent.includes('consumed'));
+  assert.match(await page.locator('#active-faults').innerText(), /404.*always/, 'saved and runtime settings remain distinct');
+  sim.dash();
+  await input.fill(sim.url + '/manifest.mpd');
+  assert.equal(await page.getByRole('button', { name: 'Copy Manifest', exact: true }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Load Manifest', exact: true }).click();
+  await status(page, 'DASH · fetched', 'manifest-status');
+  assert.equal(await page.locator('#stream-protocol').innerText(), 'DASH');
+  await download('dash-manifest.mpd', await page.locator('#manifest-output').innerText());
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('denied')) } }));
+  await page.getByRole('button', { name: 'Copy Manifest', exact: true }).click();
+  await status(page, 'permission denied', 'export-status');
+  sim.restart();
+  await page.getByRole('button', { name: 'Refresh Stream Status', exact: true }).click();
+  await status(page, 'session changed', 'stream-status');
+  assert.equal(await page.getByRole('button', { name: 'Copy Manifest', exact: true }).isDisabled(), true);
+  assert.equal(await page.locator('#copy-playback').isDisabled(), true);
+  await page.setViewportSize({ width: 360, height: 780 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'narrow viewport has no horizontal page overflow');
 });
