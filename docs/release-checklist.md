@@ -78,7 +78,9 @@ that every future commit has passed. For the candidate, inspect the exact
 - Same-download 404 recovery does not establish ABR fallback. The separate HLS
   and [DASH](dash-abr.md) bandwidth-adaptation checks each cover one two-rendition
   Chrome profile. Default dash.js HTTP-error rendition fallback failed its optional
-  probe; server fault isolation passed independently. Native ABR, jitter recovery,
+  probe; server fault isolation passed independently. DASH multi-Period ABR has a
+  known dash.js timer exception and is not covered by the single-Period bandwidth
+  check. Native ABR, jitter recovery,
   client recovery from frozen manifests and perceived audio
   quality remain outside that evidence. The separate browser [media-outage check](sustained-outages.md)
   covers one timed 503 profile with explicit retries. Native recovery observations

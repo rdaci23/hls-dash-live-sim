@@ -38,7 +38,8 @@ async function main() {
       scenarioFile = path.join(directory, 'scenario.json');
       await fs.writeFile(scenarioFile, await fs.readFile(path.join(root, 'examples/scenarios/dash-high-rendition-outage.json')), { mode: 0o600, flag: 'wx' });
     }
-    session = await startLivesim2({ port: await port(), asset: 'abr', noPull: true, periodsPerHour: 60, faultConfigPath: faults, diagnosticsFile: path.join(directory, 'requests.jsonl'), scenarioFile, signal: abort.signal });
+    // Isolate rendition adaptation from the separate multi-Period compatibility case.
+    session = await startLivesim2({ port: await port(), asset: 'abr', noPull: true, faultConfigPath: faults, diagnosticsFile: path.join(directory, 'requests.jsonl'), scenarioFile, signal: abort.signal });
     profiles.push({ name: 'baseline', bandwidthKbps: test === 'bandwidth' ? PROFILES.baseline : 0, appliedEpochMs: Date.now() });
     const files = { '/': path.join(__dirname, 'browser/player.html'), '/metrics.js': path.join(__dirname, 'browser/dash-abr-metrics.js'),
       '/player.js': path.join(root, 'node_modules/dashjs/dist/modern/umd/dash.all.debug.js') };
@@ -76,7 +77,7 @@ async function main() {
     browser = await chromium.launch({ channel: 'chrome', headless: true, chromiumSandbox: true, timeout: 15000 });
     browserVersion = browser.version();
     const context = await browser.newContext(); page = await context.newPage();
-    page.on('pageerror', error => audit.push({ kind: 'pageerror', text: String(error), epochMs: Date.now() }));
+    page.on('pageerror', error => audit.push({ kind: 'pageerror', text: String(error), stack: error.stack, epochMs: Date.now() }));
     page.on('crash', () => audit.push({ kind: 'pageerror', text: 'Renderer crashed', epochMs: Date.now() }));
     page.on('console', entry => { if (['error', 'warning'].includes(entry.type())) audit.push({ kind: 'console', level: entry.type(), text: entry.text(), location: entry.location().url, epochMs: Date.now() }); });
     page.on('requestfailed', request => audit.push({ kind: 'requestfailed', url: request.url(), text: request.failure()?.errorText, epochMs: Date.now() }));
@@ -121,7 +122,7 @@ async function main() {
   catch { harnessError ||= 'Missing server diagnostic evidence'; }
   result = evaluate({ test, metrics: latest, events, audit, profiles, harnessError, expectedRunId: runId, scenario: session?.scenario?.report() });
   const report = { schemaVersion: 1, runId, recordedAt: new Date().toISOString(), commit, workingTreeModified,
-    browserVersion, playerVersion: JSON.parse(await fs.readFile(path.join(root,'node_modules/dashjs/package.json'),'utf8')).version, protocol: 'dash', test, engineImage: DEFAULT_IMAGE, fixture: '180p/360p H.264 + separate AAC',
+    browserVersion, playerVersion: JSON.parse(await fs.readFile(path.join(root,'node_modules/dashjs/package.json'),'utf8')).version, protocol: 'dash', test, periodMode: 'single', engineImage: DEFAULT_IMAGE, fixture: '180p/360p H.264 + separate AAC',
     profileApplications: profiles, scenario: session?.scenario?.report(), harnessError, ...result };
   await fs.writeFile(path.join(directory, 'raw.json'), JSON.stringify({ metrics: latest, samples, audit }, null, 2) + '\n');
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n');

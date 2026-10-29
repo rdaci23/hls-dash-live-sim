@@ -4,7 +4,7 @@
   const start = performance.now(), now = () => performance.now() - start;
   const m = { runId: config.runId, startEpochMs: Date.now(), firstFrameMs: null, lastFrameMs: null, firstMediaTime: null, mediaTime: null,
     frames: 0, maxFrameGapMs: 0, levels: [], fragments: [], runs: [], phases: [], gaps: [], regressions: [], jumps: [], seeks: [],
-    emergencyAborts: [], playerErrors: [], videoErrors: [], probeErrors: [], switches: [], failures: [], complete: false, utcSettings: null, utcCorsDate: null };
+    emergencyAborts: [], streamInitializations: [], playerErrors: [], videoErrors: [], probeErrors: [], switches: [], failures: [], complete: false, utcSettings: null, utcCorsDate: null };
   const player = dashjs.MediaPlayer().create();
   m.utcSettings = player.getSettings().streaming.utcSynchronization;
   const automatic = () => player.getSettings().streaming.abr.autoSwitchBitrate.video;
@@ -22,7 +22,13 @@
     return Promise.resolve(response);
   });
   player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-    m.levels = player.getRepresentationsByType('video').map(r => ({ id: r.id, width: r.width, height: r.height, bitrate: r.bandwidth })).sort((a, b) => a.width - b.width);
+    const levels = player.getRepresentationsByType('video').map(r => ({ id: r.id, width: r.width, height: r.height, bitrate: r.bandwidth })).sort((a, b) => a.width - b.width);
+    m.streamInitializations.push({ atMs: now(), levels });
+    // Preserve observed identity if the failed player later has no active video.
+    if (levels.length) {
+      if (m.levels.length && JSON.stringify(m.levels) !== JSON.stringify(levels)) m.probeErrors.push('Ladder identity changed during verification');
+      m.levels = levels;
+    }
   });
   player.on(dashjs.MediaPlayer.events.QUALITY_CHANGE_RENDERED, e => m.switches.push({ atMs: now(), track: e.mediaType, id: e.newRepresentation?.id }));
   player.on(dashjs.MediaPlayer.events.FRAGMENT_LOADING_ABANDONED, e => m.emergencyAborts.push({ atMs: now(), url: e.request?.url, level: e.request?.representation?.width === 640 ? 1 : 0 }));

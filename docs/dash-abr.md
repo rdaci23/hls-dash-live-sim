@@ -56,7 +56,8 @@ npm run browser:dash-abr -- --output output/my-dash-abr-run
 
 Install development dependencies, Google Chrome and the pinned livesim2 image
 first; see [development](development.md). The runner uses default dash.js ABR
-settings and ordinary local UTC synchronization. It never selects quality, seeks
+settings and ordinary local UTC synchronization against one continuous live
+Period. It never selects quality, seeks
 or restarts playback. The shared simulator media limiter sets these phases:
 
 | Phase | Shared cap | Required rendered evidence |
@@ -86,6 +87,21 @@ source and is exploratory evidence. For a candidate, use the exact commit's
 **DASH automatic ABR switching** CI job and retained report rather than treating
 these measurements as a universal player guarantee.
 
+## Period-transition compatibility limit
+
+The initial CI probe combined minute-long Periods with the bandwidth drop and
+failed with `Cannot set properties of undefined (setting 'state')`. That failed
+[run](https://github.com/rdaci23/hls-dash-live-sim/actions/runs/40888372420) is not
+counted as a pass. Replaying the actual dash.js 5.2.1 abandonment timer reproduces
+the exception when video state is removed before its ten-second timeout: the
+callback checks an old state object, then writes through a removed map entry.
+
+The ABR probe now uses one continuous live Period to isolate bandwidth adaptation.
+It keeps default player ABR behavior, retains browser exception stacks and still
+fails on any exception. This verifies neither multi-Period ABR nor a fix to the
+upstream timer. Ordinary Period playback remains a separate existing check; using
+`--periods-per-hour 60` together with ABR abandonment has this known client limit.
+
 ## HTTP-error fallback is separate
 
 ```sh
@@ -114,7 +130,7 @@ selection workaround.
 Each fresh output directory retains `report.json`, `raw.json`, full redacted
 `requests.jsonl`, `playback.png` and its isolated fault configuration. The HTTP
 probe also retains the exact scenario file. Reports record the commit, dirty-tree
-flag, Chrome/player versions, immutable engine image, actual profile applications,
+flag, Chrome/player versions, single-Period profile, immutable engine image, actual profile applications,
 rendered/request correlation and failures. `selectiveFaultDeliveryVerified` is
 separate from the HTTP client's overall `passed` result. Cleanup observations
 cannot establish a pass. `releaseReady` remains false even after a successful run.
@@ -126,7 +142,7 @@ The fixture is also checked in the production package smoke. Tests own their
 ports, browser, configuration and Docker container and leave other sessions alone.
 
 Coverage is this fixture, controlled cap and tested Chrome/dash.js versions.
-Native-device ABR, HTTP fallback in other players, jitter adaptation, perceived
+Multi-Period ABR, native-device ABR, HTTP fallback in other players, jitter adaptation, perceived
 audio quality, internet-isolated Roku, Apple, Android and additional Roku models
 remain unverified. The existing [playback gates](playback-gates.md) cover different
 cases. Keep the repository and npm package private; consult the
