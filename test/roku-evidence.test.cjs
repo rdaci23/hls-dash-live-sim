@@ -52,3 +52,24 @@ test('native pre-existing stalls cannot be attributed to a later injected fault'
   data.records = data.records.filter(r => r.atMs < 53000 || r.atMs > 62000);
   assert.equal(evaluateRoku(data).passed, false);
 });
+
+test('native UTC audio readiness is independent of the first rendered video sample', () => {
+  const records = [
+    { event: 'start', atMs: 0, receivedEpochMs: 1000000 },
+    { event: 'sample', state: 'playing', epoch: 1, atMs: 1045, videoPosition: 1793253248.408, audioPosition: 0 },
+    { event: 'sample', state: 'playing', epoch: 1, atMs: 1529, videoPosition: 1793253248.908, audioPosition: 1793253248.877 },
+    { event: 'sample', state: 'playing', epoch: 1, atMs: 2030, videoPosition: 1793253249.408, audioPosition: 1793253249.394 },
+    { event: 'complete', atMs: 2250 }
+  ];
+  const metrics = metricsFromSamples(records, []);
+  assert.ok(Math.abs(metrics.audioProgressSeconds - 0.517) < 0.001,
+    'zero is an uninitialized UTC audio timestamp, not the start of playback');
+  assert.equal(metrics.firstAudioMs, 1529);
+});
+
+test('an initial zero followed by frozen UTC audio cannot pass native playback', () => {
+  const data = input();
+  for (const record of data.records) if (record.event === 'sample')
+    record.audioPosition = record.atMs === 1000 ? 0 : 1001;
+  assert.equal(evaluateRoku(data).passed, false);
+});

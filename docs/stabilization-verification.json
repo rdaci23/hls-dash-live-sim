@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-10-28T19:12:15.693Z",
-  "baseCommit": "1e2c2c5a164165ef3b4ccb5a4fd3fc0e4fd96025",
+  "recordedAt": "2026-10-29T06:14:23.046Z",
+  "baseCommit": "b29ffb7a351ccbd954db040aea96c6ea26181805",
   "workingTreeChangesIncluded": true,
   "repository": {
     "name": "rdaci23/hls-dash-live-sim",
@@ -42,13 +42,14 @@
   },
   "checks": {
     "regularTests": {
-      "passed": 72,
+      "passed": 75,
       "failed": 0,
       "dockerSkipped": 1
     },
     "realDockerIntegration": {
       "passed": 1,
-      "failed": 0
+      "failed": 0,
+      "recordedOn": "2026-10-29"
     },
     "typecheck": "passed",
     "productionAuditVulnerabilities": 0
@@ -535,50 +536,593 @@
     ]
   },
   "roku": {
-    "status": "blocked",
-    "matrixPassed": false,
+    "status": "passed",
+    "matrixPassed": true,
     "target": {
-      "modelNumber": "4850X",
-      "modelName": "Ultra",
-      "softwareVersion": "15.3.4",
-      "softwareBuild": 2402
+      "modelNumber": "3940EU",
+      "modelName": "Roku Express 4K",
+      "softwareVersion": "16.0.4",
+      "softwareBuild": 842
     },
-    "reason": "Roku debug console is already in use by another debugger",
-    "guardedAttempt": {
-      "engineStarted": false,
-      "channelLaunched": false,
-      "nativePlaybackVerified": false
-    },
-    "requiredCases": [
-      "hls/healthy",
-      "dash/healthy",
-      "hls/startup",
-      "dash/startup",
-      "hls/during",
-      "dash/during"
-    ],
-    "priorDifferentDeviceObservation": {
-      "countsTowardSelectedTargetMatrix": false,
-      "identity": {
-        "modelNumber": "3940EU",
-        "modelName": "Roku Express 4K",
-        "softwareVersion": "16.0.4",
-        "softwareBuild": 842
+    "reports": [
+      {
+        "protocol": "hls",
+        "test": "healthy",
+        "recordedAt": "2026-10-29T05:57:36.885Z",
+        "identity": {
+          "modelNumber": "3940EU",
+          "modelName": "Roku Express 4K",
+          "softwareVersion": "16.0.4",
+          "softwareBuild": 842
+        },
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameUpperBoundMs": 1045,
+        "lastRenderedMs": 194779,
+        "renderedDurationMs": 193734,
+        "renderedSamples": 386,
+        "videoProgressSeconds": 193.0329999923706,
+        "firstAudioMs": 1529,
+        "lastAudioMs": 194779,
+        "renderedAudioSamples": 385,
+        "audioProgressSeconds": 192.5389997959137,
+        "gaps": [],
+        "regressions": [],
+        "playedPeriods": [],
+        "epochValues": [
+          1
+        ],
+        "startHostEpochMs": 1793253261269,
+        "states": [
+          "stopped",
+          "buffering",
+          "playing"
+        ],
+        "faultMs": null,
+        "retryMs": null,
+        "recoveredAtMs": null,
+        "postRecoveryMs": null,
+        "localUtcRequests": 0,
+        "clockAlignment": "host receipt of native start event; 1s reserved for pre-fault gate",
+        "firstFrameMeasurement": "upper bound from native last-rendered positionInfo, sampled every 250ms",
+        "nativeClockUseVerified": false,
+        "recheckedWithCurrentEvaluator": true,
+        "evidence": {
+          "directory": "output/roku/express-release-20261029/hls-healthy",
+          "reportSha256": "7c305e4b45a9e393af1a45d149bc8222b94844db9c2f7bcf86a00afcc8ec0c8b",
+          "samplesSha256": "7cd16fa2c99c399034aa2719d9da6d8314ed826de96511f1abfb218b6827fd01",
+          "diagnosticsSha256": "1772189a88c49814c26bf8a97078e55f5cf14eff1491090252b9a4e09342c735"
+        }
       },
-      "protocol": "hls",
-      "test": "healthy",
-      "passed": true,
-      "firstFrameUpperBoundMs": 772,
-      "renderedDurationMs": 194247,
-      "videoProgressSeconds": 193.5329999923706,
-      "audioProgressSeconds": 1793208151.068,
-      "note": "DASH was interrupted at the user pause; no complete recovery matrix was established on that model."
-    }
+      {
+        "protocol": "hls",
+        "test": "startup",
+        "recordedAt": "2026-10-29T05:59:04.432Z",
+        "identity": {
+          "modelNumber": "3940EU",
+          "modelName": "Roku Express 4K",
+          "softwareVersion": "16.0.4",
+          "softwareBuild": 842
+        },
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameUpperBoundMs": 793,
+        "lastRenderedMs": 84776,
+        "renderedDurationMs": 83983,
+        "renderedSamples": 168,
+        "videoProgressSeconds": 83.70099997520447,
+        "firstAudioMs": 1275,
+        "lastAudioMs": 84776,
+        "renderedAudioSamples": 167,
+        "audioProgressSeconds": 83.21799993515015,
+        "gaps": [
+          {
+            "startMs": 12275,
+            "endMs": 13026,
+            "durationMs": 751
+          },
+          {
+            "startMs": 48525,
+            "endMs": 49276,
+            "durationMs": 751
+          }
+        ],
+        "regressions": [],
+        "playedPeriods": [],
+        "epochValues": [
+          1
+        ],
+        "startHostEpochMs": 1793253459102,
+        "states": [
+          "buffering",
+          "playing"
+        ],
+        "faultMs": 273,
+        "retryMs": 304,
+        "recoveredAtMs": 793,
+        "postRecoveryMs": 83983,
+        "localUtcRequests": 0,
+        "clockAlignment": "host receipt of native start event; 1s reserved for pre-fault gate",
+        "firstFrameMeasurement": "upper bound from native last-rendered positionInfo, sampled every 250ms",
+        "nativeClockUseVerified": false,
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_368008fa89e473d9a8cb7ff45bf4182d",
+          "sessionId": "43713aa4-a2e9-4e5a-83be-b9a4d9d3a4d1",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 86228.944041,
+          "result": "passed",
+          "trackedDownloads": 1,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 0,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_21355772c570892bc9d42ccac61bfea6",
+              "targetOrdinal": 1,
+              "result": "passed"
+            }
+          ]
+        },
+        "recheckedWithCurrentEvaluator": true,
+        "evidence": {
+          "directory": "output/roku/express-release-20261029/hls-startup",
+          "reportSha256": "ab1bc83d2c1bbf7fac7102db5bd9b0b4a4ef1d4192cefc3261ea2ca127beaa2a",
+          "samplesSha256": "d3314587eacd695559013719ebf8b78ec6ca93aed729f1dfa1e5b2b17a628071",
+          "diagnosticsSha256": "20401fff1c670facc3ac3c439e9fc1606c6a0cbdbf26f006c76563b8766960f3"
+        }
+      },
+      {
+        "protocol": "hls",
+        "test": "during",
+        "recordedAt": "2026-10-29T06:01:32.116Z",
+        "identity": {
+          "modelNumber": "3940EU",
+          "modelName": "Roku Express 4K",
+          "softwareVersion": "16.0.4",
+          "softwareBuild": 842
+        },
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameUpperBoundMs": 806,
+        "lastRenderedMs": 145044,
+        "renderedDurationMs": 144238,
+        "renderedSamples": 288,
+        "videoProgressSeconds": 143.86699986457825,
+        "firstAudioMs": 1294,
+        "lastAudioMs": 145044,
+        "renderedAudioSamples": 287,
+        "audioProgressSeconds": 143.36700010299683,
+        "gaps": [
+          {
+            "startMs": 108794,
+            "endMs": 109545,
+            "durationMs": 751
+          }
+        ],
+        "regressions": [],
+        "playedPeriods": [],
+        "epochValues": [
+          1
+        ],
+        "startHostEpochMs": 1793253546644,
+        "states": [
+          "stopped",
+          "buffering",
+          "playing"
+        ],
+        "faultMs": 60346,
+        "retryMs": 60369,
+        "recoveredAtMs": 60369,
+        "postRecoveryMs": 84675,
+        "localUtcRequests": 0,
+        "clockAlignment": "host receipt of native start event; 1s reserved for pre-fault gate",
+        "firstFrameMeasurement": "upper bound from native last-rendered positionInfo, sampled every 250ms",
+        "nativeClockUseVerified": false,
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_b67a055e5d61576a994471c687e62d9c",
+          "sessionId": "ddc83c32-d17f-4b30-a61d-20adf930508a",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 146356.767125,
+          "result": "passed",
+          "trackedDownloads": 36,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 60000,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_5b5c50abeb1c06e0f2b2487082da902a",
+              "targetOrdinal": 36,
+              "result": "passed"
+            }
+          ]
+        },
+        "recheckedWithCurrentEvaluator": true,
+        "evidence": {
+          "directory": "output/roku/express-release-20261029/hls-during",
+          "reportSha256": "ead4b7ee5078373d727665c5cc8cf196703a11bf77260ce764c8e2c3ac03a9cd",
+          "samplesSha256": "a0b35ed1bce7fff45464cc98aee9409709d1f59b93b1f978b0280e3e19464d2b",
+          "diagnosticsSha256": "3459f8969e15f134a36ccf2b74d45ca9a77044d95dc32e7c6dd026328e63921e"
+        }
+      },
+      {
+        "protocol": "dash",
+        "test": "healthy",
+        "recordedAt": "2026-10-29T06:08:35.057Z",
+        "identity": {
+          "modelNumber": "3940EU",
+          "modelName": "Roku Express 4K",
+          "softwareVersion": "16.0.4",
+          "softwareBuild": 842
+        },
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameUpperBoundMs": 775,
+        "lastRenderedMs": 194770,
+        "renderedDurationMs": 193995,
+        "renderedSamples": 389,
+        "videoProgressSeconds": 194.04099988937378,
+        "firstAudioMs": 1270,
+        "lastAudioMs": 194770,
+        "renderedAudioSamples": 388,
+        "audioProgressSeconds": 193.54800009727478,
+        "gaps": [],
+        "regressions": [],
+        "playedPeriods": [
+          {
+            "id": "P29887564",
+            "utcStart": 1793253840,
+            "utcEnd": 1793253900,
+            "firstRenderedSampleMs": 775,
+            "videoPosition": 1793253898
+          },
+          {
+            "id": "P29887565",
+            "utcStart": 1793253900,
+            "utcEnd": 1793253960,
+            "firstRenderedSampleMs": 2770,
+            "videoPosition": 1793253900
+          },
+          {
+            "id": "P29887566",
+            "utcStart": 1793253960,
+            "utcEnd": 1793254020,
+            "firstRenderedSampleMs": 62770,
+            "videoPosition": 1793253960
+          },
+          {
+            "id": "P29887567",
+            "utcStart": 1793254020,
+            "utcEnd": 1793254080,
+            "firstRenderedSampleMs": 122770,
+            "videoPosition": 1793254020
+          },
+          {
+            "id": "P29887568",
+            "utcStart": 1793254080,
+            "utcEnd": 1793254140,
+            "firstRenderedSampleMs": 182770,
+            "videoPosition": 1793254080
+          }
+        ],
+        "epochValues": [
+          1
+        ],
+        "startHostEpochMs": 1793253919051,
+        "states": [
+          "stopped",
+          "buffering",
+          "playing"
+        ],
+        "faultMs": null,
+        "retryMs": null,
+        "recoveredAtMs": null,
+        "postRecoveryMs": null,
+        "localUtcRequests": 0,
+        "clockAlignment": "host receipt of native start event; 1s reserved for pre-fault gate",
+        "firstFrameMeasurement": "upper bound from native last-rendered positionInfo, sampled every 250ms",
+        "nativeClockUseVerified": false,
+        "recheckedWithCurrentEvaluator": true,
+        "evidence": {
+          "directory": "output/roku/express-rerun-20261029/dash-healthy",
+          "reportSha256": "591092867f9343d45afb6d2c252d0f512e6da5b26df16fd18f66cf2ddbcb5b0b",
+          "samplesSha256": "b1ea3317af0ff89e1a420f0a1c87bf0899ea7060ff5d4acb6a1503096c375c87",
+          "diagnosticsSha256": "1c9e0c0b096decc6a7d7ab6db4e7ebcb0d6a0092218e28653bf543320ef0840d"
+        }
+      },
+      {
+        "protocol": "dash",
+        "test": "startup",
+        "recordedAt": "2026-10-29T06:10:02.615Z",
+        "identity": {
+          "modelNumber": "3940EU",
+          "modelName": "Roku Express 4K",
+          "softwareVersion": "16.0.4",
+          "softwareBuild": 842
+        },
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameUpperBoundMs": 776,
+        "lastRenderedMs": 84770,
+        "renderedDurationMs": 83994,
+        "renderedSamples": 169,
+        "videoProgressSeconds": 84,
+        "firstAudioMs": 1519,
+        "lastAudioMs": 84770,
+        "renderedAudioSamples": 168,
+        "audioProgressSeconds": 83.492999792099,
+        "gaps": [
+          {
+            "startMs": 24269,
+            "endMs": 25020,
+            "durationMs": 751
+          }
+        ],
+        "regressions": [],
+        "playedPeriods": [
+          {
+            "id": "P29887568",
+            "utcStart": 1793254080,
+            "utcEnd": 1793254140,
+            "firstRenderedSampleMs": 776,
+            "videoPosition": 1793254096
+          },
+          {
+            "id": "P29887569",
+            "utcStart": 1793254140,
+            "utcEnd": 1793254200,
+            "firstRenderedSampleMs": 44770,
+            "videoPosition": 1793254140
+          }
+        ],
+        "epochValues": [
+          1
+        ],
+        "startHostEpochMs": 1793254117099,
+        "states": [
+          "buffering",
+          "playing"
+        ],
+        "faultMs": 315,
+        "retryMs": 372,
+        "recoveredAtMs": 776,
+        "postRecoveryMs": 83994,
+        "localUtcRequests": 0,
+        "clockAlignment": "host receipt of native start event; 1s reserved for pre-fault gate",
+        "firstFrameMeasurement": "upper bound from native last-rendered positionInfo, sampled every 250ms",
+        "nativeClockUseVerified": false,
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_368008fa89e473d9a8cb7ff45bf4182d",
+          "sessionId": "798b8e6f-c0e8-4d02-b3bd-4acb7d7522ab",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 86215.69816700001,
+          "result": "passed",
+          "trackedDownloads": 1,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "audio:0",
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 0,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_cae0972aafd60b03bc2dc3eb7ed8e770",
+              "targetOrdinal": 1,
+              "result": "passed"
+            }
+          ]
+        },
+        "recheckedWithCurrentEvaluator": true,
+        "evidence": {
+          "directory": "output/roku/express-rerun-20261029/dash-startup",
+          "reportSha256": "3753a260e7157c0c6438ac9c698517631e030c23d64b8f13dfe32b3bd9df5443",
+          "samplesSha256": "72c6e281ee76741ca65924f4654e1ef0d3486a6ae65c14c067cfddc3af802596",
+          "diagnosticsSha256": "c0a3c64853e60c03a73ac09fc8ed03ec7b7049a1ee93668b8d6aa8c5cd548177"
+        }
+      },
+      {
+        "protocol": "dash",
+        "test": "during",
+        "recordedAt": "2026-10-29T06:03:59.803Z",
+        "identity": {
+          "modelNumber": "3940EU",
+          "modelName": "Roku Express 4K",
+          "softwareVersion": "16.0.4",
+          "softwareBuild": 842
+        },
+        "passed": true,
+        "releaseQualified": true,
+        "failures": [],
+        "firstFrameUpperBoundMs": 771,
+        "lastRenderedMs": 145020,
+        "renderedDurationMs": 144249,
+        "renderedSamples": 289,
+        "videoProgressSeconds": 144,
+        "firstAudioMs": 1520,
+        "lastAudioMs": 145020,
+        "renderedAudioSamples": 288,
+        "audioProgressSeconds": 143.5039999485016,
+        "gaps": [],
+        "regressions": [],
+        "playedPeriods": [
+          {
+            "id": "P29887561",
+            "utcStart": 1793253660,
+            "utcEnd": 1793253720,
+            "firstRenderedSampleMs": 771,
+            "videoPosition": 1793253674
+          },
+          {
+            "id": "P29887562",
+            "utcStart": 1793253720,
+            "utcEnd": 1793253780,
+            "firstRenderedSampleMs": 47020,
+            "videoPosition": 1793253720
+          },
+          {
+            "id": "P29887563",
+            "utcStart": 1793253780,
+            "utcEnd": 1793253840,
+            "firstRenderedSampleMs": 107020,
+            "videoPosition": 1793253780
+          }
+        ],
+        "epochValues": [
+          1
+        ],
+        "startHostEpochMs": 1793253694145,
+        "states": [
+          "stopped",
+          "buffering",
+          "playing"
+        ],
+        "faultMs": 59459,
+        "retryMs": 59520,
+        "recoveredAtMs": 59520,
+        "postRecoveryMs": 85500,
+        "localUtcRequests": 0,
+        "clockAlignment": "host receipt of native start event; 1s reserved for pre-fault gate",
+        "firstFrameMeasurement": "upper bound from native last-rendered positionInfo, sampled every 250ms",
+        "nativeClockUseVerified": false,
+        "scenario": {
+          "version": 1,
+          "scenarioId": "scenario_b67a055e5d61576a994471c687e62d9c",
+          "sessionId": "6a5fe4de-5fd1-428b-b9f4-ce45c9313964",
+          "seed": 42,
+          "clock": "monotonic_session_elapsed",
+          "elapsedMs": 146261.424708,
+          "result": "passed",
+          "trackedDownloads": 39,
+          "unidentifiedMediaRequests": 0,
+          "tracks": [
+            "audio:0",
+            "video:0"
+          ],
+          "rules": [
+            {
+              "ruleId": "rule:0",
+              "target": {
+                "track": "video",
+                "segment": "next"
+              },
+              "attempts": [
+                1
+              ],
+              "afterMs": 60000,
+              "probability": 1,
+              "maxApplications": 1,
+              "status": 404,
+              "expectRetry": true,
+              "selected": 1,
+              "applied": 1,
+              "recovered": true,
+              "firstAttempt": 1,
+              "targetId": "segment_880d21fe89b2b3a8b27c712133be49f8",
+              "targetOrdinal": 39,
+              "result": "passed"
+            }
+          ]
+        },
+        "recheckedWithCurrentEvaluator": true,
+        "evidence": {
+          "directory": "output/roku/express-release-20261029/dash-during",
+          "reportSha256": "67577f54918b4814de6da145fac0703d1eac4d0795ef743e01620ae4de787872",
+          "samplesSha256": "c95e6496af457dc43cb466e9979a8020d78a5966ad61447b1794ce8ef3d50588",
+          "diagnosticsSha256": "19cb95bcb3b97ddd18b134c936d354a460a31469885fa620465a5de234aa5214"
+        }
+      }
+    ],
+    "infrastructureAttempts": [
+      {
+        "protocol": "dash",
+        "test": "healthy",
+        "recordedAt": "2026-10-29T05:57:37.842Z",
+        "reason": "Docker daemon is not available; start Docker Desktop and retry",
+        "playbackVerified": false,
+        "note": "Replayed after Docker startup; the successful fresh case is retained above."
+      },
+      {
+        "protocol": "dash",
+        "test": "startup",
+        "recordedAt": "2026-10-29T05:59:05.404Z",
+        "reason": "Docker daemon is not available; start Docker Desktop and retry",
+        "playbackVerified": false,
+        "note": "Replayed after Docker startup; the successful fresh case is retained above."
+      }
+    ],
+    "clockObservation": "No player requests to the advertised local UTC endpoint were observed. Default native Video settings were used; the internal clock synchronization strategy and an internet-isolated Roku run remain unverified.",
+    "measurementCorrection": "UTC position zero is treated as track-not-ready. Audio progress is measured from its own first rendered sample, independently from video; old recordings were re-evaluated."
   },
   "provenance": {
     "implementation": {
-      "sha256": "3ff1ef1ad2be5a2b46fb8f1e0df251a0c05f6571a0c5713617b8367bb7644a69",
+      "sha256": "4c78e5c11413acfebe0e55936d3ad775098299b0ebb34bafc486bd7909d65747",
       "files": 37
+    },
+    "tests": {
+      "sha256": "4718b128f3300972ba5f677bbd1ef7503361d0fc3d9c87d4f48b2dc897a227a7",
+      "files": 10
     },
     "hlsFixture": {
       "sha256": "eef392b9642c4864f75ba266877fbc7a0c62ca35022db8a92b3999974d6c6bac",
@@ -588,18 +1132,16 @@
       "sha256": "b051c982e9729a3539ac01ebfa6d20b6fd33a2c0658ef61b2e42a18bbb9e71bb",
       "files": 15
     },
-    "testerZipSha256": "f2886b0a30f1d061029e5edc15e546b21d5553fab1d29d4f1c34e4becf42ad44",
+    "testerZipSha256": "611a5840bc5100499d737a48c4a8668724284ca45b6cc0b57c1ba5cedcc131c8",
     "browserReportSha256": "b49a4bb96bdc9e0f3d3c56ab16db14bcb1ff533670d70e29689ef0b09c25149f",
-    "nativeReportSha256": "e59ab3f66882a0321105cf989ea81a7c0e630e1c75f0eb3f4c9e1905c0255d3a",
     "browserEvaluatorSha256": "02057adef44c4008ee3d443ec1e1567c80c3fa272a7b3e47d60872aaaeb4afe6",
-    "nativeEvaluatorSha256": "9eb32e720a80ad718049c352f14e6a9dd5655ead268aa018451baf14fed36187",
+    "nativeEvaluatorSha256": "454938d0bce009b13afaca0291d6a59d8ac61515481ae1ca367633b263dd3ce7",
     "nodeVersion": "v26.8.1",
     "platform": "darwin",
     "architecture": "arm64"
   },
   "releaseReady": false,
   "remaining": [
-    "Complete all six physical Roku cases on one identified model/OS after the exclusive debug console is available.",
     "Public packaging, license/notices and CI coverage remain separate release work."
   ],
   "unverified": [
@@ -607,6 +1149,7 @@
     "Android players",
     "Additional Roku hardware/OS combinations",
     "ABR fallback recovery with multiple HLS renditions",
-    "Shared virtual-clock playback"
+    "Shared virtual-clock playback",
+    "Native Roku internal UTC synchronization strategy and internet-isolated playback"
   ]
 }

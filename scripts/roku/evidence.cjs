@@ -10,11 +10,21 @@ function decodeNativeRecord(row) {
 function metricsFromSamples(records, periods) {
   const start = records.find(r => r.event === 'start');
   const samples = records.filter(r => r.event === 'sample');
-  const rendered = [];
-  for (const sample of samples) {
-    if (sample.state !== 'playing' || !Number.isFinite(sample.videoPosition)) continue;
-    if (!rendered.length || sample.videoPosition !== rendered.at(-1).videoPosition) rendered.push(sample);
+  function advancingSamples(field) {
+    const result = [];
+    for (const sample of samples) {
+      const position = sample[field];
+      if (sample.state !== 'playing' || !Number.isFinite(position)) continue;
+      // A zero UTC position means this track has not rendered yet. Audio can
+      // become ready after video; relative (epoch=0) position zero stays valid.
+      if (sample.epoch === 1 && position <= 0) continue;
+      if (!result.length || position !== result.at(-1)[field]) result.push(sample);
+    }
+    return result;
   }
+  const rendered = advancingSamples('videoPosition');
+  const audioRendered = advancingSamples('audioPosition');
+  const firstAudio = audioRendered[0], lastAudio = audioRendered.at(-1);
   const first = rendered[0], last = rendered.at(-1), gaps = [], playedPeriods = [], regressions = [];
   for (let i = 0; i < rendered.length; i++) {
     const s = rendered[i], previous = rendered[i - 1];
@@ -31,8 +41,9 @@ function metricsFromSamples(records, periods) {
   return { firstFrameUpperBoundMs: first?.atMs ?? null, lastRenderedMs: last?.atMs ?? null,
     renderedDurationMs: first && last ? last.atMs - first.atMs : 0, renderedSamples: rendered.length,
     videoProgressSeconds: first && last ? last.videoPosition - first.videoPosition : 0,
-    audioProgressSeconds: first && last && Number.isFinite(first.audioPosition) && Number.isFinite(last.audioPosition)
-      ? last.audioPosition - first.audioPosition : null,
+    firstAudioMs: firstAudio?.atMs ?? null, lastAudioMs: lastAudio?.atMs ?? null,
+    renderedAudioSamples: audioRendered.length,
+    audioProgressSeconds: firstAudio && lastAudio ? lastAudio.audioPosition - firstAudio.audioPosition : null,
     gaps, regressions, playedPeriods, epochValues: [...new Set(rendered.map(s => s.epoch))],
     startHostEpochMs: start ? start.receivedEpochMs - start.atMs : null,
     states: [...new Set(records.filter(s => s.state).map(s => s.state))] };

@@ -2,7 +2,7 @@
 
 Version 0.2.0 implements the first two roadmap milestones for the validated HLS
 sample, HLS origin proxy and pinned livesim2 adapter. The GitHub repository and npm
-package remain private. Public-beta packaging, device coverage and expanded
+package remain private. Public-beta packaging, wider device coverage and expanded
 scenario actions are later milestones.
 
 The agreed public release gate requires playback and fault recovery in hls.js,
@@ -165,8 +165,8 @@ sample-loop boundaries; DASH activated six periods, crossing five transitions.
 No fatal HLS errors or DASH error events were recorded. Detailed observations are
 in [playback-verification.json](playback-verification.json). These are browser
 results with dash.js UTC synchronization explicitly disabled. They do not establish
-offline clock synchronization or fault recovery. Physical Roku, Apple and Android
-playback has not been verified.
+offline clock synchronization or fault recovery. That historical check did not verify physical Roku, Apple or Android playback.
+Current Roku results are recorded below; Apple and Android remain unverified.
 
 ## Supported limits and remaining work
 
@@ -175,8 +175,9 @@ playback has not been verified.
   use native `--periods-per-hour` or equal durations that divide an hour.
 - The low-latency preset is unavailable. LL-HLS/LL-DASH, real DRM and ad insertion
   still require transport support, real fixtures and separate validation.
-- Broader ABR/fallback recovery and physical Roku playback/recovery remain release checks.
-  Stabilization now includes strict browser checks and local UTC; see below for current evidence.
+- Broader ABR/fallback recovery and additional Roku hardware/OS combinations remain
+  unverified. Stabilization includes strict browser checks, local UTC and one
+  tested Roku model/OS; see below for current evidence.
 - Sports/news/OTT/mobile presets report actual sample properties. Mobile selects
   the small rendition; news extends the window. They no longer promise 4K or ads.
 - Manual random failures remain unseeded; scenario rules have seeded probability,
@@ -227,12 +228,21 @@ native last-rendered audio/video positions every 250ms. Its recorder identifies
 model/OS/build, records monotonic and host timestamps, correlates server retries,
 and enforces the numeric gates. Missing telemetry or unknown mapping from native
 positions to DASH periods fails verification. It does not sideload, discover or
-launch a different developer channel. The Express 4K completed the HLS healthy
-case before its run was interrupted.
-The selected Ultra target is identified, but its debug console is held by another
-debugger; its full playback/recovery matrix remains blocked. Compilation and
-synthetic evidence tests do not establish playback. See the current verification
-record for exact models, versions and gate status.
+launch a different developer channel. On 29 October 2026, all six HLS/DASH
+playback and recovery cases passed on Express 4K 3940EU, OS 16.0.4 build 842.
+DASH healthy playback crossed four rendered Period boundaries. The first attempt
+found Docker stopped; the two affected DASH cases were replayed after startup.
+
+The device exposed an evidence bug: audio initially reports UTC position zero
+after video begins. Progress is now measured independently per track, excluding
+uninitialized UTC zeros; frozen audio cannot produce a passing result. Captured
+samples were re-evaluated, and regression tests cover the real startup pattern.
+The full Roku suite now checks Docker before starting any test case.
+
+No native requests to the local UTC endpoint were observed. Native Video settings
+were unchanged; its internal synchronization strategy and an internet-isolated
+Roku run remain unverified. Browser local-clock synchronization is directly
+verified with external player requests blocked.
 
 See [playback gates](playback-gates.md) for reproducible commands and the remaining
 release requirements. Historical JSON reports above retain their original engine

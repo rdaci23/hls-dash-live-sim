@@ -60,7 +60,9 @@ npm start -- livesim --sim-type hls --host 0.0.0.0
 Use this computer's LAN address in the printed player URL on a device. Browser
 players must be hosted on localhost or this computer's network addresses; requests
 from unrelated website origins are rejected. Native players do not need a browser
-Origin header. Physical device validation is still pending.
+Origin header. Initial device coverage is verified on Roku Express 4K 3940EU,
+OS 16.0.4 build 842. See [playback gates](docs/playback-gates.md) for the measured
+results and remaining limits.
 
 ## Fault controls
 
@@ -235,6 +237,6 @@ Fault cases require another 60 seconds after recovery. Each run needs a fresh
 output directory and saves JSON, diagnostics and screenshots under `output/`.
 
 The standalone native SceneGraph tester has no Standalone dependency. Its installable
-ZIP is `output/roku/hls-dash-stream-tester.zip`; physical Roku gates remain pending
-until the dedicated device is tested. See [verification instructions and limits](docs/playback-gates.md).
+ZIP is `output/roku/hls-dash-stream-tester.zip`. All six playback/recovery cases
+pass on the tested Express 4K model/OS. See [verification instructions and limits](docs/playback-gates.md).
 Repository visibility and npm `private: true` remain unchanged.

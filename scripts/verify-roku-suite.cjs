@@ -1,10 +1,16 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const args = process.argv.slice(2);
 function option(key) { const i = args.indexOf(key); return i < 0 ? undefined : args[i + 1]; }
 async function main() {
   if (!option('--device') || !option('--server-host')) throw Error('Use --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP');
+  try {
+    await promisify(execFile)('docker', ['info'], { timeout: 15000 });
+  } catch {
+    throw Error('Docker daemon must be running before starting the Roku suite. Start Docker Desktop and retry.');
+  }
   const directory = path.resolve(option('--output') || path.join(__dirname, '../output/roku', 'suite-' + Date.now()));
   await fs.mkdir(path.dirname(directory), { recursive: true }); await fs.mkdir(directory, { mode: 0o700 });
   const reports = []; let interrupted = false, blockedReason;

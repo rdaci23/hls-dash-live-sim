@@ -81,7 +81,8 @@ npm run roku:suite -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP
 npm run roku:verify -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --protocol hls --case healthy
 ```
 
-The installable file is `output/roku/hls-dash-stream-tester.zip`. Deployment uses
+The full suite checks Docker availability before creating or launching any test
+case. The installable file is `output/roku/hls-dash-stream-tester.zip`. Deployment uses
 only that ZIP and environment credentials. Verification refuses to launch a
 sideloaded channel with a different title, and never installs another channel or
 scans the network. It records model number/name and exact OS/build through ECP.
@@ -96,7 +97,9 @@ including a per-run UUID, a monotonic clock, Video state, last-rendered audio/vi
 positions, epoch and startup measurements. A 250ms sampler gives an upper bound
 on the first rendered frame. The recorder retains host receive times and reserves
 one second for transport/clock alignment when checking healthy time before a fault.
-Both audio and video must advance. A playing state alone cannot pass. Epoch
+Both audio and video must advance. A playing state alone cannot pass. UTC
+position zero is treated as track-not-ready; audio and video start measurements
+are independent, so an uninitialized audio field cannot inflate its progress. Epoch
 positions are transmitted as integer seconds and millisecond fractions, avoiding
 BrightScript JSON rounding of large floating point timestamps. Field names are
 explicitly case-preserving; stale console records are excluded by the run UUID.
@@ -106,6 +109,32 @@ UTC position (`positionInfo.epoch = 1`) is currently mapped to absolute Period
 starts. An unknown/relative position mapping fails the Period gate; it must be
 investigated on hardware rather than guessed. Expected test completion stops the
 Video node. Interruptions and missing completion markers fail verification.
+
+## Recorded Roku results — 29 October 2026
+
+All six cases pass on Roku Express 4K **3940EU, OS 16.0.4 build 842**, using the
+standalone native player. No manual restart was used. The first-frame measurement
+is an upper bound from sampled last-rendered video positions.
+
+| Protocol / case | First rendered sample ≤ | Rendered span | Post-recovery playback | Played DASH transitions |
+| --- | ---: | ---: | ---: | ---: |
+| HLS healthy | 1.045 s | 193.7 s | — | — |
+| HLS startup | 0.793 s | 84.0 s | 84.0 s | — |
+| HLS during | 0.806 s | 144.2 s | 84.7 s | — |
+| DASH healthy | 0.775 s | 194.0 s | — | 4 |
+| DASH startup | 0.776 s | 84.0 s | 84.0 s | 1 |
+| DASH during | 0.771 s | 144.2 s | 85.5 s | 2 |
+
+Both during-playback cases had more than 58 seconds of verified healthy playback
+before injection. Same-download retries were confirmed from server diagnostics.
+The first run found Docker stopped; the two affected DASH cases were replayed
+successfully after startup. Original failed infrastructure attempts are retained
+in the evidence instead of counted as playback passes.
+
+No native requests to the advertised local UTC endpoint were observed. The Roku
+used default Video settings; its internal synchronization strategy and playback
+on an internet-isolated Roku remain unverified. Browser synchronization with the
+local clock was directly verified while external player requests were blocked.
 
 ## Clock scope and release status
 
