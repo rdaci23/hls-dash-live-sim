@@ -1,17 +1,18 @@
 # hls-dash-live-sim
 
-A private HLS and DASH test tool with local sample streams, origin proxying and
-live fault controls. Recovered from `original tools project` and now using corrected live
-streaming paths. [Implementation and validation](docs/implementation.md) records
-what works and what remains on the roadmap. The repository and npm package remain
-private.
+A standalone tool for player developers and QA: serve known HLS/DASH streams,
+inject faults, and inspect what the player requested and how it recovered.
+It has no external framework dependency.
 
-## Start a live stream
+**Private beta preparation.** The repository remains private and npm publishing is
+disabled. See the [release checklist](docs/release-checklist.md) for outstanding
+requirements. A passing CI run does not publish anything or approve a release.
 
-Node.js 20.3 or newer is required. HLS runs directly in Node. DASH requires a
-running Docker daemon; its first start downloads livesim2 v1.15.3 at a pinned
-image digest. The official image is AMD64-only; Docker emulation is used on ARM
-hosts.
+## Quick start
+
+Use Node.js 24 LTS; CI also checks Node 22 and 26 on Linux and macOS.
+HLS needs only Node. DASH additionally needs a running Docker daemon.
+These commands are for a repository checkout:
 
 ```sh
 npm ci
@@ -19,250 +20,148 @@ npm run build
 npm run hls
 ```
 
-The HLS player URL is `http://127.0.0.1:8899/proxy.m3u8`. The procedural sample has
-180p and 360p H.264/AAC renditions, two-second segments and a sliding live window.
-Audio and video are multiplexed together. Sequence numbers advance; each loop has
-an explicit discontinuity. Removed segments remain available for a retention grace
-period (14 seconds after removal with the default window), then return 410. Future
-segments return 404. Publication uses a monotonic clock, so system clock corrections
-cannot move the window backwards.
-
-```sh
-npm run dash
-```
-
-DASH prints its actual live MPD URL when the engine is ready. The bundled DASH
-fixture has separate H.264 video and AAC audio; livesim2 advances their timelines.
-Ctrl+C stops the session, proxy and its owned container, including during startup.
-An in-progress Docker creation is allowed to finish acknowledging its container
-before cleanup; cancellation can wait for that Docker operation. `--detach` is a legacy
-flag: the Node session always remains supervised in the foreground.
-
-DASH advertises the simulator's local UTC clock by default. Normal player time
-synchronization stays enabled; playback needs no external clock service. The proxy
-preserves the engine's `Date` header and exposes it to browser players. Clock
-requests are excluded from artificial media/manifest latency. Use `--utc external`
-only to test the engine's external clock source (internet required).
-
-`nowMS` is an engine diagnostic override for individual MPD/media requests. It
-does **not** move the UTC clock or create a coherent fixed-time playback session.
-Real-time playback is the supported baseline; a shared virtual clock is deferred.
-
-## Network access
-
-All servers bind to `127.0.0.1` by default. Port conflicts fail without stopping
-another process. Explicitly enable device access when needed:
-
-```sh
-npm start -- livesim --sim-type hls --host 0.0.0.0
-```
-
-Use this computer's LAN address in the printed player URL on a device. Browser
-players must be hosted on localhost or this computer's network addresses; requests
-from unrelated website origins are rejected. Native players do not need a browser
-Origin header. Initial device coverage is verified on Roku Express 4K 3940EU,
-OS 16.0.4 build 842. See [playback gates](docs/playback-gates.md) for the measured
-results and remaining limits.
-
-## Fault controls
-
-In another terminal, from the same directory:
+Open `http://127.0.0.1:8899/proxy.m3u8` in your player. In a second terminal,
+from the same directory:
 
 ```sh
 npm run fault-control
 ```
 
-Visit `http://127.0.0.1:19090`. Segment 403/404, malformed media, response delay and
-manifest freeze apply live. Freeze includes HLS child playlists and captures the
-latest DASH MPD per stream path, including requests with cache-busting queries.
-Freeze supports `off` and `always`. Malformed-media responses complete with an
-accurate Content-Length; ranged responses corrupt bytes without changing their
-range length. Delayed requests are cancelled when the client disconnects or the
-session closes.
+Open `http://127.0.0.1:19090` to change faults. Under **Generated manifest**, paste
+the stream URL and select **Load Manifest**. HLS offers master/child selection;
+DASH displays its MPD. **Refresh Manifest** reads the current response manually,
+including an intentional freeze. The viewer supports simulators on this computer
+with the default proxy enabled; it does not fetch media or keys.
 
-The page connects automatically for local sessions. For protected sessions, enter the
-control token and select **Connect**; fault controls stay disabled until connected.
-Set **Latency (ms)** to any value from 0 to 60,000 and select **Apply Latency**.
-This delays matching media and manifest responses until **Clear Latency** (or a
-value of zero) is applied. It does not simulate a bandwidth limit; local UTC
-requests stay unaffected.
+To run DASH instead:
 
-Use **Generated manifest** to inspect the actual playlist or MPD returned by a
-running simulator. Paste the `.m3u8` or `.mpd` URL printed at startup, then select
-**Load Manifest**. For HLS, choose a child playlist to inspect its segment list.
-**Refresh Manifest** fetches a new snapshot; there is no automatic polling.
-Inspection exercises active manifest faults, and frozen manifests remain frozen.
-The viewer supports simulators on this computer with their default proxy enabled;
-it verifies the session and does not forward the control token or cookies.
-Remote origins and DASH `--no-fault-proxy` sessions are outside this viewer's scope.
+```sh
+npm run dash
+```
+
+Use the actual MPD URL printed at startup. First start downloads the pinned
+livesim2 image. It is AMD64-only; ARM Docker hosts use emulation. Ctrl+C closes
+the supervised session and its owned container. `--detach` is a legacy flag;
+the Node process remains in the foreground.
+
+If commands run from different directories, pass the same absolute
+`--fault-config` path to the stream and control commands. Use separate fault
+files for independent sessions. Stop sessions before regenerating sample assets.
+
+## Supported behavior
+
+| Area | Current scope |
+| --- | --- |
+| HLS samples | H.264/AAC, muxed audio/video, 180p/360p renditions, two-second segments, LIVE/EVENT/VOD. |
+| HLS live timing | Sliding window, increasing sequences, loop discontinuities and retained segments after window removal. |
+| HLS origin proxy | Signed child playlists, alternate audio, init resources, keys, ranges and declared CDN origins. |
+| DASH samples | livesim2 v1.15.3 at an immutable digest, H.264 video plus separate AAC, live windows and supported period options. |
+| Clock | Coherent real-time DASH availability and local UTC by default; external UTC is opt-in. |
+| Manual faults | Segment 403/404, malformed media, fixed response delay, manifest freeze, and limited encrypted-origin HLS key faults. |
+| Scenarios | Seeded HTTP status rules targeting logical tracks, segments, attempts and session-time windows; same-download retry assertions. |
+| Inspection | Actual HLS/DASH manifests in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
+| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku. |
+
+**Limits:** no LL-HLS/LL-DASH, commercial DRM, ads, bandwidth throttling or shared
+virtual clock. DASH source import analyzes supported metadata; it does not clone
+arbitrary source media. HLS origin scenarios and ABR fallback recovery remain
+outside verified coverage. Apple, Android and additional Roku models remain
+unverified. [Detailed capabilities and limits](docs/implementation.md).
+
+## Fault controls
+
+The page connects automatically for unprotected local sessions. For protected
+sessions, enter the control token and select **Connect**. Actions stay disabled
+until configuration loads successfully.
+
+Set **Latency (ms)** between 0 and 60,000, then **Apply Latency**. This delays
+matching media and manifest responses until **Clear Latency** or zero is applied.
+It does not limit bandwidth; the local UTC endpoint stays unaffected.
+
+**Once** applies to one matching GET, not one playback event. Quick Inject rearms
+it; repeated injections before consumption coalesce into the latest arm. Player
+buffering can delay when a fault becomes visible. HLS key faults require an
+actual encrypted origin; they do not affect clear samples or DASH.
 
 **Advanced: equivalent curl command** is an optional terminal alternative to
-**Save Config**, generated from the displayed fault settings. Protected commands
-reference `$HLS_DASH_CONTROL_TOKEN`; set it in your terminal before running them.
-The page never inserts your token into a command.
+**Save Config**. Protected commands reference `$HLS_DASH_CONTROL_TOKEN`; the page
+never puts your token into the command. [Modes, API and examples](docs/fault-injection-guide.md).
 
-Both processes must share `--fault-config /absolute/path/faults.json` when started
-from different directories. Invalid settings fail validation. Atomic saves are
-watched; malformed edits retain the last valid configuration. `once` consumes one
-matching GET request across resources. Quick Inject always rearms it; resetting to
-`off` then setting `once` also rearms it, even with back-to-back API calls. Partial
-saves merge the latest valid file under a writer lock; simultaneous API writers
-receive HTTP 409 and can retry. Manual editors do not participate in that lock.
-Preserve the generated `_oneShot` identifiers when editing unrelated settings. Random
-manual faults use a 40 percent probability per request. Scenario rules use a seed
-and explicit probability, as described below.
+## Network access
 
-For LAN control, supply a token of at least 16 characters using
-`HLS_DASH_CONTROL_TOKEN` or `--control-token`, then enter it in the control page:
+Servers bind to `127.0.0.1` by default. Port collisions fail without stopping
+another process. To make a stream reachable by a LAN device:
+
+```sh
+npm start -- livesim --sim-type hls --host 0.0.0.0
+```
+
+Replace the loopback host in the player URL with this computer's LAN address.
+Browser players must be served from localhost or this computer's network
+addresses; unrelated website origins are rejected.
+
+Stream access and control access are separate. Keep control on loopback unless
+you need LAN control. Set `HLS_DASH_CONTROL_TOKEN` to a token of at least 16
+characters before starting LAN control, then enter it in the panel:
 
 ```sh
 npm start -- fault-control --host 0.0.0.0
 ```
 
-Keep the stream's LAN binding separate from the control server's binding. The
-control API rejects cross-origin writes. HLS key-response faults require a remote
-AES-encrypted stream; they do not implement commercial DRM or apply to clear
-samples or DASH. [Fault details](docs/fault-injection-guide.md).
+Source authorization is scoped to the source origin. A separate CDN must be
+explicitly permitted with `--allow-origin`. Saved source URLs can contain secrets;
+local templates and authentication files remain ignored by Git.
 
-## Request and fault diagnostics
-
-Record redacted events to a new file:
+## Common workflows
 
 ```sh
-mkdir -p output
-npm start -- livesim --sim-type hls --diagnostics-file output/requests.jsonl
-# Use --sim-type dash for the same tracing on DASH.
+# EVENT or VOD instead of sliding live HLS
+npm start -- livesim --sim-type hls --mode event
+npm start -- livesim --sim-type hls --mode vod
+
+# Inspect the manifest selected at startup
+npm start -- livesim --show-manifest
+
+# Proxy real HLS; optionally allow a separate media CDN
+npm start -- livesim --manifest-url https://example.com/master.m3u8
+npm start -- livesim --manifest-url https://example.com/master.m3u8 --allow-origin https://media.example.com
+
+# One DASH period each minute (option units: periods per hour)
+npm start -- livesim --sim-type dash --periods-per-hour 60
+
+# Discover presets, imports and command options
+npm run templates
+npm start -- create-manifest-template --help
+npm start -- livesim --help
 ```
 
-Responses include session/request IDs and the IDs of selected faults. Quick Inject
-returns a one-shot fault ID that matches the affected response and log events.
-The log distinguishes selection, consumption, application and cancellation.
-URLs, credentials and media/key bodies are omitted; resources have opaque IDs.
-Use `--verbose` for structured stderr events, or download recent events from the
-stream server's `/diagnostics` endpoint. History retains 2000 events; optional
-files stop at 10 MiB with an explicit marker. [Format and limits](docs/diagnostics.md).
+Record redacted requests with `--diagnostics-file output/requests.jsonl` after
+creating `output`. The file must be new. Read recent events at `/diagnostics` on
+the stream port. IDs correlate HTTP responses with fault selection, consumption,
+application and cancellation. [Diagnostics format](docs/diagnostics.md).
 
-## Repeatable scenarios
-
-Fail the first request for the next video segment, then verify its retry:
+For deterministic 404/retry testing:
 
 ```sh
 mkdir -p output
 npm start -- livesim --sim-type hls --scenario examples/scenarios/next-video-retry.json --fault-config output/scenario-faults.json
 ```
 
-Use `--sim-type dash` for the pinned DASH engine. The stream server's `/scenario`
-endpoint reports the selected logical track/segment, attempt counts and outcome.
-Rules also support exact Number/Time selectors, time windows, seeded probability
-and explicit application caps. Manual faults must be off. HLS scenario support
-currently uses generated sample media.
+Use `--sim-type dash` for DASH. Read the run's assertions at `/scenario`.
+Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 
-`npm run scenario:verify` runs both HTTP checks automatically (Docker required for
-DASH); add `-- --protocol hls` for HLS only. [Scenario format and replay](docs/scenarios.md).
+## Documentation and checks
 
-## Streaming commands
+| Document | Purpose |
+| --- | --- |
+| [Implementation](docs/implementation.md) | Current behavior, supported imports and explicit limits. |
+| [Development and CI](docs/development.md) | Install, checks, CI matrix and packaged-CLI smoke test. |
+| [Playback gates](docs/playback-gates.md) | Numeric acceptance gates, reproducible browser/Roku commands and recorded hardware results. |
+| [Release checklist](docs/release-checklist.md) | Completed preparation and unresolved public-release requirements. |
+| [Contributing](CONTRIBUTING.md) | Change scope, validation and handling sensitive test inputs. |
+| [Fixture provenance](assets/README.md) | Procedural media sources and regeneration. |
+| [Verification history](docs/verification-history.md) | Older reports and why they are not current release evidence. |
 
-```sh
-# Append-only EVENT playlist or finite VOD sample
-npm start -- livesim --sim-type hls --mode event
-npm start -- livesim --sim-type hls --mode vod
-
-# Inspect the actual manifest selected by startup
-npm start -- livesim --show-manifest
-
-# Proxy the actual HLS origin, including signed child playlists and init resources
-npm start -- livesim --manifest-url https://example.com/master.m3u8
-
-# Permit a separate media CDN; source credentials stay on the source origin
-npm start -- livesim --manifest-url https://example.com/master.m3u8 --allow-origin https://media.example.com
-
-# DASH live periods every minute (the parameter is periods per hour)
-npm start -- livesim --sim-type dash --periods-per-hour 60
-
-# Manage only a container owned by this workspace
-npm start -- livesim stop --sim-type dash --name NAME_PRINTED_AT_STARTUP
-npm start -- livesim logs --sim-type dash --name NAME_PRINTED_AT_STARTUP
-
-npm run templates
-npm start -- mobile-stream
-npm start -- create-manifest-template https://example.com/master.m3u8 --name my-source
-npm start -- dummy-stream my-source
-npm start -- livesim --help
-```
-
-HLS source URLs default to real origin proxying. Authentication can be supplied via
-`--auth-token`, `--auth-header`, or `--auth-file`; only one method may be selected.
-Redirects are checked against allowed origins and never carry source credentials
-to a different origin. Source authentication is not stored in generated templates.
-Source URLs may themselves contain secrets, so local templates remain ignored.
-
-DASH source import analyzes supported timing metadata and uses validated local
-media. It does not replicate arbitrary source encodings. Custom DASH assets require
-`--vodroot` with an asset directory containing `manifest.mpd`. The current adapter
-checks the validated livesim2 input subset before starting Docker: a static MPD with one
-source Period, AdaptationSet SegmentTemplates, plain `$Number$` without a timeline
-or `$Time$` with a finite timeline, and local relative media paths. Representation
-templates, BaseURL/Location, SegmentList/SegmentBase and formatted identifiers fail
-with an actionable error. This structural check does not validate encoded media.
-
-HLS variable substitution (`EXT-X-DEFINE`), LL-HLS parts, blocking reload and delta
-updates fail explicitly with HTTP 422. The proxy keeps active child playlists,
-keys, initialization resources and segment references reachable. It retains retired
-references for a grace period and returns HTTP 503 if its bounded registry cannot
-accept another playlist; it never silently evicts URLs still advertised.
-
-Arbitrary MPD substitution, uneven period layouts and the old low-latency preset
-fail explicitly. Sports, news, OTT and mobile presets describe their actual sample
-renditions/windows; they no longer promise 4K, ads or low latency. Those capabilities
-need real fixtures and remain later roadmap work.
-
-## Development and validation
-
-```sh
-npm run typecheck
-npm test
-npm run test:docker
-npm run fixtures
-```
-
-The regular suite uses local fixtures and does not require Docker. The Docker suite
-requires the pinned image locally :
-
-```sh
-docker pull --platform linux/amd64 ghcr.io/dash-industry-forum/livesim2/livesim2:v1.15.3@sha256:800acefece3ea6d59b4fa04d657ea8081d5c710c07359cfddbaaa4dbf2bf2d9c
-```
-Fixture regeneration requires FFmpeg and replaces only the procedural sample files.
-It is not needed to use the tool. [Fixture provenance](assets/README.md).
-
-Local configuration, templates, authentication files, dependencies, build output and
-browser artifacts are ignored by Git. The original four saved templates remain in
-this checkout's ignored file. The [initial review](docs/public-release-review.md)
-and [recorded baseline](docs/research-evidence.json) describe the recovered prototype;
-use [current status](docs/implementation.md) for present behavior.
-
-## Playback release checks
-
-```sh
-npm run browser:verify
-# Development smoke only; cannot qualify a release:
-npm run browser:verify -- --smoke
-npm run roku:build
-```
-
-The browser runner uses installed Chrome, pinned hls.js/dash.js and the local
-Docker image. It measures rendered frames, startup, stalls, successful retries
-and played DASH periods, with player network access restricted to the local
-simulator and harness. Six cases cover both protocols: three minutes healthy,
-startup 404 recovery, and a 404 after at least 30 seconds healthy rendering.
-Fault cases require another 60 seconds after recovery. Each run needs a fresh
-output directory and saves JSON, diagnostics and screenshots under `output/`.
-
-The standalone native SceneGraph tester has no Standalone dependency. Its installable
-ZIP is `output/roku/hls-dash-stream-tester.zip`. All six playback/recovery cases
-pass on the tested Express 4K model/OS. See [verification instructions and limits](docs/playback-gates.md).
-Repository visibility and npm `private: true` remain unchanged.
-
-The control-page browser regression checks run with `npm run test:ui` (installed
-Google Chrome required). They exercise connection, protected sessions, fault
-settings, configurable latency and live-manifest inspection. `npm test` runs API
-validation and skips these optional browser checks.
+Quick checks: `npm run docs:check`, `npm run typecheck`, `npm test`.
+For the control-page browser checks, run `npm run test:ui` with Google Chrome
+installed. These checks do not replace the full playback and device gates.

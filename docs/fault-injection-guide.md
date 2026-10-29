@@ -65,5 +65,6 @@ requested, not when previously buffered media plays. Freeze can expose this dela
 as the player drains its buffer. Recorded consumption/application/cancellation
 events show what the simulator did. Deterministic status rules and HTTP retry
 assertions are available through [scenario rules](scenarios.md). The first
-video-404/retry preset has a browser check; broader recovery and physical Roku
-coverage remain release work.
+video-404/retry preset has full browser and one-model physical Roku coverage for
+startup and established playback. Broader ABR, sustained-outage and freeze/resume
+recovery remain unverified. See [playback gates](playback-gates.md).

@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      playback:
+        description: Run the full six-case browser playback gate
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Checks / ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run docs:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run roku:build
+      - run: npm run scenario:verify -- --protocol hls
+      - run: npm run test:package
+
+  control-ui:
+    name: Chrome control UI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chrome
+      - run: npm run test:ui
+
+  dash-engine:
+    name: DASH engine integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Pull the pinned AMD64 engine
+        run: |
+          IMAGE=$(node -p 'require("./dist/support-tools/dash-sim-runner.js").DEFAULT_IMAGE')
+          docker pull --platform linux/amd64 "$IMAGE"
+      - run: npm run test:docker
+      - run: npm run scenario:verify
+
+  browser-playback:
+    name: Full browser playback gate
+    if: github.event_name == 'workflow_dispatch' && inputs.playback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx --no-install playwright install --with-deps chrome
+      - name: Pull the pinned AMD64 engine
+        run: |
+          IMAGE=$(node -p 'require("./dist/support-tools/dash-sim-runner.js").DEFAULT_IMAGE')
+          docker pull --platform linux/amd64 "$IMAGE"
+      - run: npm run browser:verify -- --output output/ci-playback
+      - name: Retain playback evidence in this repository
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-playback-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ci-playback/
+          if-no-files-found: warn
+          retention-days: 7

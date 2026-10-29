@@ -135,4 +135,6 @@ responses. Reports remain inspectable through `session.scenario.report()` after
   exhaustion fails explicitly; counters are never silently evicted and reset.
   Completed finite scenarios stop allocating/indexing new media indefinitely.
 - HTTP recovery assertions establish server behavior. General browser recovery,
-  ABR fallback and physical Roku coverage still need their own player checks.
+  ABR fallback and new scenarios still need their own player checks. The initial
+  404/retry cases have recorded browser and one-model Roku coverage; see
+  [playback gates](playback-gates.md).

@@ -1,4 +1,8 @@
-# HLS and DASH simulator public release review
+# Historical prototype review — 28 October 2026
+
+This historical review describes the recovered prototype at `55952e9`, before
+the safety and streaming fixes. Use [current implementation](implementation.md)
+and the [release checklist](release-checklist.md) for present behavior.
 
 The useful core is a local streaming test tool for player developers and QA:
 serve a known stream, inject a failure, and observe recovery on a browser or device.
@@ -13,7 +17,7 @@ The repository remains private. No simulator implementation was changed in this
 review. The attached [observations](research-evidence.json) distinguish measured
 behavior from the additional source findings below.
 
-## What the tool does today
+## What the prototype did at the reviewed commit
 
 | Area | Actual behavior | Useful today |
 | --- | --- | --- |

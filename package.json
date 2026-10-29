@@ -32,7 +32,9 @@
     "roku:verify": "npm run build && node scripts/verify-roku.cjs",
     "roku:deploy": "npm run roku:build && node scripts/deploy-roku.cjs",
     "roku:suite": "npm run build && node scripts/verify-roku-suite.cjs",
-    "test:ui": "npm run build && node scripts/run-ui-tests.cjs"
+    "test:ui": "npm run build && node scripts/run-ui-tests.cjs",
+    "docs:check": "node scripts/check-docs.cjs",
+    "test:package": "npm run build && node scripts/verify-package.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
@@ -53,7 +55,9 @@
   "files": [
     "dist",
     "assets",
+    "examples",
     "README.md",
-    "docs/implementation.md"
+    "CONTRIBUTING.md",
+    "docs"
   ]
 }
