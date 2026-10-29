@@ -63,7 +63,10 @@ Segment and key fault modes are `off`, `once`, `always` and `random`. Freeze acc
 only `off` and `always`; other values return HTTP 400. DASH freeze identifies a
 stream by its path, so changing cache-busting or time query parameters does not
 bypass it. Both proxies limit cached manifests to 128; requesting a new stream
-beyond the frozen snapshot limit returns HTTP 503 until unfreezing.
+beyond the frozen snapshot limit returns HTTP 503 until unfreezing. Generated
+HLS follows the same latest-observed snapshot semantics as the proxies. Freeze
+holds manifest bytes; media publication/expiry and local UTC continue. See the
+[simulator freeze/resume verification](manifest-freeze.md) for repeatable checks.
 
 A one-shot fault consumes one matching GET request across resources; HEAD requests
 and requests cancelled during artificial latency do not consume it. Quick Inject
@@ -104,5 +107,6 @@ events show what the simulator did. Deterministic status rules and HTTP retry
 assertions are available through [scenario rules](scenarios.md). The first
 video-404/retry preset has full browser and one-model physical Roku coverage for
 startup and established playback. The separate [sustained-outage checks](sustained-outages.md) retain browser
-passes and native Roku failures for their exact profiles. Broader ABR and manifest freeze/resume
-recovery remain unverified. See [playback gates](playback-gates.md).
+passes and native Roku failures for their exact profiles. Manifest freeze/resume
+is [verified at the simulator HTTP boundary](manifest-freeze.md); player recovery
+from a stale manifest and broader ABR behavior need separate client evidence. See [playback gates](playback-gates.md).

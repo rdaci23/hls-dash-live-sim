@@ -35,6 +35,7 @@ use your existing Chrome installation.
 | `npm test` | Builds assets, then API, protocol, safety, diagnostics, scenarios, bandwidth/jitter timing and evidence regressions. | No Docker/browser; optional integrations are reported as skipped. |
 | `npm run test:ui` | Real control-page JS, authentication, settings, latency and HLS/DASH viewer, stream status, clipboard and exact download interactions. | Google Chrome. DASH viewer responses use a local fixture here. |
 | `npm run test:docker` | Actual pinned livesim2, A/V resources and period-boundary timelines, clock headers and owned-container cleanup. | Docker and pinned image already present. |
+| `npm run manifest:verify` | Two 20-second manifest freeze/resume cycles for both protocols, with live media and local UTC checks. | Node; DASH requires Docker and pinned image; about two minutes. |
 | `npm run scenario:verify -- --protocol hls` | Generated HLS HTTP 404/retry scenario and diagnostics. | Node only. |
 | `npm run scenario:verify` | Both HLS/DASH HTTP scenario checks. | Docker and pinned image. |
 | `npm run test:package` | Builds, packs locally, installs with production dependencies into a fresh temporary directory, invokes the executable, serves HLS media and control assets. | npm registry access for production dependencies; never publishes. |
@@ -67,6 +68,8 @@ procedural assets. Stop sessions first. [Provenance](../assets/README.md).
 and manual dispatch. Linux/macOS matrix jobs run docs, types, regular tests, Roku
 compilation, HLS HTTP scenarios and the packaged-CLI smoke. Separate Linux jobs
 run Chrome control UI tests and real DASH integration plus both HTTP scenarios.
+The DASH integration job also runs the [simulator freeze/resume check](manifest-freeze.md)
+and retains its evidence for seven days.
 A dedicated Linux/Node 24 job runs the [HLS automatic ABR check](hls-abr.md) on
 every CI invocation and retains its raw/report/screenshot evidence for seven days.
 Another dedicated job runs the [sustained HLS/DASH outage pair](sustained-outages.md)

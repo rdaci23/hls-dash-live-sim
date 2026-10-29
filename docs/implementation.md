@@ -88,9 +88,11 @@ manifest freeze. Network settings add a shared media bandwidth ceiling and
 additional random media/manifest GET delay; see [network conditions](network-conditions.md). Corrupt range responses preserve Content-Range and byte length.
 Client disconnect/shutdown cancels artificial delay and upstream work.
 
-Freeze captures the latest observed HLS child playlist or DASH MPD and accepts
+Freeze captures the latest observed generated/proxied HLS child playlist or DASH MPD and accepts
 only off/always. DASH cache-busting queries do not bypass it. Manifest caches are
 bounded to 128 entries; a new stream over capacity returns 503 until unfreezing.
+Publication, retention and UTC continue on real time. In-flight origin responses
+respect the active snapshot. [Simulator freeze/resume checks](manifest-freeze.md).
 
 One-shot faults consume one matching GET across resources. HEAD and abandoned
 requests during artificial delay do not consume them. Durable arm IDs preserve

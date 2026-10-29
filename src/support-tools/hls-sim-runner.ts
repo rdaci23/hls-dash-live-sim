@@ -28,6 +28,7 @@ import {
 import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
+import { ManifestSnapshots } from "./manifest-snapshots.js";
 import { loadScenario, ScenarioEngine } from "./scenario.js";
 
 export interface HLSStartOptions {
@@ -212,17 +213,6 @@ export async function startHlsim(
     ]),
   );
   const resources = new HlsResourceRegistry();
-  const latest = new Map<string, string>();
-  let frozen = false;
-  let snapshots = new Map<string, string>();
-  function freezeState() {
-    const next = getFaultConfig().manifest?.freeze === "always";
-    if (next !== frozen) {
-      frozen = next;
-      snapshots = next ? new Map(latest) : new Map();
-    }
-    for (const timeline of timelines.values()) timeline.setFrozen(next);
-  }
   function lookupResource(
     url: URL,
   ): { url: string; kind: "playlist" | "segment" | "key" } | undefined {
@@ -253,6 +243,7 @@ export async function startHlsim(
     throw error;
   }
   const faults = new FaultRuntime();
+  const snapshots = new ManifestSnapshots<string>(128, !scenario);
   const transport = sessionServer(async (req, res, signal, trace) => {
     try {
       if (preflight(req, res, host)) return;
@@ -318,7 +309,6 @@ export async function startHlsim(
       }
       if (scenario) scenario.assertCompatible();
       else {
-        freezeState();
         await faults.delay(signal, trace, req.method,
           dummy ? /\.(m3u8|ts)$/.test(url.pathname)
             : ["playlist", "segment"].includes(lookupResource(url)?.kind));
@@ -345,11 +335,12 @@ export async function startHlsim(
         const timeline = timelines.get(match[1]);
         if (!timeline) throw new HttpError(404, "Unknown rendition");
         if (match[2] === "stream.m3u8") {
-          if (frozen) faults.frozen(trace);
+          const choice = snapshots.observe(url.pathname, timeline.playlist(match[1]));
+          if (choice.action) faults.frozen(trace, choice.action === "capture");
           send(
             res,
             200,
-            timeline.playlist(match[1]),
+            choice.value,
             { "Content-Type": "application/vnd.apple.mpegurl" },
             req.method,
           );
@@ -433,19 +424,19 @@ export async function startHlsim(
       policy.check(resource.url);
       if (
         resource.kind === "playlist" &&
-        frozen &&
-        snapshots.has(resource.url)
+        snapshots.held(resource.url) !== undefined
       ) {
         faults.frozen(trace);
         send(
           res,
           200,
-          snapshots.get(resource.url),
+          snapshots.held(resource.url),
           { "Content-Type": "application/vnd.apple.mpegurl" },
           req.method,
         );
         return;
       }
+      if (resource.kind === "playlist") snapshots.assertCapacity(resource.url);
       const config = getFaultConfig();
       const failure =
         req.method === "HEAD"
@@ -477,24 +468,22 @@ export async function startHlsim(
       });
       let body: Buffer | string = remote.body;
       const headers = remote.headers;
+      const held = resource.kind === "playlist" ? snapshots.held(resource.url) : undefined;
+      if (held !== undefined) {
+        faults.frozen(trace);
+        send(res, 200, held, { "Content-Type": "application/vnd.apple.mpegurl" }, req.method);
+        return;
+      }
       if (resource.kind === "playlist" && remote.status === 200) {
-        if (frozen && snapshots.size >= 128)
-          throw new HttpError(
-            503,
-            "Frozen manifest capacity reached; unfreeze before requesting another playlist",
-          );
         body = resources.rewrite(
           remote.body.toString("utf8"),
           remote.url,
           resource.url,
           policy,
         );
-        latest.set(resource.url, body);
-        if (latest.size > 128) latest.delete(latest.keys().next().value);
-        if (frozen) {
-          snapshots.set(resource.url, body);
-          faults.frozen(trace, true);
-        }
+        const choice = snapshots.observe(resource.url, body as string);
+        body = choice.value;
+        if (choice.action) faults.frozen(trace, choice.action === "capture");
         headers["Content-Type"] = "application/vnd.apple.mpegurl";
         headers["cache-control"] = "no-store";
       } else if (resource.kind === "segment" && req.method !== "HEAD")
@@ -543,6 +532,7 @@ export async function startHlsim(
     options.signal?.throwIfAborted();
   } catch (error) {
     faults.close();
+    snapshots.close();
     await transport.close();
     scenario?.close();
     diagnostics.close();
@@ -570,6 +560,7 @@ export async function startHlsim(
     scenario,
     close: async () => {
       faults.close();
+      snapshots.close();
       await transport.close();
       scenario?.close();
       diagnostics.close();

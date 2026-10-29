@@ -173,6 +173,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | --- | --- |
 | [Implementation](docs/implementation.md) | Current behavior, supported imports and explicit limits. |
 | [Development and CI](docs/development.md) | Install, checks, CI matrix and packaged-CLI smoke test. |
+| [Manifest freeze/resume](docs/manifest-freeze.md) | Simulator snapshot stability, live media availability, local clock and current-timeline resume. |
 | [Sustained media outages](docs/sustained-outages.md) | Timed HLS/DASH 503 outages, measured stall/resume and explicit retry settings. |
 | [HLS automatic ABR](docs/hls-abr.md) | Reproducible bandwidth drop/restoration with rendered downshift/upshift evidence. |
 | [Playback gates](docs/playback-gates.md) | Numeric acceptance gates, reproducible browser/Roku commands and recorded hardware results. |

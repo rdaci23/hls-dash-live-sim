@@ -12,6 +12,7 @@ import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ScenarioEngine, ScenarioDefinition } from "./scenario.js";
 import { DashScenarioIndex } from "./dash-scenario-index.js";
+import { ManifestSnapshots } from "./manifest-snapshots.js";
 export interface DashFaultProxyOptions {
   listenPort: number;
   upstreamPort: number;
@@ -45,15 +46,9 @@ export async function startDashFaultProxy(
   }
   const scenarioIndex = scenario ? new DashScenarioIndex() : undefined;
   const faults = new FaultRuntime();
-  const latest = new Map<
-    string,
-    { body: Buffer; headers: Record<string, string>; status: number }
-  >();
-  let frozen = false;
-  let snapshots = new Map<
-    string,
-    { body: Buffer; headers: Record<string, string>; status: number }
-  >();
+  const snapshots = new ManifestSnapshots<{
+    body: Buffer; headers: Record<string, string>; status: number;
+  }>(128, !scenario);
   const transport = sessionServer(async (req, res, signal, trace) => {
     try {
       if (preflight(req, res, options.host)) return;
@@ -116,25 +111,15 @@ export async function startDashFaultProxy(
         "livesim2",
       );
       if (scenario) scenario.assertCompatible();
-      const shouldFreeze =
-        !scenario && getFaultConfig().manifest?.freeze === "always";
-      if (shouldFreeze !== frozen) {
-        frozen = shouldFreeze;
-        snapshots = frozen ? new Map(latest) : new Map();
-      }
       // Media/manifest latency faults must not skew the UTC reference itself.
       if (!scenario && (manifest || segment)) await faults.delay(signal, trace, req.method);
-      if (manifest && frozen && snapshots.has(manifestKey)) {
-        const cached = snapshots.get(manifestKey);
+      const cached = manifest ? snapshots.held(manifestKey) : undefined;
+      if (cached) {
         faults.frozen(trace);
         send(res, cached.status, cached.body, cached.headers, req.method);
         return;
       }
-      if (manifest && frozen && snapshots.size >= 128)
-        throw new HttpError(
-          503,
-          "Frozen manifest capacity reached; unfreeze before requesting another stream",
-        );
+      if (manifest) snapshots.assertCapacity(manifestKey);
       const logical = scenarioIndex?.resolve(
         upstreamBase + request.pathname + request.search,
       );
@@ -168,6 +153,12 @@ export async function startDashFaultProxy(
         status: remote.status,
         bodyBytes: remote.body.length,
       });
+      const held = manifest ? snapshots.held(manifestKey) : undefined;
+      if (held) {
+        faults.frozen(trace);
+        send(res, held.status, held.body, held.headers, req.method);
+        return;
+      }
       if (manifest) {
         remote.headers["cache-control"] = "no-store";
         // A relative BaseURL remains valid on localhost and a separate player device.
@@ -177,12 +168,11 @@ export async function startDashFaultProxy(
         if (remote.status === 200) {
           if (scenarioIndex && !scenario.settled)
             scenarioIndex.observe(text, remote.url);
-          latest.set(manifestKey, remote);
-          if (frozen) {
-            snapshots.set(manifestKey, remote);
-            faults.frozen(trace, true);
-          }
-          if (latest.size > 128) latest.delete(latest.keys().next().value);
+          const choice = snapshots.observe(manifestKey, remote);
+          if (choice.action) faults.frozen(trace, choice.action === "capture");
+          remote.body = choice.value.body;
+          remote.headers = choice.value.headers;
+          remote.status = choice.value.status;
         }
       }
       const body =
@@ -222,6 +212,7 @@ export async function startDashFaultProxy(
     await listen(server, options.listenPort, options.host);
   } catch (error) {
     faults.close();
+    snapshots.close();
     await transport.close();
     scenario?.close();
     diagnostics.close();
@@ -233,6 +224,7 @@ export async function startDashFaultProxy(
     scenario,
     close: async () => {
       faults.close();
+      snapshots.close();
       await transport.close();
       scenario?.close();
       diagnostics.close();

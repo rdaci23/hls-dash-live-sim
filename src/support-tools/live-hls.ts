@@ -36,13 +36,13 @@ export class LiveHlsTimeline {
   private positionTime(): number {
     this.elapsed = Math.max(
       this.elapsed,
-      ((this.frozen ?? this.clock()) - this.started) / 1000,
+      (this.clock() - this.started) / 1000,
       0,
     );
     return this.elapsed;
   }
   setFrozen(frozen: boolean): void {
-    if (frozen && this.frozen === undefined) this.frozen = this.clock();
+    if (frozen && this.frozen === undefined) this.frozen = this.positionTime();
     else if (!frozen) this.frozen = undefined;
   }
   private timeAt(sequence: number): number {
@@ -55,8 +55,10 @@ export class LiveHlsTimeline {
     );
   }
   bounds(): { first: number; end: number } {
+    return this.boundsAt(this.positionTime());
+  }
+  private boundsAt(elapsed: number): { first: number; end: number } {
     if (this.mode === "vod") return { first: 0, end: this.segments.length };
-    const elapsed = this.positionTime();
     const position = this.initialOffset + elapsed;
     let end = Math.floor(position / this.cycleDuration) * this.segments.length;
     while (this.timeAt(end + 1) <= position + 0.000001) end++;
@@ -84,7 +86,7 @@ export class LiveHlsTimeline {
     );
   }
   playlist(rendition: string): string {
-    const { first, end } = this.bounds();
+    const { first, end } = this.boundsAt(this.frozen ?? this.positionTime());
     const lines = [
       "#EXTM3U",
       "#EXT-X-VERSION:6",

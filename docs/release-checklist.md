@@ -24,6 +24,8 @@ release requirement.
   cancellation and real-engine integration checks; broader player recovery remains unverified.
 - [x] Control-page startup regression, configurable latency and actual HLS/DASH
   manifest inspection, with dedicated browser checks.
+- [x] Simulator manifest freeze/resume verification for HLS/DASH, including media
+  availability, current-time resume, local UTC and concurrent-response regressions.
 - [x] Current support/limits documentation, quick start and contributor guidance.
 - [x] CI definitions for Linux/macOS Node 22/24/26, Chrome UI, pinned DASH engine,
   HTTP scenarios, Roku compilation and production-only package-install smoke.
@@ -71,7 +73,7 @@ that every future commit has passed. For the candidate, inspect the exact
   external player requests blocked, not with the whole computer disconnected.
 - Same-download 404 recovery does not establish ABR fallback. The separate HLS
   bandwidth-adaptation check covers one two-rendition Chrome profile. DASH/native
-  ABR, jitter recovery, manifest freeze/resume recovery and perceived audio
+  ABR, jitter recovery, client recovery from frozen manifests and perceived audio
   quality remain outside that evidence. The separate browser [media-outage check](sustained-outages.md)
   covers one timed 503 profile with explicit retries. Native recovery observations
   describe the tested client; they do not determine support for the simulator's
