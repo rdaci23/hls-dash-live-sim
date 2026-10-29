@@ -83,7 +83,10 @@ test("shared configuration changes still arrive when native watch events are los
     originalError = console.error;
   try {
     console.error = (value) => errors.push(String(value));
-    await fs.writeFile(file, "{broken");
+    // A direct async write truncates first; a poll can observe empty text as a
+    // separate invalid edit. Atomically publish one invalid snapshot here.
+    await fs.writeFile(file + ".invalid", "{broken");
+    await fs.rename(file + ".invalid", file);
     await sleep(650);
     assert.equal(config.getFaultConfig().segment.latencyMs, 17);
     assert.equal(
