@@ -8,7 +8,7 @@ and synthesized tone. The exact original shell command was not recovered.
 
 ## Trace to the introducing commit
 
-The upstream `original private tools project` commit
+The original private tools project’s commit
 `b1356697404887ca2e49a3ae3a55da0577f421d5`, dated 3 November 2025, introduced
 `assets/hls-sample/segments/segment0.ts`, `segment1.ts`, `audio0.aac` and
 `audio1.aac`. Its README describes the bundled content as color-bar video plus
@@ -88,6 +88,6 @@ cmp demuxed.aac concatenated.aac
 ```
 
 No source media, generation scripts or Git history were modified during this
-investigation. The project's eventual source/media license and the rights to
-publish extracted simulator code remain separate decisions; this investigation
-resolves the technical question of what the historical test media contains.
+investigation. The maintainer confirmed publication authority on 30 October 2026. The project’s
+source/media license remains to be selected; this investigation resolves the
+technical question of what the historical test media contains.

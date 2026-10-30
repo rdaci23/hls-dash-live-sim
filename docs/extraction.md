@@ -1,13 +1,14 @@
 # Source provenance
 
-Extracted from `original private tools project`, local branch `feature/dummy-live-stream`.
+Extracted from the maintainer’s original private tools project, local branch
+`feature/dummy-live-stream`.
 
 Source commit: `ccf0077f5614283a1bc8a7721d1fffc965a59c41` (2025-11-10, Fix container reuse and port conflict handling).
 
 The branch was present locally but not returned by the remote branch search.
 The six simulator modules, HLS media, static asset copier and fault guide were
 recovered from that commit. The CLI retains only simulator and template commands.
-Standalone generation, debugger, deployment, and SDK dependencies are excluded.
+Unrelated code generation, debugger, deployment and SDK dependencies are excluded.
 The original repositories and branches were left untouched.
 
 On 30 October 2026, the maintainer confirmed that they implemented the simulator

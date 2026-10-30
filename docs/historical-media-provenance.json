@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "reviewDate": "2026-10-29",
-  "upstreamRepository": "original private tools project",
+  "sourceProject": "Maintainer’s original private tools project",
   "introducedInCommit": "b1356697404887ca2e49a3ae3a55da0577f421d5",
   "introducedOn": "2025-11-03",
   "standaloneExtractionCommit": "55952e9",
