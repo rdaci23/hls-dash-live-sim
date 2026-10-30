@@ -121,7 +121,7 @@ const startOptions = (builder) =>
     .option("scenario", {
       type: "string",
       description:
-        "Run immutable logical segment/attempt rules from a scenario JSON file",
+        "Run immutable resource fault rules and network timelines from a scenario JSON file",
     })
     .option("diagnostics-file", {
       type: "string",

@@ -246,6 +246,10 @@ export async function startHlsim(
     throw error;
   }
   const faults = new FaultRuntime(Math.random, scenario?.timeline);
+  const sendMedia: FaultRuntime["sendMedia"] = async (res, status, body, headers, method, signal, trace, enabled) => {
+    if (await scenario?.deliver(res, status, body, headers, method, signal, trace)) return;
+    await faults.sendMedia(res, status, body, headers, method, signal, trace, enabled);
+  };
   const scenarioIndex = scenario && !dummy ? new HlsScenarioIndex(options.manifestUrl,
     definition.rules.some(rule => rule.target.resource === "init")) : undefined;
   const snapshots = new ManifestSnapshots<string>(128, !scenario);
@@ -324,6 +328,10 @@ export async function startHlsim(
             : ["playlist", "segment", "init"].includes(lookupResource(url)?.kind),
           lane);
       }
+      const reply = async (status: number, body: Buffer | string, headers: Record<string, string>) => {
+        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace))
+          send(res, status, body, headers, req.method);
+      };
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
           const failure = scenario?.decide({ kind: "manifest", trackId: "root", trackType: "root", key: "hls:manifest:root" }, req.headers.range, trace, req.method);
@@ -332,13 +340,7 @@ export async function startHlsim(
             /^(low|main)\/stream.m3u8$/gm,
             (_line, name) => `/live/${name}/stream.m3u8`,
           );
-          send(
-            res,
-            200,
-            rewritten,
-            { "Content-Type": "application/vnd.apple.mpegurl" },
-            req.method,
-          );
+          await reply(200, rewritten, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
         }
         const match = url.pathname.match(
@@ -354,13 +356,7 @@ export async function startHlsim(
           const profile = scenario?.timeline?.profile();
           const choice = snapshots.observe(url.pathname, timeline.playlist(match[1]));
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
-          send(
-            res,
-            200,
-            choice.value,
-            { "Content-Type": "application/vnd.apple.mpegurl" },
-            req.method,
-          );
+          await reply(200, choice.value, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
         }
         const sequence = Number(match[3]);
@@ -405,7 +401,7 @@ export async function startHlsim(
               : body.length - 1;
           if (start > finish || start >= body.length)
             throw new HttpError(416, "Range is outside the segment");
-          await faults.sendMedia(
+          await sendMedia(
             res,
             206,
             req.method === "HEAD" || scenario
@@ -427,7 +423,7 @@ export async function startHlsim(
         }
         if (req.method !== "HEAD" && !scenario)
           body = faults.corrupt(body, url.pathname, false, trace);
-        await faults.sendMedia(
+        await sendMedia(
           res,
           200,
           body,
@@ -451,13 +447,7 @@ export async function startHlsim(
         snapshots.held(resource.url) !== undefined
       ) {
         faults.frozen(trace);
-        send(
-          res,
-          200,
-          snapshots.held(resource.url),
-          { "Content-Type": "application/vnd.apple.mpegurl" },
-          req.method,
-        );
+        await reply(200, snapshots.held(resource.url), { "Content-Type": "application/vnd.apple.mpegurl" });
         return;
       }
       if (resource.kind === "playlist") snapshots.assertCapacity(resource.url);
@@ -495,7 +485,7 @@ export async function startHlsim(
       const held = resource.kind === "playlist" ? snapshots.held(resource.url) : undefined;
       if (held !== undefined) {
         faults.frozen(trace);
-        send(res, 200, held, { "Content-Type": "application/vnd.apple.mpegurl" }, req.method);
+        await reply(200, held, { "Content-Type": "application/vnd.apple.mpegurl" });
         return;
       }
       if (resource.kind === "playlist" && remote.status === 200) {
@@ -532,8 +522,8 @@ export async function startHlsim(
       )
         body = Buffer.alloc(16, 0xff);
       if (["segment", "init"].includes(resource.kind))
-        await faults.sendMedia(res, remote.status, body, headers, req.method, signal, trace, !scenario);
-      else send(res, remote.status, body, headers, req.method);
+        await sendMedia(res, remote.status, body, headers, req.method, signal, trace, !scenario);
+      else await reply(remote.status, body, headers);
     } catch (error) {
       if (!signal.aborted)
         trace.record("request.error", {

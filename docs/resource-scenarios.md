@@ -1,6 +1,6 @@
 # Manifest and initialization fault targeting
 
-Scenario HTTP rules can target media, manifests or initialization resources.
+Scenario HTTP/transport rules can target media, manifests or initialization resources.
 Omitting `target.resource` retains the original media-only behavior, fingerprints
 and seeded media choices. These are simulator HTTP checks; client playback and
 recovery outcomes remain specific to the player and its retry policy.
@@ -95,8 +95,8 @@ origin/credential restrictions and use the manifest's advertised init resources.
 
 HLS origin scenarios in this milestone support manifest/init HTTP rules only;
 media rules and network timelines there are rejected. Generated HLS continues
-supporting its existing media/timeline rules alongside manifest rules. This adds
-HTTP statuses, not targeted malformed manifests, transport hangs or key faults.
+supporting its existing media/timeline rules alongside manifest rules. These selectors also support [bounded body stalls and aborts](transport-scenarios.md).
+Targeted malformed manifests and key faults remain outside this scope.
 Other [scenario bounds and conflict rules](scenarios.md) continue to apply.
 
 ## Verify and retain evidence

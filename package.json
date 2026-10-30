@@ -46,6 +46,7 @@
     "notices:generate": "node scripts/third-party-notices.cjs --write",
     "notices:check": "node scripts/third-party-notices.cjs",
     "release:review": "node scripts/release-review.cjs",
+    "transport:verify": "npm run build && node scripts/verify-transport-scenarios.cjs",
     "resource:verify": "npm run build && node scripts/verify-resource-scenarios.cjs"
   },
   "dependencies": {

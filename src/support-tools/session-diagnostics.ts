@@ -12,7 +12,8 @@ export type DiagnosticFault =
   | "response.bandwidth"
   | "response.latency"
   | "manifest.freeze"
-  | "scenario.status";
+  | "scenario.status"
+  | "scenario.transport";
 type EventType =
   | "session.started"
   | "session.closed"
@@ -20,6 +21,12 @@ type EventType =
   | "request.resource"
   | "request.completed"
   | "request.cancelled"
+  | "request.aborted"
+  | "transport.headers"
+  | "transport.stalled"
+  | "transport.resumed"
+  | "transport.aborted"
+  | "transport.completed"
   | "request.error"
   | "origin.completed"
   | "fault.selected"
@@ -36,7 +43,7 @@ type EventType =
   | "scenario.closed";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
-type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error";
+type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline";
 export interface DiagnosticFields {
   scenarioId?: string;
   ruleId?: string;
@@ -59,6 +66,14 @@ export interface DiagnosticFields {
   mode?: "once" | "random" | "always";
   status?: number;
   bodyBytes?: number;
+  expectedBytes?: number;
+  headersMs?: number;
+  firstByteMs?: number;
+  lastByteMs?: number;
+  transportElapsedMs?: number;
+  afterBytes?: number;
+  stallMs?: number;
+  deadlineMs?: number;
   durationMs?: number;
   delayMs?: number;
   jitterMs?: number;
@@ -71,7 +86,9 @@ export interface DiagnosticFields {
     | "corrupt_body"
     | "corrupt_range"
     | "capture_manifest"
-    | "hold_manifest";
+    | "hold_manifest"
+    | "stall_body"
+    | "abort_body";
 }
 export interface DiagnosticEvent extends DiagnosticFields {
   schemaVersion: 1;
@@ -107,11 +124,13 @@ const values = {
     "response.bandwidth",
     "manifest.freeze",
     "scenario.status",
+    "scenario.transport",
   ],
   mode: ["once", "random", "always"],
   reason: [
     "client_disconnect",
     "session_shutdown",
+    "transport_deadline",
     "handler_error",
     "resource_rejected",
     "origin_failure",
@@ -124,6 +143,8 @@ const values = {
     "corrupt_range",
     "capture_manifest",
     "hold_manifest",
+    "stall_body",
+    "abort_body",
   ],
 };
 function allowedField(key: string, value: unknown): boolean {
@@ -157,7 +178,7 @@ function allowedField(key: string, value: unknown): boolean {
       Number.isInteger(value) && Number(value) >= 100 && Number(value) <= 599
     );
   return (
-    ["bodyBytes", "durationMs", "delayMs", "jitterMs", "bandwidthKbps"].includes(key) &&
+    ["bodyBytes", "expectedBytes", "headersMs", "firstByteMs", "lastByteMs", "transportElapsedMs", "afterBytes", "stallMs", "deadlineMs", "durationMs", "delayMs", "jitterMs", "bandwidthKbps"].includes(key) &&
     typeof value === "number" &&
     Number.isFinite(value) &&
     value >= 0
@@ -284,6 +305,14 @@ export class SessionDiagnostics {
       "mode",
       "status",
       "bodyBytes",
+      "expectedBytes",
+      "headersMs",
+      "firstByteMs",
+      "lastByteMs",
+      "transportElapsedMs",
+      "afterBytes",
+      "stallMs",
+      "deadlineMs",
       "durationMs",
       "delayMs",
       "jitterMs",
@@ -395,6 +424,8 @@ export class RequestTrace {
   private resourceFields: DiagnosticFields;
   private method: string;
   private outcome?: RequestOutcome;
+  private deliveryFields: DiagnosticFields = {};
+  delivery(fields: DiagnosticFields): void { Object.assign(this.deliveryFields, fields); }
   private observers: Array<(outcome: RequestOutcome) => void> = [];
   constructor(
     private diagnostics: SessionDiagnostics,
@@ -455,6 +486,7 @@ export class RequestTrace {
   record(event: EventType, fields: DiagnosticFields = {}): void {
     this.diagnostics.record(event, {
       ...this.resourceFields,
+      ...this.deliveryFields,
       ...fields,
       requestId: this.requestId,
       method: this.method,
@@ -481,7 +513,7 @@ export class RequestTrace {
       bodyBytes:
         this.method === "HEAD"
           ? 0
-          : Number(this.res.getHeader("content-length") ?? 0),
+          : this.deliveryFields.bodyBytes ?? Number(this.res.getHeader("content-length") ?? 0),
       durationMs: Math.round((performance.now() - this.started) * 1000) / 1000,
     });
     this.notify({
@@ -490,7 +522,7 @@ export class RequestTrace {
       bodyBytes:
         this.method === "HEAD"
           ? 0
-          : Number(this.res.getHeader("content-length") ?? 0),
+          : this.deliveryFields.bodyBytes ?? Number(this.res.getHeader("content-length") ?? 0),
     });
   }
   cancel(reason: CancelReason): void {
@@ -505,12 +537,19 @@ export class RequestTrace {
     this.notify({
       outcome: "cancelled",
       status: this.res.headersSent ? this.res.statusCode : undefined,
-      bodyBytes: 0,
+      bodyBytes: this.deliveryFields.bodyBytes ?? 0,
     });
+  }
+  abortResponse(): void {
+    if (this.terminal) return;
+    this.terminal = true;
+    for (const effect of this.effects) effect.finish();
+    this.record("request.aborted", { status: this.res.statusCode, durationMs: Math.round((performance.now() - this.started) * 1000) / 1000 });
+    this.notify({ outcome: "aborted", status: this.res.statusCode, bodyBytes: this.deliveryFields.bodyBytes ?? 0 });
   }
 }
 export interface RequestOutcome {
-  outcome: "completed" | "cancelled";
+  outcome: "completed" | "cancelled" | "aborted";
   status?: number;
   bodyBytes: number;
 }

@@ -40,6 +40,7 @@ use your existing Chrome installation.
 | `npm run network:verify` | Timed HLS/DASH profiles, pacing, byte preservation, manifest freeze/resume and identical seeded jitter on replay. | DASH needs Docker/pinned image; `--protocol hls` needs Node only; about 40 seconds. |
 | `npm run scenario:verify -- --protocol hls` | Generated HLS HTTP 404/retry scenario and diagnostics. | Node only. |
 | `npm run scenario:verify` | Both HLS/DASH media HTTP scenario checks. | Docker and pinned image. |
+| `npm run transport:verify` | 20 body-stall/abort HTTP cases for HLS/DASH media, manifests and init, including range observations and retry. | Node; real DASH needs Docker/pinned image; `--protocol hls` needs no Docker. |
 | `npm run resource:verify` | Eight manifest/init HTTP isolation and retry cases using a local HLS fMP4 origin and real DASH engine. | Node; DASH needs Docker/pinned image; `--protocol hls` needs no Docker. |
 | `npm run test:package` | Builds, packs locally, installs with production dependencies into a fresh temporary directory, invokes the executable, serves HLS media and control assets. | npm registry access for production dependencies; never publishes. |
 | `npm run roku:suite -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --case outage` | Sequential native HLS/DASH sustained media-outage evidence. | Dedicated physical Roku with tester 1.1.0 installed; Docker and pinned image; about six minutes. |
@@ -72,7 +73,8 @@ DASH ladder. Stop sessions first. [Provenance](../assets/README.md).
 
 [CI workflow](https://github.com/rdaci23/hls-dash-live-sim/blob/main/.github/workflows/ci.yml) runs on pushes to `main`, pull requests
 and manual dispatch. Linux/macOS matrix jobs run docs, types, regular tests, Roku
-compilation, HLS HTTP scenarios and the packaged-CLI smoke. Separate Linux jobs
+compilation, HLS HTTP scenarios and the packaged-CLI smoke. The DASH engine job also runs the
+[bounded transport matrix](transport-scenarios.md) and retains its evidence. Separate Linux jobs
 run Chrome control UI tests and real DASH integration plus both HTTP scenarios.
 The DASH integration job also runs [network timeline replay](network-scenarios.md)
 and the [simulator freeze/resume check](manifest-freeze.md)

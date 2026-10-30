@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { HttpError } from "./safe-http.js";
 import { getFaultConfig } from "./live-stream-fault-config.js";
 import { parseTimeline, ScenarioTimeline, TimelinePhase } from "./scenario-timeline.js";
+import type { ServerResponse } from "node:http";
+import { TransportDelivery, TransportFault } from "./transport-fault.js";
 import type {
   RequestTrace,
   SessionDiagnostics,
@@ -34,7 +36,8 @@ export interface ScenarioRule {
   beforeMs?: number;
   probability: number;
   maxApplications: number;
-  status: number;
+  status?: number;
+  transport?: TransportFault;
   expectRetry: boolean;
 }
 export interface ScenarioDefinition {
@@ -91,6 +94,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         "probability",
         "maxApplications",
         "status",
+        "transport",
         "expectRetry",
       ],
       label,
@@ -166,7 +170,23 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       fail(`${label} probability must be from 0 to 1`);
     if (!integer(maxApplications, 1, 10000))
       fail(`${label} maxApplications must be from 1 to 10000`);
-    if (!statuses.includes(rule.status))
+    let transport: TransportFault | undefined;
+    if (rule.transport !== undefined) {
+      object(rule.transport, ["kind", "afterBytes", "durationMs", "deadlineMs"], `${label} transport`);
+      const value = rule.transport;
+      if (!["stall", "abort"].includes(value.kind) || !integer(value.afterBytes, 0, 8 * 1024 * 1024))
+        fail(`${label} transport requires kind stall/abort and afterBytes from 0 to 8388608`);
+      const deadlineMs = value.deadlineMs ?? 15000;
+      if (!integer(deadlineMs, 1, 60000)) fail(`${label} transport deadlineMs must be from 1 to 60000`);
+      if (value.kind === "stall" && (!integer(value.durationMs, 1, 30000) || value.durationMs >= deadlineMs))
+        fail(`${label} stall durationMs must be from 1 to 30000 and smaller than deadlineMs`);
+      if (value.kind === "abort" && value.durationMs !== undefined)
+        fail(`${label} abort does not accept durationMs`);
+      if (rule.status !== undefined || outage || timeline)
+        fail(`${label} transport cannot combine with status, outage or a network timeline`);
+      transport = { kind: value.kind, afterBytes: value.afterBytes,
+        ...(value.kind === "stall" ? { durationMs: value.durationMs } : {}), deadlineMs };
+    } else if (!statuses.includes(rule.status))
       fail(`${label} status must be a supported HTTP failure status`);
     if (rule.expectRetry !== undefined && typeof rule.expectRetry !== "boolean")
       fail(`${label} expectRetry must be boolean`);
@@ -207,7 +227,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       ...(beforeMs !== undefined ? { beforeMs } : {}),
       probability,
       maxApplications,
-      status: rule.status,
+      ...(transport ? { transport } : { status: rule.status }),
       expectRetry: rule.expectRetry ?? false,
     };
   });
@@ -271,6 +291,24 @@ export class ScenarioEngine {
   private invalid?:
     "manual_fault_conflict" | "capacity_exceeded" | "unidentified_media";
   private closed = false;
+  private deliveries = new WeakMap<RequestTrace, { fault: TransportFault; effect: { prepare(): void }; ready: boolean }>();
+  private transport = new TransportDelivery();
+  transportStatus() { return this.transport.snapshot(); }
+  async deliver(
+    res: ServerResponse, status: number, body: Buffer | string,
+    headers: Record<string, string>, method: string,
+    signal: AbortSignal, trace: RequestTrace,
+  ): Promise<boolean> {
+    const selected = this.deliveries.get(trace);
+    if (!selected || method !== "GET") return false;
+    // Preparation is deferred until a valid body exists. Origin errors, oversized
+    // offsets and capacity rejection cannot be mistaken for an applied action.
+    await this.transport.send(selected.fault, res, status, body, headers, signal, trace, () => {
+      selected.ready = true;
+      selected.effect.prepare();
+    });
+    return true;
+  }
   constructor(
     definition: ScenarioDefinition,
     private diagnostics: SessionDiagnostics,
@@ -492,18 +530,21 @@ export class ScenarioEngine {
         scenarioId: this.scenarioId,
         ruleId,
         faultId: "fault_" + hash(`${this.scenarioId}:${index}`).slice(0, 32),
-        fault: "scenario.status",
+        fault: rule.transport ? "scenario.transport" : "scenario.status",
         mode:
           rule.maxApplications === 1 && rule.kind !== "outage"
             ? "once"
             : rule.probability < 1
               ? "random"
               : "always",
-        action: "response",
-        status: rule.status,
+        action: rule.transport ? (rule.transport.kind === "stall" ? "stall_body" : "abort_body") : "response",
+        ...(rule.transport ? { afterBytes: rule.transport.afterBytes,
+          stallMs: rule.transport.durationMs, deadlineMs: rule.transport.deadlineMs } : { status: rule.status }),
       });
       if (rule.maxApplications === 1 && rule.kind !== "outage") effect.consumed();
-      effect.prepare();
+      const delivery = rule.transport ? { fault: rule.transport, effect, ready: false } : undefined;
+      if (delivery) this.deliveries.set(trace, delivery);
+      else effect.prepare();
       trace.record("scenario.matched", {
         ruleId,
         applications: state.selected,
@@ -511,7 +552,8 @@ export class ScenarioEngine {
       trace.onOutcome((outcome) => {
         if (outcome.outcome === "cancelled")
           state.failure = "injected_response_cancelled";
-        else if (outcome.status !== rule.status)
+        else if (delivery ? (!delivery.ready || ![200, 206].includes(outcome.status) ||
+          outcome.outcome !== (rule.transport.kind === "abort" ? "aborted" : "completed")) : outcome.status !== rule.status)
           state.failure = "unexpected_fault_response";
         else state.applied++;
         trace.record("scenario.result", {
@@ -519,7 +561,7 @@ export class ScenarioEngine {
           result: this.stateStatus(index),
         });
       });
-      return rule.status; // Ordered first match wins; one response cannot have two statuses.
+      return rule.status ?? 0; // First match owns either status or body delivery.
     }
     return 0;
   }
@@ -569,6 +611,7 @@ export class ScenarioEngine {
         probability: rule.probability,
         maxApplications: rule.maxApplications,
         status: rule.status,
+        ...(rule.transport ? { transport: rule.transport } : {}),
         expectRetry: rule.expectRetry,
         selected: state.selected,
         applied: state.applied,
@@ -602,6 +645,7 @@ export class ScenarioEngine {
       trackedDownloads: this.attempts.size,
       unidentifiedMediaRequests: this.unidentified,
       tracks: [...this.tracks].sort(),
+      ...(this.definition.rules.some(rule => rule.transport) ? { transport: this.transportStatus() } : {}),
       rules,
       ...(timeline ? { timeline, profile: this.timeline.profile() } : {}),
     });

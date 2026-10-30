@@ -87,7 +87,9 @@ keep cancellation separate from completion.
 | `fault.applied`                      | A fault response finished writing, or an artificial delay completed. The `action` distinguishes a response override, body/range corruption, delay, manifest capture or manifest hold.                              |
 | `fault.cancelled`                    | A selected effect did not finish. For example, the client disconnected during artificial latency.                                                                                                                  |
 | `request.completed`                  | The response finished writing locally; status, response body size and elapsed time are recorded. This is not a playback/recovery assertion or proof the client consumed the body. HEAD response body size is zero. |
-| `request.cancelled`                  | The client disconnected or the session shut down before the response finished. A status is present only if headers had already been sent. No synthetic HTTP 499 is sent.                                           |
+| `request.cancelled`                  | The client disconnected, session shut down, or transport deadline expired before the response finished. A status is present only if headers had already been sent. No synthetic HTTP 499 is sent.                                           |
+| `request.aborted` | An explicitly injected connection abort, with advertised versus locally written bytes; it is distinct from client cancellation and is not a completed response. |
+| `transport.headers` / `transport.stalled` / `transport.resumed` / `transport.completed` / `transport.aborted` | Downstream body phase, expected/written bytes and delivery-relative timing. [Field meanings and verification](transport-scenarios.md). |
 | `request.error`                      | A safe reason code identifies a rejected resource or failed origin request. Raw exception messages are omitted.                                                                                                    |
 
 Cancellation during artificial delay leaves later one-shot faults unconsumed.

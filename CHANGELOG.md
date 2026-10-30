@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Bounded downstream body stalls and connection aborts for HLS/DASH media,
+  manifests and initialization, with exact byte offsets, deadlines, cancellation
+  cleanup, same-resource retry assertions and a 20-case HTTP verifier.
+  [Scope and examples](docs/transport-scenarios.md).
+
 - Generated HLS LIVE/EVENT/VOD samples with a 180p/360p H.264/AAC ladder, sliding
   live windows, increasing media sequences and explicit loop discontinuities.
 - Live DASH through a digest-pinned livesim2 engine, separate video/audio, local

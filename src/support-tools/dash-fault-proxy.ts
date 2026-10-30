@@ -145,10 +145,14 @@ export async function startDashFaultProxy(
         send(res, failure, "Injected DASH resource failure", {}, req.method);
         return;
       }
+      const reply = async (status: number, body: Buffer | string, headers: Record<string, string>) => {
+        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace))
+          send(res, status, body, headers, req.method);
+      };
       const cached = manifest ? snapshots.held(manifestKey) : undefined;
       if (cached) {
         faults.frozen(trace, false, profile);
-        send(res, cached.status, cached.body, cached.headers, req.method);
+        await reply(cached.status, cached.body, cached.headers);
         return;
       }
       if (manifest) snapshots.assertCapacity(manifestKey);
@@ -169,7 +173,7 @@ export async function startDashFaultProxy(
       const held = manifest ? snapshots.held(manifestKey) : undefined;
       if (held) {
         faults.frozen(trace, false, latestProfile);
-        send(res, held.status, held.body, held.headers, req.method);
+        await reply(held.status, held.body, held.headers);
         return;
       }
       if (manifest) {
@@ -197,6 +201,7 @@ export async function startDashFaultProxy(
               trace,
             )
           : remote.body;
+      if (await scenario?.deliver(res, remote.status, body, remote.headers, req.method, signal, trace)) return;
       if (segment)
         await faults.sendMedia(res, remote.status, body, remote.headers, req.method, signal, trace, !scenario || !!scenario.timeline);
       else send(res, remote.status, body, remote.headers, req.method);

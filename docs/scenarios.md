@@ -58,17 +58,22 @@ the response. Later rules cannot assign a second status to that request.
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `version`              | Must be 1. Unknown fields fail validation.                                                                                                                                                                                                   |
 | `seed`                 | Unsigned 32-bit integer, default 0.                                                                                                                                                                                                          |
-| `rules`                | One to 64 HTTP rules, or an empty array when a timeline is present.                                                                                                                                                                                                                             |
+| `rules`                | One to 64 HTTP/transport rules, or an empty array when a timeline is present.                                                                                                                                                                                                                             |
 | `id`                   | Optional unique human label. Labels are omitted from reports and logs; rules are identified as `rule:0`, `rule:1`, etc.                                                                                                                      |
 | `target.resource` | Optional media (default), manifest or init. Omission preserves existing behavior. |
 | `target.track` | Media: video/audio/text or an alias such as video:0. Manifest/init also accept any; root selects a root manifest or HLS direct-playlist init. |
 | `target.segment`       | `next`, `each`, or an exact locator such as `{"kind":"number","value":"42"}` / `{"kind":"time","value":"22034830098432"}`. Values are unsigned 64-bit decimal strings.                                                                       |
 | `attempts`             | Eligible request attempts, default `[1]`; unique integers from 1 to 1000. Timed outages require `"all"` (their default).                                                                                                                                                                    |
-| `status`               | An explicit failure status: 403, 404, 408, 429, 500, 502, 503 or 504.                                                                                                                                                                        |
+| `status`               | Mutually exclusive with `transport`. An explicit failure status: 403, 404, 408, 429, 500, 502, 503 or 504.                                                                                                                                                                        |
 | `maxApplications`      | Selection cap from 1 to 10000, default 1. Reserved when selected so concurrent requests cannot exceed the cap.                                                                                                                               |
 | `probability`          | From 0 to 1, default 1. Uses the seed rather than global random state.                                                                                                                                                                       |
 | `afterMs` / `beforeMs` | Inclusive start / exclusive end in monotonic elapsed milliseconds since the proxy scenario session starts; maximum one day. `afterMs` defaults to 0. These are session-time gates; content presentation-time scheduling remains future work. |
 | `expectRetry`          | Default false. Requires one deterministic first-attempt fault on `next` or an exact segment, with `maxApplications: 1`, `attempts: [1]` and `probability: 1`.                                                                                |
+
+Rules may instead provide a bounded `transport` action for a headers-only or
+mid-body stall, or an incomplete connection abort. The same resource selectors
+and retry identity apply. Transport actions cannot combine with `status`, an
+outage or a network timeline. [Definition, bounds and verification](transport-scenarios.md).
 
 Rules may explicitly select `target.resource: "manifest"` or `"init"`; omission
 means media and preserves existing fingerprints. Manifest targets also accept
@@ -128,7 +133,7 @@ explicit player retry profile and rendered browser acceptance checks.
 
 Each rule has selected/applied counts. With `expectRetry`, passing requires the
 injected response to finish and the immediately following attempt of that exact
-download to start after that failure and finish with nonempty HTTP 200/206 media bytes.
+download to start after that failure and finish with nonempty HTTP 200/206 bytes.
 A concurrent duplicate cannot satisfy a retry assertion. Another segment, track
 or byte range cannot satisfy the assertion. Cancelled injections, failed retries
 and empty success responses fail the rule. Stopping before the assertion is met
@@ -165,7 +170,7 @@ responses. Reports remain inspectable through `session.scenario.report()` after
   Conflicting requests during a scenario invalidate the run. Timeline-owned
   sessions require them off even after their final phase. Settled results are
   retained and completed finite scenarios allow healthy playback to continue.
-- HTTP statuses and optional timed bandwidth, seeded jitter and manifest freeze
+- HTTP statuses, bounded downstream body stalls/aborts, and optional timed bandwidth, seeded jitter and manifest freeze
   are supported. Scenario-driven fixed latency, corruption, DRM, ads and
   device-specific recovery actions remain later work.
 - Active attempt history is capped at 10000 downloads. The DASH index is bounded

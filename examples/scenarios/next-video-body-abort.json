@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": { "track": "video", "segment": "next" },
+      "transport": { "kind": "abort", "afterBytes": 1024, "deadlineMs": 15000 },
+      "expectRetry": true
+    }
+  ]
+}

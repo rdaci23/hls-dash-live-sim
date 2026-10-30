@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": { "resource": "manifest", "track": "root", "segment": "next" },
+      "transport": { "kind": "stall", "afterBytes": 0, "durationMs": 3000, "deadlineMs": 15000 },
+      "expectRetry": false
+    }
+  ]
+}
