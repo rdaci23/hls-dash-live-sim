@@ -64,7 +64,7 @@ async function ready(url, child, logs) {
         assert.ok(included.has(resolved), `Packaged documentation link missing: ${file} -> ${target}`);
       }
     }
-    assert.ok(files.includes('examples/scenarios/next-video-retry.json'));
+    for (const file of ['examples/scenarios/next-video-retry.json', 'examples/scenarios/next-manifest-retry.json', 'examples/scenarios/next-video-init-retry.json', 'docs/resource-scenarios.md']) assert.ok(files.includes(file), 'Missing scenario material: ' + file);
     assert.ok(!files.some(file => /(?:^|\/)(?:\.env(?:\.|$)|auth[^/]*\.json$|\.hls-dash-|node_modules\/|output\/|\.github\/)/.test(file)), 'archive excludes local configuration, credentials and CI files');
     execFileSync(npm, ['install', '--prefix', directory, '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: directory, stdio: 'pipe' });
     const installed = path.join(directory, 'node_modules/hls-dash-live-sim');

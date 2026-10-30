@@ -10,7 +10,7 @@ import {
 import { getFaultConfig } from "./live-stream-fault-config.js";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
-import { ScenarioEngine, ScenarioDefinition } from "./scenario.js";
+import { ScenarioEngine, ScenarioDefinition, parseScenario } from "./scenario.js";
 import { DashScenarioIndex } from "./dash-scenario-index.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
 export interface DashFaultProxyOptions {
@@ -30,6 +30,11 @@ export interface DashFaultProxy {
 export async function startDashFaultProxy(
   options: DashFaultProxyOptions,
 ): Promise<DashFaultProxy> {
+  const definition = options.scenario ? parseScenario(options.scenario) : undefined;
+  if (definition?.rules.some(rule => rule.target.resource === "manifest" && !["root", "any"].includes(rule.target.track)))
+    throw new Error("DASH has one root MPD; manifest targets must use track root or any");
+  if (definition?.rules.some(rule => rule.target.resource === "init" && rule.target.track === "root"))
+    throw new Error("DASH initialization targets require a declared track or any, not root");
   const upstreamBase = `http://127.0.0.1:${options.upstreamPort}`;
   const policy = new OriginPolicy(upstreamBase);
   const diagnostics = new SessionDiagnostics("dash", {
@@ -38,13 +43,16 @@ export async function startDashFaultProxy(
   });
   let scenario: ScenarioEngine | undefined;
   try {
-    if (options.scenario)
-      scenario = new ScenarioEngine(options.scenario, diagnostics);
+    if (definition)
+      scenario = new ScenarioEngine(definition, diagnostics);
   } catch (error) {
     diagnostics.close();
     throw error;
   }
-  const scenarioIndex = scenario ? new DashScenarioIndex() : undefined;
+  const needsMediaIdentity = scenario && (scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsIndex = scenario && (needsMediaIdentity || scenario.definition.rules.some(rule => rule.target.resource === "init"));
+  const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
+    scenario.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
   const faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
@@ -106,30 +114,22 @@ export async function startDashFaultProxy(
       const segment = /\.(m4s|mp4|cmfv|cmfa|m4v|m4a|m4i)$/i.test(
         request.pathname,
       );
+      const logical = manifest
+        ? { kind: "manifest" as const, trackId: "root", trackType: "root" as const, key: `dash:manifest:${request.pathname}` }
+        : scenarioIndex?.resolve(upstreamBase + request.pathname + request.search);
       trace.resource(
         upstreamBase + request.pathname + request.search,
-        manifest ? "manifest" : segment ? "segment" : "other",
+        manifest ? "manifest" : logical?.kind === "init" ? "init" : segment ? "segment" : "other",
         "livesim2",
       );
       if (scenario) scenario.assertCompatible();
       // Media/manifest latency faults must not skew the UTC reference itself.
       if ((!scenario || scenario.timeline) && (manifest || segment)) {
-        const identity = scenarioIndex?.resolve(upstreamBase + request.pathname + request.search);
-        await faults.delay(signal, trace, req.method, true, manifest ? `manifest:${request.pathname}` : `${identity?.kind ?? "media"}:${identity?.trackId ?? "unknown"}`);
+        await faults.delay(signal, trace, req.method, true, manifest ? `manifest:${request.pathname}` : `${logical?.kind ?? "media"}:${logical?.trackId ?? "unknown"}`);
       }
       const profile = scenario?.timeline?.profile();
-      const cached = manifest ? snapshots.held(manifestKey) : undefined;
-      if (cached) {
-        faults.frozen(trace, false, profile);
-        send(res, cached.status, cached.body, cached.headers, req.method);
-        return;
-      }
-      if (manifest) snapshots.assertCapacity(manifestKey);
-      const logical = scenarioIndex?.resolve(
-        upstreamBase + request.pathname + request.search,
-      );
       if (
-        scenario &&
+        needsMediaIdentity &&
         !scenario.settled &&
         segment &&
         !logical &&
@@ -142,9 +142,16 @@ export async function startDashFaultProxy(
           ? faults.segmentStatus(request.pathname, trace)
           : 0;
       if (failure) {
-        send(res, failure, "Injected DASH segment failure", {}, req.method);
+        send(res, failure, "Injected DASH resource failure", {}, req.method);
         return;
       }
+      const cached = manifest ? snapshots.held(manifestKey) : undefined;
+      if (cached) {
+        faults.frozen(trace, false, profile);
+        send(res, cached.status, cached.body, cached.headers, req.method);
+        return;
+      }
+      if (manifest) snapshots.assertCapacity(manifestKey);
       const remote = await fetchRemote(
         upstreamBase + request.pathname + request.search,
         policy,

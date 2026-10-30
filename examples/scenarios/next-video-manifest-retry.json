@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "resource": "manifest",
+        "track": "video:0",
+        "segment": "next"
+      },
+      "status": 503,
+      "expectRetry": true
+    }
+  ]
+}

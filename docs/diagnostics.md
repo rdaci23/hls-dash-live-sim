@@ -58,7 +58,8 @@ request.completed    status 404
 ```
 
 These IDs identify observations and activations. With an active [scenario](scenarios.md),
-recognized media also carries logical `trackId`, `segmentId`, `segmentOrdinal` and
+recognized targeted resources also carry `targetKind` (`media`, `manifest`, `init`),
+logical `trackId` (`root` for a root manifest), `segmentId`, `segmentOrdinal` and
 `attempt` fields. Scenario selection/results add a `ruleId` and definition
 fingerprint (`scenarioId`). `scenario.attempt`, `scenario.matched` and
 `scenario.result` events connect that identity with the HTTP outcome.
@@ -79,7 +80,7 @@ keep cancellation separate from completion.
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `session.started` / `session.closed` | Proxy diagnostic recording opened / shut down after pending handlers drained. These do not cover Docker startup or manifest preflight.                                                                             |
 | `request.started`                    | The proxy accepted an HTTP request and generated its ID.                                                                                                                                                           |
-| `request.resource`                   | The proxy classified the target as manifest, segment, key or other, with an opaque resource ID and source kind.                                                                                                    |
+| `request.resource`                   | The proxy classified the target as manifest, segment, init, key or other, with an opaque resource ID and source kind.                                                                                                    |
 | `origin.completed`                   | The full upstream response was buffered, with its status and body size.                                                                                                                                            |
 | `fault.selected`                     | A fault matched the request. This alone does not prove an effect was applied.                                                                                                                                      |
 | `fault.consumed`                     | A one-shot was consumed at selection. HEAD segment/key requests do not consume one-shots.                                                                                                                          |

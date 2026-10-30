@@ -25,6 +25,7 @@ export class DashScenarioIndex {
   constructor(
     private clock = () => performance.now(),
     private capacity = 10000,
+    private strictInitialization = false,
   ) {}
   private canonical(value: string): string {
     const url = new URL(value);
@@ -67,7 +68,8 @@ export class DashScenarioIndex {
       if (
         previous &&
         previous.key !== media.key &&
-        (previous.kind !== "init" || media.kind !== "init")
+        (previous.kind !== "init" || media.kind !== "init" ||
+          (this.strictInitialization && previous.trackId !== media.trackId))
       )
         problem(); // Ambiguous media must never be targeted by guessing.
       next.set(key, media);
@@ -151,7 +153,7 @@ export class DashScenarioIndex {
             kind: "init",
             trackId,
             trackType,
-            key: `dash:${trackId}:init:${scope}`,
+            key: `dash:${trackId}:init:${this.canonical(local(init).href)}`,
           });
           if (!Object.hasOwn(template, "SegmentTimeline")) problem();
           const timeline = list(template.SegmentTimeline?.S);

@@ -34,7 +34,7 @@ type EventType =
   | "scenario.result"
   | "scenario.profile"
   | "scenario.closed";
-type ResourceKind = "manifest" | "segment" | "key" | "other";
+type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error";
 export interface DiagnosticFields {
@@ -43,6 +43,7 @@ export interface DiagnosticFields {
   phaseId?: string;
   manifestFreeze?: boolean;
   trackId?: string;
+  targetKind?: "media" | "manifest" | "init";
   segmentId?: string;
   segmentOrdinal?: number;
   attempt?: number;
@@ -92,7 +93,8 @@ export const TRACE_HEADERS =
 const values = {
   result: ["pending", "passed", "failed", "incomplete"],
   method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
-  resourceKind: ["manifest", "segment", "key", "other"],
+  resourceKind: ["manifest", "segment", "init", "key", "other"],
+  targetKind: ["media", "manifest", "init"],
   resourceSource: ["sample", "origin", "livesim2", "local"],
   fault: [
     "segment.missing",
@@ -146,7 +148,7 @@ function allowedField(key: string, value: unknown): boolean {
   if (key === "manifestFreeze") return typeof value === "boolean";
   if (key === "trackId")
     return (
-      typeof value === "string" && /^(video|audio|text):\d{1,3}$/.test(value)
+      typeof value === "string" && /^(?:root|(video|audio|text):\d{1,3})$/.test(value)
     );
   if (key === "attempt" || key === "applications" || key === "segmentOrdinal")
     return Number.isSafeInteger(value) && Number(value) >= 1;
@@ -266,6 +268,7 @@ export class SessionDiagnostics {
       "phaseId",
       "manifestFreeze",
       "trackId",
+      "targetKind",
       "segmentId",
       "segmentOrdinal",
       "attempt",
@@ -429,7 +432,7 @@ export class RequestTrace {
   logical(
     fields: Pick<
       DiagnosticFields,
-      "scenarioId" | "trackId" | "segmentId" | "segmentOrdinal" | "attempt"
+      "scenarioId" | "trackId" | "targetKind" | "segmentId" | "segmentOrdinal" | "attempt"
     >,
   ): void {
     Object.assign(this.resourceFields, fields);

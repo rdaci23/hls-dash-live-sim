@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { HttpError, OriginPolicy } from "./safe-http.js";
 import { mediaSegments, rewritePlaylist } from "./hls-playlist.js";
 
-type Kind = "playlist" | "segment" | "key";
+type Kind = "playlist" | "segment" | "init" | "key";
 interface Resource {
   url: string;
   kind: Kind;

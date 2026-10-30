@@ -15,6 +15,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
   live windows, increasing media sequences and explicit loop discontinuities.
 - Live DASH through a digest-pinned livesim2 engine, separate video/audio, local
   UTC synchronization and an optional two-rendition `--asset abr` sample.
+- Manifest and initialization-only HTTP scenarios for both protocols, including
+  HLS root/child playlists, advertised fMP4 initialization, late refresh gates,
+  same-resource retry assertions and an eight-case resource-isolation verifier.
+  [Scope and examples](docs/resource-scenarios.md).
 - Manual malformed-media, HTTP 403/404, latency and manifest-freeze controls;
   shared media bandwidth limits and response jitter for both protocols.
 - Seeded HTTP retry rules, sustained media outages and scheduled bandwidth,

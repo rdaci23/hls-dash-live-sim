@@ -17,6 +17,8 @@ release requirement.
 - [x] Valid generated HLS/DASH baselines, local real-time DASH UTC default and
   supported-subset validation instead of silent unsupported behavior.
 - [x] Repeatable HTTP status scenarios and correlated request/fault diagnostics.
+- [x] Explicit manifest/init HTTP targeting, late refresh gates, local fMP4 HLS
+  origin and real-engine resource isolation checks; [scope](resource-scenarios.md).
 - [x] Recorded full browser playback/recovery gates for both protocols.
 - [x] Recorded healthy/startup-404/during-playback-404 passes on Roku Express 4K
   3940EU, OS 16.0.4 build 842, using a standalone native tester.

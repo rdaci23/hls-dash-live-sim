@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { HlsResourceRegistry } from "./hls-resource-registry.js";
+import { HlsScenarioIndex } from "./hls-scenario-index.js";
 import { execFileSync, spawn } from "node:child_process";
 import {
   OriginPolicy,
@@ -153,10 +154,12 @@ export async function startHlsim(
     applyConfigOverride({ logging: { verbose: options.verbose } });
   if (options.proxy === false) return startVod(options, host, port);
   const dummy = options.dummyContent ?? !options.manifestUrl;
-  if (definition && !dummy)
+  if (definition && !dummy && (definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new Error(
-      "HLS scenarios currently require generated sample media; origin-proxy segment identity is not supported yet",
+      "HLS media/timeline scenarios require generated sample media; origin scenarios support only manifest and init targets",
     );
+  if (definition && dummy && definition.rules.some(rule => rule.target.resource === "init"))
+    throw new Error("Generated HLS MPEG-TS has no initialization resource; use a proxied fMP4 HLS origin with EXT-X-MAP for init scenarios");
   if (!dummy && !options.manifestUrl)
     throw new Error("Remote proxy mode requires --manifest-url");
   if (dummy && options.manifestUrl && options.preserveManifest)
@@ -215,7 +218,7 @@ export async function startHlsim(
   const resources = new HlsResourceRegistry();
   function lookupResource(
     url: URL,
-  ): { url: string; kind: "playlist" | "segment" | "key" } | undefined {
+  ): { url: string; kind: "playlist" | "segment" | "init" | "key" } | undefined {
     if (url.pathname === "/proxy.m3u8")
       return { url: options.manifestUrl, kind: "playlist" };
     else if (["/pl", "/seg", "/key"].includes(url.pathname))
@@ -243,6 +246,8 @@ export async function startHlsim(
     throw error;
   }
   const faults = new FaultRuntime(Math.random, scenario?.timeline);
+  const scenarioIndex = scenario && !dummy ? new HlsScenarioIndex(options.manifestUrl,
+    definition.rules.some(rule => rule.target.resource === "init")) : undefined;
   const snapshots = new ManifestSnapshots<string>(128, !scenario);
   const unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const transport = sessionServer(async (req, res, signal, trace) => {
@@ -316,11 +321,13 @@ export async function startHlsim(
           : `manifest:${url.pathname}`;
         await faults.delay(signal, trace, req.method,
           dummy ? /\.(m3u8|ts)$/.test(url.pathname)
-            : ["playlist", "segment"].includes(lookupResource(url)?.kind),
+            : ["playlist", "segment", "init"].includes(lookupResource(url)?.kind),
           lane);
       }
       if (dummy) {
         if (url.pathname === "/proxy.m3u8") {
+          const failure = scenario?.decide({ kind: "manifest", trackId: "root", trackType: "root", key: "hls:manifest:root" }, req.headers.range, trace, req.method);
+          if (failure) { send(res, failure, "Injected HLS manifest failure", {}, req.method); return; }
           const rewritten = master.replace(
             /^(low|main)\/stream.m3u8$/gm,
             (_line, name) => `/live/${name}/stream.m3u8`,
@@ -341,6 +348,9 @@ export async function startHlsim(
         const timeline = timelines.get(match[1]);
         if (!timeline) throw new HttpError(404, "Unknown rendition");
         if (match[2] === "stream.m3u8") {
+          const trackId = `video:${variants.findIndex(variant => variant.uri.startsWith(match[1] + "/"))}`;
+          const failure = scenario?.decide({ kind: "manifest", trackId, trackType: "video", key: `hls:manifest:${match[1]}` }, req.headers.range, trace, req.method);
+          if (failure) { send(res, failure, "Injected HLS manifest failure", {}, req.method); return; }
           const profile = scenario?.timeline?.profile();
           const choice = snapshots.observe(url.pathname, timeline.playlist(match[1]));
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
@@ -429,6 +439,13 @@ export async function startHlsim(
       const resource = lookupResource(url);
       if (!resource) throw new HttpError(404, "Unknown proxy resource");
       policy.check(resource.url);
+      const identified = scenarioIndex?.resolve(resource.url);
+      // EXT-X-MAP and media can share a file through different byte ranges.
+      // The advertised route kind, not just its origin URI, must agree.
+      const logical = (resource.kind === "playlist" && identified?.kind === "manifest") ||
+        (resource.kind === "init" && identified?.kind === "init") ? identified : undefined;
+      const scenarioFailure = scenario?.decide(logical, req.headers.range, trace, req.method);
+      if (scenarioFailure) { send(res, scenarioFailure, "Injected HLS resource failure", {}, req.method); return; }
       if (
         resource.kind === "playlist" &&
         snapshots.held(resource.url) !== undefined
@@ -446,9 +463,9 @@ export async function startHlsim(
       if (resource.kind === "playlist") snapshots.assertCapacity(resource.url);
       const config = getFaultConfig();
       const failure =
-        req.method === "HEAD"
+        scenario || req.method === "HEAD"
           ? 0
-          : resource.kind === "segment"
+          : ["segment", "init"].includes(resource.kind)
             ? faults.segmentStatus(resource.url, trace)
             : resource.kind === "key" &&
                 faults.trigger(
@@ -488,12 +505,13 @@ export async function startHlsim(
           resource.url,
           policy,
         );
+        if (scenarioIndex && !scenario.settled) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
         const choice = snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");
         headers["Content-Type"] = "application/vnd.apple.mpegurl";
         headers["cache-control"] = "no-store";
-      } else if (resource.kind === "segment" && req.method !== "HEAD")
+      } else if (["segment", "init"].includes(resource.kind) && req.method !== "HEAD" && !scenario)
         body = faults.corrupt(
           remote.body,
           resource.url,
@@ -501,6 +519,7 @@ export async function startHlsim(
           trace,
         );
       else if (
+        !scenario &&
         resource.kind === "key" &&
         req.method !== "HEAD" &&
         faults.trigger(
@@ -512,7 +531,7 @@ export async function startHlsim(
         )
       )
         body = Buffer.alloc(16, 0xff);
-      if (resource.kind === "segment")
+      if (["segment", "init"].includes(resource.kind))
         await faults.sendMedia(res, remote.status, body, headers, req.method, signal, trace, !scenario);
       else send(res, remote.status, body, headers, req.method);
     } catch (error) {

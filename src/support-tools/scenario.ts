@@ -10,10 +10,11 @@ import type {
 } from "./session-diagnostics.js";
 
 export type TrackType = "video" | "audio" | "text";
+export type ScenarioResourceKind = "media" | "manifest" | "init";
 export interface LogicalMedia {
-  kind: "media" | "init";
+  kind: ScenarioResourceKind;
   trackId: string;
-  trackType: TrackType;
+  trackType: TrackType | "root";
   /** Internal identity only; may contain source paths. Never export it. */
   key: string;
   locator?: { kind: "number" | "time"; value: string };
@@ -23,6 +24,8 @@ export interface ScenarioRule {
   kind?: "outage";
   id?: string;
   target: {
+    /** Omission preserves the original media-only schema and fingerprints. */
+    resource?: ScenarioResourceKind;
     track: string;
     segment: "next" | "each" | { kind: "number" | "time"; value: string };
   };
@@ -101,15 +104,22 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         fail("rule IDs must be unique simple labels up to 64 characters");
       ids.add(rule.id);
     }
-    object(rule.target, ["track", "segment"], `${label} target`);
+    object(rule.target, ["resource", "track", "segment"], `${label} target`);
+    const resource = rule.target.resource === undefined ? "media" : rule.target.resource;
+    if (!["media", "manifest", "init"].includes(resource))
+      fail(`${label} resource must be media, manifest or init`);
     if (
       typeof rule.target.track !== "string" ||
-      !/^(video|audio|text)(?::(?:0|[1-9]\d{0,2}))?$/.test(rule.target.track)
+      (!/^(video|audio|text)(?::(?:0|[1-9]\d{0,2}))?$/.test(rule.target.track) &&
+        !(resource !== "media" && rule.target.track === "any") &&
+        !(resource !== "media" && rule.target.track === "root"))
     )
       fail(
-        `${label} track must be video/audio/text or an alias such as video:0`,
+        `${label} track must match the resource: video/audio/text or an alias; manifest/init also accept root or any`,
       );
     const segment = rule.target.segment;
+    if (resource !== "media" && segment !== "next" && segment !== "each")
+      fail(`${label} manifest/init segment must be next or each`);
     if (segment !== "next" && segment !== "each") {
       object(segment, ["kind", "value"], `${label} segment`);
       if (
@@ -184,6 +194,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       ...(rule.id ? { id: rule.id } : {}),
       ...(outage ? { kind: "outage" as const } : {}),
       target: {
+        ...(resource === "media" ? {} : { resource }),
         track: rule.target.track,
         segment:
           typeof segment === "string"
@@ -223,6 +234,7 @@ export function loadScenario(file?: string): ScenarioDefinition | undefined {
 }
 interface RuleState {
   bound?: string;
+  boundAttempt?: number;
   selected: number;
   applied: number;
   recovered: boolean;
@@ -358,17 +370,14 @@ export class ScenarioEngine {
   ): number {
     this.assertCompatible();
     if (this.closed) throw new HttpError(409, "Scenario is closed");
-    if (!media || media.kind !== "media" || method !== "GET") return 0;
-    this.tracks.add(media.trackId);
+    if (!media || method !== "GET") return 0;
+    if (media.kind === "media") this.tracks.add(media.trackId);
     const rules = this.definition.rules;
-    if (
-      !rules.some(
-        (rule) =>
-          rule.target.track === media.trackType ||
-          rule.target.track === media.trackId,
-      )
-    )
-      return 0;
+    const matches = (rule: ScenarioRule) =>
+      (rule.target.resource ?? "media") === media.kind &&
+      (rule.target.track === "any" || rule.target.track === media.trackType || rule.target.track === media.trackId);
+    if (!rules.some(matches)) return 0;
+    this.tracks.add(media.trackId);
     // Byte ranges are separate download attempts, not retries of other ranges.
     const rangeKey = range ? /^bytes=(\d*)-(\d*)$/.exec(range) : undefined;
     if (range && (!rangeKey || (!rangeKey[1] && !rangeKey[2]))) return 0;
@@ -383,7 +392,9 @@ export class ScenarioEngine {
     const normalizedRange = rangeKey
       ? `${rangeKey[1] ? BigInt(rangeKey[1]).toString() : ""}-${rangeKey[2] ? BigInt(rangeKey[2]).toString() : ""}`
       : "full";
-    const key = media.key + ":range:" + normalizedRange;
+    const identity = media.kind === "media" ? media.key : `${media.kind}:${media.key}`;
+    const lane = media.kind === "media" ? media.trackId : `${media.kind}:${media.trackId}`;
+    const key = identity + ":range:" + normalizedRange;
     const elapsed = this.time();
     let attempt = this.attempts.get(key);
     if (!attempt) {
@@ -401,15 +412,16 @@ export class ScenarioEngine {
     }
     attempt.count++;
     const ordinal = attempt.count;
-    let segmentOrdinal = this.ordinals.get(media.key);
+    let segmentOrdinal = this.ordinals.get(identity);
     if (segmentOrdinal === undefined) {
-      segmentOrdinal = (this.trackCounts.get(media.trackId) ?? 0) + 1;
-      this.trackCounts.set(media.trackId, segmentOrdinal);
-      this.ordinals.set(media.key, segmentOrdinal);
+      segmentOrdinal = (this.trackCounts.get(lane) ?? 0) + 1;
+      this.trackCounts.set(lane, segmentOrdinal);
+      this.ordinals.set(identity, segmentOrdinal);
     }
-    const segmentId = "segment_" + hash(media.key).slice(0, 32);
+    const segmentId = "segment_" + hash(identity).slice(0, 32);
     trace.logical({
       scenarioId: this.scenarioId,
+      targetKind: media.kind,
       trackId: media.trackId,
       segmentId,
       segmentOrdinal,
@@ -429,8 +441,7 @@ export class ScenarioEngine {
       if (
         state.failure ||
         (rule.kind !== "outage" && state.selected >= rule.maxApplications) ||
-        (rule.target.track !== media.trackType &&
-          rule.target.track !== media.trackId)
+        !matches(rule)
       )
         continue;
       if (
@@ -441,8 +452,11 @@ export class ScenarioEngine {
       if (rule.target.segment === "next") {
         if (!state.bound) {
           // An old segment's retry cannot become the next segment after a time gate.
-          if (ordinal !== 1 || attempt.firstSeenMs < rule.afterMs) continue;
+          if (media.kind === "media" && (ordinal !== 1 || attempt.firstSeenMs < rule.afterMs)) continue;
           state.bound = key;
+          // A manifest/init URI may have been used before the time gate. Start
+          // this rule at its next GET without resetting the global attempt log.
+          if (media.kind !== "media") state.boundAttempt = ordinal;
         }
         if (state.bound !== key) continue;
       } else if (rule.target.segment !== "each") {
@@ -453,7 +467,8 @@ export class ScenarioEngine {
         )
           continue;
       }
-      if (rule.attempts !== "all" && !rule.attempts.includes(ordinal)) continue;
+      const ruleAttempt = state.boundAttempt === undefined ? ordinal : ordinal - state.boundAttempt + 1;
+      if (rule.attempts !== "all" && !rule.attempts.includes(ruleAttempt)) continue;
       if (state.selected >= rule.maxApplications) {
         state.failure = "outage_capacity_exceeded";
         this.invalid = "capacity_exceeded";
@@ -462,7 +477,7 @@ export class ScenarioEngine {
       const choice =
         parseInt(
           hash(
-            `${this.definition.seed}|rule:${index}|${media.trackId}|${segmentOrdinal}|${normalizedRange}|${ordinal}`,
+            `${this.definition.seed}|rule:${index}|${lane}|${segmentOrdinal}|${normalizedRange}|${ordinal}`,
           ).slice(0, 8),
           16,
         ) / 0x100000000;
@@ -560,6 +575,7 @@ export class ScenarioEngine {
         recovered: state.recovered,
         failure: state.failure,
         firstAttempt: state.firstAttempt,
+        ...(state.boundAttempt === undefined ? {} : { boundAttempt: state.boundAttempt }),
         targetId: state.targetId,
         targetOrdinal: state.targetOrdinal,
         result: this.stateStatus(index),

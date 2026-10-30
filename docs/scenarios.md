@@ -1,4 +1,4 @@
-# Repeatable segment scenarios
+# Repeatable HTTP resource scenarios
 
 The first preset fails the first GET for the next video media segment with HTTP
 404, then expects a successful retry of the same download. It works with the
@@ -60,7 +60,8 @@ the response. Later rules cannot assign a second status to that request.
 | `seed`                 | Unsigned 32-bit integer, default 0.                                                                                                                                                                                                          |
 | `rules`                | One to 64 HTTP rules, or an empty array when a timeline is present.                                                                                                                                                                                                                             |
 | `id`                   | Optional unique human label. Labels are omitted from reports and logs; rules are identified as `rule:0`, `rule:1`, etc.                                                                                                                      |
-| `target.track`         | `video`, `audio`, `text`, or an exact alias such as `video:0`.                                                                                                                                                                               |
+| `target.resource` | Optional media (default), manifest or init. Omission preserves existing behavior. |
+| `target.track` | Media: video/audio/text or an alias such as video:0. Manifest/init also accept any; root selects a root manifest or HLS direct-playlist init. |
 | `target.segment`       | `next`, `each`, or an exact locator such as `{"kind":"number","value":"42"}` / `{"kind":"time","value":"22034830098432"}`. Values are unsigned 64-bit decimal strings.                                                                       |
 | `attempts`             | Eligible request attempts, default `[1]`; unique integers from 1 to 1000. Timed outages require `"all"` (their default).                                                                                                                                                                    |
 | `status`               | An explicit failure status: 403, 404, 408, 429, 500, 502, 503 or 504.                                                                                                                                                                        |
@@ -69,12 +70,22 @@ the response. Later rules cannot assign a second status to that request.
 | `afterMs` / `beforeMs` | Inclusive start / exclusive end in monotonic elapsed milliseconds since the proxy scenario session starts; maximum one day. `afterMs` defaults to 0. These are session-time gates; content presentation-time scheduling remains future work. |
 | `expectRetry`          | Default false. Requires one deterministic first-attempt fault on `next` or an exact segment, with `maxApplications: 1`, `attempts: [1]` and `probability: 1`.                                                                                |
 
+Rules may explicitly select `target.resource: "manifest"` or `"init"`; omission
+means media and preserves existing fingerprints. Manifest targets also accept
+`track: "root"`/`"any"`; init accepts `"any"` and HLS direct-playlist `"root"`. Both use `segment: "next"` or `"each"`.
+For these resources, `next` starts at the next GET after the time gate even when
+the URI has been used previously. Its attempt list is relative to that GET, while
+diagnostics retain global attempts. HEAD and other resource kinds cannot consume
+the rule. [Examples, scope and verifier](resource-scenarios.md).
+
 Track aliases follow first manifest observation order per media type. Generated
 HLS assigns aliases in its advertised rendition order (`video:0`, `video:1`). Its
 audio/video are muxed: there is no independently targetable audio track in that
 sample. DASH aliases come from MPD adaptation/representation metadata. Media type
 is never guessed from a `.m4s` filename. Initialization resources, manifests, keys
-and HEAD requests do not increment media attempts or consume a scenario fault.
+and HEAD requests do not increment media attempts or consume a media rule.
+Explicit manifest/init rules have independent identity/ordinal lanes; keys and
+HEAD remain excluded.
 
 `next` binds the first new matching media download observed after the time gate.
 A retry of a segment seen before the gate cannot become `next`. `each` considers
@@ -142,9 +153,10 @@ responses. Reports remain inspectable through `session.scenario.report()` after
 
 ## Supported scope and limits
 
-- HLS scenarios currently use generated media. Combining a scenario with HLS
-  origin proxying or Docker MP4 VoD is rejected explicitly. Origin playlist
-  track/sequence/discontinuity identity is future work.
+- HLS media/timeline scenarios use generated media. Origin proxying supports
+  manifest/init HTTP rules, with advertised resource identity and bounded indexes.
+  Origin media/timeline targeting and Docker MP4 VoD scenarios are rejected.
+  Generated MPEG-TS has no initialization resource. [Details](resource-scenarios.md).
 - DASH scenarios require the fault proxy and observed local MPDs with supported
   Number/Time SegmentTemplates and finite SegmentTimelines. Empty timelines at a
   period boundary are allowed. Media requests without an observed identity

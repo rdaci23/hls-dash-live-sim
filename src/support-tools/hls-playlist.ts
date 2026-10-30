@@ -65,7 +65,7 @@ export function variantEntries(
 export function rewritePlaylist(
   text: string,
   base: string,
-  register: (url: string, kind: "playlist" | "segment" | "key") => string,
+  register: (url: string, kind: "playlist" | "segment" | "init" | "key") => string,
 ): string {
   validateSupportedHls(text);
   let variant = false;
@@ -82,7 +82,7 @@ export function rewritePlaylist(
         const tag = line.split(":")[0];
         const kind = ["#EXT-X-KEY", "#EXT-X-SESSION-KEY"].includes(tag)
           ? "key"
-          : [
+          : tag === "#EXT-X-MAP" ? "init" : [
                 "#EXT-X-MEDIA",
                 "#EXT-X-I-FRAME-STREAM-INF",
                 "#EXT-X-RENDITION-REPORT",
