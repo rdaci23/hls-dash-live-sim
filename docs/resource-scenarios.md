@@ -31,9 +31,12 @@ uses the resource's ordinary attempt count; use a bounded outage with all attemp
 for a refresh-failure window. Media `next` retains its earlier semantics: the
 next new matching media download, not an old segment's retry.
 
+For repeated HTTP failures, [multi-attempt retry assertions](multi-attempt-retry.md)
+verify consecutive failures followed by successful same-resource retry.
+
 HEAD, media, keys, clock and health requests cannot consume manifest/init-only
-rules. `expectRetry` requires the immediately following GET of the same logical
-resource/range to finish with nonempty 200/206 bytes. A different resource, range,
+rules. `expectRetry` requires the GET immediately after the final configured failure
+of the same logical resource/range to finish with nonempty 200/206 bytes. A different resource, range,
 cancelled request or empty success cannot establish recovery. This does not assert
 manifest syntax, decoder readiness or rendered recovery in an arbitrary player.
 

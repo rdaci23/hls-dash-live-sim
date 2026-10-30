@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Multi-attempt HTTP retry assertions for consecutive deterministic failures,
+  with a three-failure/success preset, stable resource/range binding and an
+  eight-case HLS/DASH HTTP verifier. [Scope](docs/multi-attempt-retry.md).
+
 - Bounded downstream body stalls and connection aborts for HLS/DASH media,
   manifests and initialization, with exact byte offsets, deadlines, cancellation
   cleanup, same-resource retry assertions and a 20-case HTTP verifier.

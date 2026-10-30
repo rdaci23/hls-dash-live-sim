@@ -81,6 +81,15 @@ jobs:
           docker pull --platform linux/amd64 "$IMAGE"
       - run: npm run test:docker
       - run: npm run scenario:verify
+      - run: npm run retry:verify -- --output output/ci-multi-retry
+      - name: Retain multi-attempt retry evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: multi-retry-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ci-multi-retry/
+          if-no-files-found: warn
+          retention-days: 7
       - run: npm run resource:verify -- --output output/ci-resource-targets
       - name: Retain manifest and initialization targeting evidence
         if: always()

@@ -200,6 +200,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Implementation](docs/implementation.md) | Current behavior, supported imports and explicit limits. |
 | [Development and CI](docs/development.md) | Install, checks, CI matrix and packaged-CLI smoke test. |
 | [Network scenario timelines](docs/network-scenarios.md) | Scheduled bandwidth, seeded jitter, freeze/resume and HTTP replay evidence. |
+| [Multi-attempt retries](docs/multi-attempt-retry.md) | Three failures, then same-resource/range HTTP success, with sequential completion evidence. |
 | [Bounded transport faults](docs/transport-scenarios.md) | Headers-only/body stalls, incomplete connection aborts, timing/byte evidence and cleanup bounds. |
 | [Manifest/init targeting](docs/resource-scenarios.md) | Resource selectors, local fMP4 HLS origin, HTTP isolation and retry evidence. |
 | [Manifest freeze/resume](docs/manifest-freeze.md) | Simulator snapshot stability, live media availability, local clock and current-timeline resume. |

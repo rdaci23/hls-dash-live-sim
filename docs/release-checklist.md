@@ -21,6 +21,8 @@ release requirement.
   origin and real-engine resource isolation checks; [scope](resource-scenarios.md).
 - [x] Bounded body-stall/abort scenarios with independent HTTP byte/timing,
   incomplete-message, retry, deadline and cleanup checks; [scope](transport-scenarios.md).
+- [x] Consecutive HTTP retry assertions and eight HLS/DASH three-failure/success
+  cases with isolation and completion-order evidence; [scope](multi-attempt-retry.md).
 - [x] Recorded full browser playback/recovery gates for both protocols.
 - [x] Recorded healthy/startup-404/during-playback-404 passes on Roku Express 4K
   3940EU, OS 16.0.4 build 842, using a standalone native tester.

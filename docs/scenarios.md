@@ -68,7 +68,7 @@ the response. Later rules cannot assign a second status to that request.
 | `maxApplications`      | Selection cap from 1 to 10000, default 1. Reserved when selected so concurrent requests cannot exceed the cap.                                                                                                                               |
 | `probability`          | From 0 to 1, default 1. Uses the seed rather than global random state.                                                                                                                                                                       |
 | `afterMs` / `beforeMs` | Inclusive start / exclusive end in monotonic elapsed milliseconds since the proxy scenario session starts; maximum one day. `afterMs` defaults to 0. These are session-time gates; content presentation-time scheduling remains future work. |
-| `expectRetry`          | Default false. Requires one deterministic first-attempt fault on `next` or an exact segment, with `maxApplications: 1`, `attempts: [1]` and `probability: 1`.                                                                                |
+| `expectRetry`          | Default false. HTTP rules require consecutive attempts `1..N`, `maxApplications: N`, `probability: 1`, and `next` or an exact segment. Transport retains one fault. The following attempt must succeed.                                                                                |
 
 Rules may instead provide a bounded `transport` action for a headers-only or
 mid-body stall, or an incomplete connection abort. The same resource selectors
@@ -131,14 +131,17 @@ explicit player retry profile and rendered browser acceptance checks.
 
 ## Replaying and checking outcomes
 
-Each rule has selected/applied counts. With `expectRetry`, passing requires the
-injected response to finish and the immediately following attempt of that exact
-download to start after that failure and finish with nonempty HTTP 200/206 bytes.
+Each rule has selected/applied counts. With `expectRetry`, all configured HTTP
+failures must complete in order, each subsequent attempt starting after its
+predecessor finished. The immediately following attempt of that exact download
+and normalized byte range must finish with nonempty HTTP 200/206 bytes.
+[Three-failure preset, contract and verification](multi-attempt-retry.md).
 A concurrent duplicate cannot satisfy a retry assertion. Another segment, track
-or byte range cannot satisfy the assertion. Cancelled injections, failed retries
-and empty success responses fail the rule. Stopping before the assertion is met
-leaves an incomplete report. An expired ordinary rule time window with an unmet selection cap
-also reports incomplete. Timed outages use the window completion described above.
+or byte range cannot satisfy the assertion. Cancelled injections, overlapping
+attempts, missing intermediate injections, failed retries and empty success
+responses fail the rule. Stopping before the assertion is met leaves an incomplete
+report. An expired ordinary rule time window with an unmet selection cap also
+reports incomplete. Timed outages use the window completion described above.
 
 For seeded choices, a new logical segment gets a per-track first-seen ordinal.
 The draw depends on seed, rule, track, that ordinal, normalized range and attempt.

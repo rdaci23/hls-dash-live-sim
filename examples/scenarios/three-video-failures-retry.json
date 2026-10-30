@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "id": "three-video-failures-retry",
+      "target": { "track": "video:0", "segment": "next" },
+      "attempts": [1, 2, 3],
+      "status": 503,
+      "maxApplications": 3,
+      "expectRetry": true
+    }
+  ]
+}

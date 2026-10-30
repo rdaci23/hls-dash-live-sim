@@ -111,7 +111,9 @@ origin and are not commercial DRM or DASH faults. [Fault details](fault-injectio
 Immutable scenario files provide logical track/segment/attempt selection, session
 time windows, seeded probability, ordered rules and application caps. The initial
 404 preset asserts a nonempty successful retry of the same logical download and
-byte range. HTTP success alone does not prove player recovery. Unknown identities,
+byte range. HTTP retry assertions also support deterministic consecutive failures,
+requiring each response to complete before the next request and a final nonempty
+success; [multi-attempt contract](multi-attempt-retry.md). HTTP success alone does not prove player recovery. Unknown identities,
 capacity exhaustion and conflicting manual faults invalidate a run. Scenario
 actions also include bounded downstream body stalls and connection aborts, with
 resource selection, finite deadlines and separate intentional-abort outcomes.

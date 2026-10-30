@@ -201,14 +201,14 @@ export function parseScenario(input: unknown): ScenarioDefinition {
     if (
       rule.expectRetry &&
       (segment === "each" ||
-        maxApplications !== 1 ||
         probability !== 1 ||
         attempts === "all" ||
-        attempts.length !== 1 ||
-        attempts[0] !== 1)
+        attempts.length !== maxApplications ||
+        [...attempts].sort((a, b) => a - b).some((attempt, index) => attempt !== index + 1) ||
+        (transport !== undefined && maxApplications !== 1))
     )
       fail(
-        `${label} expectRetry requires one deterministic first-attempt fault on next or a specific segment`,
+        `${label} expectRetry requires deterministic consecutive attempts from 1, a matching maxApplications and next or a specific segment; transport supports one fault`,
       );
     return {
       ...(rule.id ? { id: rule.id } : {}),
@@ -466,13 +466,12 @@ export class ScenarioEngine {
       attempt: ordinal,
     });
     trace.record("scenario.attempt");
-    const retryEligible = new Set(
-      this.states.flatMap((state, index) =>
-        state.applied === 1 ? [index] : [],
-      ),
-    );
+    // Capture completed failures at arrival, not completion: a concurrent request
+    // cannot turn into a sequential retry merely by finishing later.
+    const appliedAtStart = this.states.map(state => state.applied);
+    const matchedRules = new Set<number>();
     trace.onOutcome((outcome) =>
-      this.observe(key, ordinal, outcome, trace, retryEligible),
+      this.observe(key, ordinal, outcome, trace, appliedAtStart, matchedRules),
     );
     for (const [index, rule] of rules.entries()) {
       const state = this.states[index];
@@ -482,6 +481,9 @@ export class ScenarioEngine {
         !matches(rule)
       )
         continue;
+      // Exact locators can match several tracks/ranges. A retry assertion binds
+      // one download; its failure quota must not migrate to another identity.
+      if (rule.expectRetry && state.firstAttempt !== undefined && state.bound !== key) continue;
       if (
         elapsed < rule.afterMs ||
         (rule.beforeMs !== undefined && elapsed >= rule.beforeMs)
@@ -522,10 +524,12 @@ export class ScenarioEngine {
       if (choice >= rule.probability) continue;
       state.selected++;
       state.bound = key;
-      state.firstAttempt = ordinal;
+      if (rule.expectRetry) state.firstAttempt ??= ordinal;
+      else state.firstAttempt = ordinal;
       state.targetId = segmentId;
       state.targetOrdinal = segmentOrdinal;
       const ruleId = `rule:${index}`;
+      matchedRules.add(index);
       const effect = trace.select({
         scenarioId: this.scenarioId,
         ruleId,
@@ -553,7 +557,8 @@ export class ScenarioEngine {
         if (outcome.outcome === "cancelled")
           state.failure = "injected_response_cancelled";
         else if (delivery ? (!delivery.ready || ![200, 206].includes(outcome.status) ||
-          outcome.outcome !== (rule.transport.kind === "abort" ? "aborted" : "completed")) : outcome.status !== rule.status)
+          outcome.outcome !== (rule.transport.kind === "abort" ? "aborted" : "completed")) :
+          outcome.outcome !== "completed" || outcome.status !== rule.status)
           state.failure = "unexpected_fault_response";
         else state.applied++;
         trace.record("scenario.result", {
@@ -570,7 +575,8 @@ export class ScenarioEngine {
     attempt: number,
     outcome: RequestOutcome,
     trace: RequestTrace,
-    retryEligible: Set<number>,
+    appliedAtStart: number[],
+    matchedRules: Set<number>,
   ): void {
     for (const [index, rule] of this.definition.rules.entries()) {
       const state = this.states[index];
@@ -578,14 +584,21 @@ export class ScenarioEngine {
         !rule.expectRetry ||
         state.bound !== key ||
         !state.firstAttempt ||
-        attempt !== state.firstAttempt + 1 ||
+        attempt <= state.firstAttempt ||
+        attempt > state.firstAttempt + rule.maxApplications ||
         state.recovered ||
         state.failure
       )
         continue;
-      if (!retryEligible.has(index)) state.failure = "retry_before_fault";
-      else if (
-        state.applied === 1 &&
+      const offset = attempt - state.firstAttempt;
+      if (appliedAtStart[index] !== offset) state.failure = "retry_before_fault";
+      else if (offset < rule.maxApplications) {
+        // Intermediate attempts must actually be injected by this rule, not an
+        // origin or a different rule that happens to return the same status.
+        if (!matchedRules.has(index) || outcome.outcome !== "completed" || outcome.status !== rule.status)
+          state.failure = "retry_failed";
+      } else if (
+        state.applied === rule.maxApplications &&
         outcome.outcome === "completed" &&
         [200, 206].includes(outcome.status) &&
         outcome.bodyBytes > 0
