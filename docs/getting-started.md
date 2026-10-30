@@ -2,7 +2,7 @@
 
 This guide starts with generated local media, then explains how to configure a
 session. The repository is currently private; cloning requires an authorized
-GitHub account. It has no Standalone dependency and no npm release is published.
+GitHub account. No npm release is published.
 
 ## Prerequisites
 

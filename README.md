@@ -2,7 +2,6 @@
 
 A standalone tool for player developers and QA: serve known HLS/DASH streams,
 inject faults, and inspect what the player requested and how it recovered.
-It has no external framework dependency.
 
 **Private beta preparation.** The repository remains private and npm publishing is
 disabled. See the [release checklist](docs/release-checklist.md) for outstanding

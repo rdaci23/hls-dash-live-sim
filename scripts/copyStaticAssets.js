@@ -19,7 +19,12 @@ function copyAssets() {
       fs.mkdirSync(DEST_DIR, { recursive: true });
       copiedAny = true;
     }
-    fs.cpSync(srcDir, DEST_DIR, { recursive: true });
+    // Fixture provenance is packaged at assets/README.md, where its docs links
+    // resolve correctly. It is not a runtime asset in the relocated dist tree.
+    fs.cpSync(srcDir, DEST_DIR, {
+      recursive: true,
+      filter: source => source !== path.join(ROOT, "assets", "README.md"),
+    });
   }
 
   return copiedAny;

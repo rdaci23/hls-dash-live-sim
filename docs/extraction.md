@@ -10,6 +10,10 @@ recovered from that commit. The CLI retains only simulator and template commands
 Standalone generation, debugger, deployment, and SDK dependencies are excluded.
 The original repositories and branches were left untouched.
 
+On 30 October 2026, the maintainer confirmed that they implemented the simulator
+as part of the original tools project and have authority to publish it as a
+separate repository. The public source/media license remains to be selected.
+
 Standalone adaptations:
 
 - Personal package name, CLI, scripts, build and dependency lockfile.

@@ -63,8 +63,9 @@ livesim2 is an external, digest-pinned Docker dependency. Its exact v1.15.3 BSD
 license is retained, but its Alpine base, Go dependencies and bundled upstream
 media are not embedded in this package. Redistributing the engine image/appliance
 would require a separate inventory. FFmpeg/libx264 and Chrome are also external
-tools, not bundled binaries. Dependency notices do not grant publication rights
-to the simulator code extracted from the original project.
+tools, not bundled binaries. Publication authority for the extracted simulator
+source was confirmed by the maintainer on 30 October 2026; dependency notices
+remain separate from the project license selection.
 
 ## Repeatable candidate review
 
@@ -95,9 +96,10 @@ published or installed globally. Review the retained file list manually as well.
 
 ## Remaining publication decisions
 
-- Confirm the right to publish/license the extracted simulator source. The source
-  commit recorded in [extraction](extraction.md) had no root license file; a
-  standalone copy does not resolve that question.
+The maintainer confirmed authority to publish the extracted simulator source as a
+separate repository on 30 October 2026; see [source provenance](extraction.md).
+That confirmation resolves the publication-authority question.
+
 - Choose the project's source/media license and retain required upstream
   attribution. Historical test-content generation is now documented separately.
 - Confirm a private security contact or enable GitHub private vulnerability

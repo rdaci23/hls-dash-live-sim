@@ -60,14 +60,14 @@ that every future commit has passed. For the candidate, inspect the exact
 
 ## Before making the project public
 
-- [ ] Choose the public license and verify rights to the extracted source.
-  Fixture provenance is documented, but does not settle the source license.
+- [x] Maintainer confirmed authority to publish their extracted simulator source
+  as a separate repository on 30 October 2026; [record](extraction.md).
+- [ ] Choose the public source/media license. Fixture provenance is documented,
+  but does not select the project license.
 - [x] Inventory locked dependency notices and record the external livesim2
   redistribution/use boundary. [Notices and exceptions](../THIRD_PARTY_NOTICES.md).
 - [x] Trace original media to its introducing commit and verify the historical
   FFmpeg test pattern/tone evidence. [Investigation](historical-media-provenance.md).
-- [ ] Resolve project source/media licensing and publication rights; dependency
-  attribution does not settle the project's license.
 - [ ] Establish a private vulnerability-reporting route and document it before
   opening public issues. Do not invent a contact address or assume advisory
   reporting is enabled.

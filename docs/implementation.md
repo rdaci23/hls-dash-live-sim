@@ -3,8 +3,8 @@
 This is the current behavior of the private 0.2.0 development line. Older reports
 are listed in [verification history](verification-history.md); their test counts,
 engine versions and limitations must not be read as the current state.
-The project is standalone and has no external framework dependency. Supported baseline
-streams must be valid; broken behavior belongs to explicit faults.
+The project runs independently. Supported baseline streams must be valid; broken
+behavior belongs to explicit faults.
 
 ## Operation and isolation
 

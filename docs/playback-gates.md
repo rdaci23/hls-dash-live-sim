@@ -3,7 +3,7 @@
 Repository visibility and npm `private: true` stay private. Browser success alone
 cannot authorize a public release. The initial hardware claim covers one recorded
 physical Roku model and OS/build; Apple, Android and other Roku generations remain
-unverified. The test channel is plain SceneGraph and has no Standalone dependency.
+unverified. The test channel uses native SceneGraph components.
 
 Native recorder results are optional client compatibility evidence. Roku recovery
 fixes are outside this repo; a native recovery failure is not a simulator release

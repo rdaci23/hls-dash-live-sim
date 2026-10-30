@@ -38,8 +38,8 @@ need maintainer review; do not assume a dependency's license grants rights to th
 project's extracted code. Do not add generated output or local configuration to
 Git. Pull requests should describe behavior, relevant validation and known limits.
 
-The standalone SceneGraph tester has no Standalone dependency. Build it without a
-device using `npm run roku:build`. Sideloading replaces a Roku's current developer
+The standalone native SceneGraph tester builds without a device using
+`npm run roku:build`. Sideloading replaces a Roku's current developer
 channel; follow the [device procedure](docs/playback-gates.md) on a dedicated target.
 CI never discovers, installs on or controls your Roku.
 
