@@ -11,6 +11,15 @@ New here? Follow [setup](docs/getting-started.md), the [three-minute demo](docs/
 then [three scenario recipes](docs/scenario-recipes.md). See [configuration](docs/configuration.md)
 for ready-to-copy settings, access controls and independent sessions.
 
+## License
+
+Project-owned code, documentation and generated media fixtures are licensed under
+the [MIT License](LICENSE). You may use, modify and redistribute them, including
+commercially, subject to its notice requirements. Dependencies and external tools
+retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Repository visibility and npm publication remain separate release decisions.
+
 ## Quick start
 
 Use Node.js 24 LTS; CI also checks Node 22 and 26 on Linux and macOS.

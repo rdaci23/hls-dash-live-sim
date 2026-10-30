@@ -14,8 +14,8 @@ async function main(){
   const scanner=process.env.GITLEAKS_BIN?path.resolve(root,process.env.GITLEAKS_BIN):'gitleaks',scannerVersion=capture(scanner,['version']);
   const directory=path.resolve(args[1]);await fs.mkdir(path.dirname(directory),{recursive:true});await fs.mkdir(directory,{mode:0o700});
   const checkout=path.join(directory,'checkout'),commit=capture('git',['rev-parse','HEAD']);
-  const report={schemaVersion:1,recordedAt:new Date().toISOString(),commit,sourceTreeClean:true,scannerVersion,steps:[],candidateChecksPassed:false,releaseReady:false,
-    outstanding:['Project source/media license selection','Security-reporting activation/contact confirmation','Public visibility approval']};
+  const report={schemaVersion:1,recordedAt:new Date().toISOString(),commit,sourceTreeClean:true,scannerVersion,steps:[],candidateChecksPassed:false,releaseReady:false,projectLicense:require('../package.json').license,
+    outstanding:['Security-reporting activation/contact confirmation','Public visibility approval']};
   let active,interrupted=false;
   const stop=()=>{interrupted=true;if(active){try{process.platform==='win32'?active.kill('SIGTERM'):process.kill(-active.pid,'SIGTERM');}catch{}}};
   process.once('SIGINT',stop);process.once('SIGTERM',stop);

@@ -62,8 +62,9 @@ that every future commit has passed. For the candidate, inspect the exact
 
 - [x] Maintainer confirmed authority to publish their extracted simulator source
   as a separate repository on 30 October 2026; [record](extraction.md).
-- [ ] Choose the public source/media license. Fixture provenance is documented,
-  but does not select the project license.
+- [x] Selected [MIT](../LICENSE) on 30 October 2026 for project-owned code,
+  documentation and generated media fixtures; package metadata and dependency
+  notices document the separate third-party terms.
 - [x] Inventory locked dependency notices and record the external livesim2
   redistribution/use boundary. [Notices and exceptions](../THIRD_PARTY_NOTICES.md).
 - [x] Trace original media to its introducing commit and verify the historical
@@ -105,5 +106,5 @@ that every future commit has passed. For the candidate, inspect the exact
   deferred capabilities. They must not appear as supported preset promises.
 
 New features are not prerequisites for this narrow beta unless the advertised
-scope changes. Missing licensing/notices and release decisions cannot be solved
-by adding more streaming features.
+scope changes. Remaining release checks and publication decisions cannot be
+replaced by adding more streaming features.

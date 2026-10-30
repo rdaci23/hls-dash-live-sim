@@ -30,5 +30,7 @@ command was not retained; current regeneration is explicit in the scripts.
 Run `npm run fixtures` with FFmpeg installed to regenerate. Encoded output and
 bandwidth measurements may vary with FFmpeg/libx264 versions; the generated master
 playlist records its actual measured ladder. Rebuild after regeneration. Stop live
-sessions before replacing their media. This provenance record does not choose the
-project's future public license; the repository remains private.
+sessions before replacing their media. Project-owned generated fixtures are covered
+by the [MIT License](../LICENSE). External generation tools retain their own
+licenses; see [third-party notices](../THIRD_PARTY_NOTICES.md). The repository
+remains private.

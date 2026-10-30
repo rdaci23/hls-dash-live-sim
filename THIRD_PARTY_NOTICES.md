@@ -1,7 +1,8 @@
 # Third-party notices
 
 This inventory covers all 218 locked npm dependency entries, including
-development tools. It does not select a license for this project's extracted code.
+development tools. Project-owned code, documentation and generated fixtures use
+the [MIT License](LICENSE); dependencies and external tools retain their own terms.
 Versions, integrity values, scope, provenance and notice hashes are recorded in
 [the machine-readable inventory](third-party/npm-manifest.json).
 

@@ -88,6 +88,7 @@ cmp demuxed.aac concatenated.aac
 ```
 
 No source media, generation scripts or Git history were modified during this
-investigation. The maintainer confirmed publication authority on 30 October 2026. The project’s
-source/media license remains to be selected; this investigation resolves the
-technical question of what the historical test media contains.
+investigation. The maintainer confirmed publication authority on 30 October 2026.
+Project-owned code, documentation and generated media fixtures use the
+[MIT License](../LICENSE), selected on the same date. This investigation resolves
+the technical question of what the historical test media contains.

@@ -13,7 +13,9 @@ The original repositories and branches were left untouched.
 
 On 30 October 2026, the maintainer confirmed that they implemented the simulator
 as part of the original tools project and have authority to publish it as a
-separate repository. The public source/media license remains to be selected.
+separate repository. On the same date, the maintainer selected the
+[MIT License](../LICENSE) for project-owned code, documentation and generated
+media fixtures. Third-party components retain their own licenses.
 
 Standalone adaptations:
 

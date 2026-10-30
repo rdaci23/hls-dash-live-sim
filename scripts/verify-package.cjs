@@ -29,7 +29,10 @@ async function ready(url, child, logs) {
   try {
     const [packed] = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], { cwd: root, encoding: 'utf8' }));
     assert.equal(require('../package.json').private, true, 'npm publishing must stay disabled');
+    assert.equal(require('../package.json').license, 'MIT');
+    assert.equal(require('../package-lock.json').packages[''].license, 'MIT');
     const files = packed.files.map(file => file.path);
+    assert.ok(files.includes('LICENSE'), 'Project license must be packaged');
     assert.ok(files.includes('dist/cli.js'));
     assert.ok(files.includes('dist/support-tools/assets/fault-control/control.js'));
     assert.ok(files.some(file => file.startsWith('dist/support-tools/assets/hls-sample/') && file.endsWith('.ts')));
@@ -57,6 +60,9 @@ async function ready(url, child, logs) {
     assert.ok(files.includes('examples/scenarios/next-video-retry.json'));
     assert.ok(!files.some(file => /(?:^|\/)(?:\.env(?:\.|$)|auth[^/]*\.json$|\.hls-dash-|node_modules\/|output\/|\.github\/)/.test(file)), 'archive excludes local configuration, credentials and CI files');
     execFileSync(npm, ['install', '--prefix', directory, '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', path.join(directory, packed.filename)], { cwd: directory, stdio: 'pipe' });
+    const installed = path.join(directory, 'node_modules/hls-dash-live-sim');
+    assert.equal(JSON.parse(await fs.readFile(path.join(installed, 'package.json'), 'utf8')).license, 'MIT');
+    assert.equal(await fs.readFile(path.join(installed, 'LICENSE'), 'utf8'), await fs.readFile(path.join(root, 'LICENSE'), 'utf8'));
     const cli = path.join(directory, 'node_modules/.bin/hls-dash-live-sim');
     assert.match(execFileSync(cli, ['--help'], { cwd: directory, encoding: 'utf8' }), /fault-control/);
     const start = args => {

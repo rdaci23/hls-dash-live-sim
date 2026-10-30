@@ -1,7 +1,7 @@
 # Security policy
 
-This project is in private beta preparation. Public release and a project source
-license have not been approved. Security fixes target the current development
+This project is in private beta preparation and uses the [MIT License](LICENSE).
+Public release has not been approved. Security fixes target the current development
 branch and latest 0.2.x candidate; maintenance is best effort with no response-time
 or bounty commitment.
 

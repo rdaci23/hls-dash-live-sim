@@ -2,7 +2,9 @@
 
 Review date: 29 October 2026. The initial audit covered standalone source history
 through `b285679`. The repo remains private, npm publication remains disabled and
-this report does not approve a public release or select a project source license.
+this report does not approve a public release. On 30 October 2026 the maintainer
+selected the [MIT License](../LICENSE) for project-owned code, documentation and
+generated media fixtures; third-party components retain their own licenses.
 Use the exact candidate's retained review report and CI run for final verification;
 results from an older commit do not qualify a newer code change.
 
@@ -21,7 +23,9 @@ synthetic fixtures on test/placeholder domains. No real stream credentials or
 personal configuration were observed in that review. Dependency copyright/contact
 notices are intentional public upstream attribution, not project credentials.
 Git author metadata remains present; the maintainer should review the identity
-exposed when publishing history. No history rewrite was performed.
+exposed when publishing history. The initial audit did not rewrite history; a
+later private documentation cleanup on 30 October 2026 changed commit IDs. Older
+reports remain historical evidence, as explained in [verification history](verification-history.md).
 
 The original extracted media remains reachable in commit `9ff737c`, under
 `assets/hls-sample/segments/`. A follow-up investigation traced all four files
@@ -35,8 +39,8 @@ uncertainty based on one visual frame. The exact historical command was not foun
 [Evidence and reconstruction](historical-media-provenance.md).
 
 Current packaged fixtures have explicit procedural generation scripts and
-[documented provenance](../assets/README.md). Choosing the project's source/media
-license remains a separate publication decision.
+[documented provenance](../assets/README.md). Project-owned fixtures are covered by
+the [MIT License](../LICENSE).
 
 This audit covers repository objects and the locally generated npm archive. It
 is not a review of unrelated personal files, upstream repositories' full history,
@@ -65,7 +69,7 @@ media are not embedded in this package. Redistributing the engine image/applianc
 would require a separate inventory. FFmpeg/libx264 and Chrome are also external
 tools, not bundled binaries. Publication authority for the extracted simulator
 source was confirmed by the maintainer on 30 October 2026; dependency notices
-remain separate from the project license selection.
+remain separate from the project’s MIT license.
 
 ## Repeatable candidate review
 
@@ -100,8 +104,9 @@ The maintainer confirmed authority to publish the extracted simulator source as 
 separate repository on 30 October 2026; see [source provenance](extraction.md).
 That confirmation resolves the publication-authority question.
 
-- Choose the project's source/media license and retain required upstream
-  attribution. Historical test-content generation is now documented separately.
+MIT license selection is complete for project-owned code, documentation and
+generated media fixtures. Required third-party attribution is retained.
+
 - Confirm a private security contact or enable GitHub private vulnerability
   reporting at public cutover, then verify the button before public announcement.
   [Current policy and availability](../SECURITY.md).

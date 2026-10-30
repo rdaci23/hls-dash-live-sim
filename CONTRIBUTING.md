@@ -1,7 +1,9 @@
 # Contributing during private beta preparation
 
-This repository is private and has not selected a public source license. Keep
-work within that scope; do not publish archives, npm packages or repository copies.
+Project-owned code, documentation and generated fixtures use the [MIT License](LICENSE).
+Contributions submitted for inclusion use the same license unless explicitly
+agreed otherwise. The repository remains private; official releases, npm
+publication and visibility changes need a separate maintainer decision.
 The [release checklist](docs/release-checklist.md) records the remaining decisions.
 
 ## Get started
