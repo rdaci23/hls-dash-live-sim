@@ -72,25 +72,44 @@ function evaluate({ metrics: m, events = [], audit: captured = [], profiles = []
   check(!!high && high.confirmed[0].firstFrameMs - restore.requestMs <= GATES.upshiftMs, 'No timely rendered high-rendition recovery held for 60 seconds');
   // A low-buffer observation is expected only during the proven, bandwidth-
   // limited downshift and with independent bounded rendered-frame recovery.
+  // hls.js can report after the awaited fragment refills the buffer. In that
+  // case require a separate waiting-event measurement and the exact refill.
   const expectedUnderruns = m.playerErrors.flatMap(error => {
     if (!drop || !low || error.type !== 'mediaError' || error.details !== 'bufferStalledError' || error.fatal !== false ||
         error.atMs < drop.acknowledgedMs || error.atMs > low.confirmed[0].firstFrameMs ||
         !Number.isFinite(error.stalledSinceMs) || error.stalledSinceMs < drop.requestMs - 250 || error.stalledSinceMs > error.atMs ||
-        !Number.isFinite(error.bufferInfo?.len) || error.bufferInfo.len < 0 || error.bufferInfo.len > 0.5 ||
+        !Number.isFinite(error.bufferInfo?.len) || error.bufferInfo.len < 0 ||
         !Number.isFinite(error.lastFrameMs) || !Number.isFinite(error.nextFrameMs) ||
         error.lastFrameMs > error.atMs || error.nextFrameMs < error.atMs || error.nextFrameMs - error.lastFrameMs > GATES.stallMs ||
         !(error.nextFrameMediaTime > error.lastFrameMediaTime) || m.maxFrameGapMs + 1 < error.nextFrameMs - error.lastFrameMs) return [];
+    const refilled = error.bufferInfo.len > 0.5;
+    const waiting = error.waiting;
+    if (refilled) {
+      if (!waiting || !Number.isFinite(waiting.atMs) || waiting.atMs < drop.acknowledgedMs || waiting.atMs > error.atMs ||
+          error.atMs - waiting.atMs > GATES.stallMs || Math.abs(waiting.atMs - error.stalledSinceMs) > 125 ||
+          !Number.isFinite(waiting.mediaTime) || !Number.isFinite(waiting.bufferSeconds) || waiting.bufferSeconds < 0 || waiting.bufferSeconds > 0.5 ||
+          ![1, 2].includes(waiting.readyState) || waiting.paused !== false || waiting.seeking !== false ||
+          waiting.mediaTime < error.lastFrameMediaTime - 0.25 || waiting.mediaTime > error.nextFrameMediaTime + 0.25 ||
+          !Array.isArray(waiting.ranges) || !waiting.ranges.every(range => Number.isFinite(range.start) && Number.isFinite(range.end) && range.end >= range.start)) return [];
+      const range = waiting.ranges.find(range => range.start <= waiting.mediaTime && range.end >= waiting.mediaTime);
+      if (Math.abs((range ? range.end - waiting.mediaTime : 0) - waiting.bufferSeconds) > 0.005) return [];
+    }
     const epoch = m.startEpochMs + error.atMs;
     const cause = m.fragments.find(fragment => {
       const response = responses.get(fragment.requestId);
       const requested = start.get(fragment.requestId);
       const completed = events.find(event => event.requestId === fragment.requestId && event.event === 'request.completed' && event.status === 200 && event.bodyBytes === fragment.bytes);
-      return fragment.level === 1 && fragment.bytes > 0 && response?.url === fragment.url && response.status === 200 &&
+      const matchesRefill = !refilled || (Number.isFinite(fragment.atMs) && fragment.atMs >= waiting.atMs && fragment.atMs <= error.atMs + 250 &&
+        Number.isFinite(fragment.start) && Number.isFinite(fragment.end) && fragment.start <= waiting.mediaTime + 0.5 && fragment.end > waiting.mediaTime &&
+        Math.abs(fragment.end - waiting.mediaTime - error.bufferInfo.len) <= 0.25 &&
+        Date.parse(completed?.timestamp) >= m.startEpochMs + waiting.atMs - 250 && Date.parse(completed?.timestamp) <= epoch + 250);
+      return matchesRefill && fragment.level === 1 && fragment.bytes > 0 && response?.url === fragment.url && response.status === 200 &&
         Date.parse(requested?.timestamp) >= drop.appliedEpochMs && Date.parse(requested?.timestamp) <= epoch + 250 && Date.parse(completed?.timestamp) >= epoch - 250 &&
         events.some(event => event.requestId === fragment.requestId && event.event === 'fault.applied' && event.fault === 'response.bandwidth' &&
           event.bandwidthKbps === PROFILES.restricted && response.faultIds?.split(/,\s*/).includes(event.faultId));
     });
-    return cause ? [{ error, requestId: cause.requestId, bufferSeconds: error.bufferInfo.len, frameGapMs: error.nextFrameMs - error.lastFrameMs }] : [];
+    return cause ? [{ error, requestId: cause.requestId, bufferSeconds: refilled ? waiting.bufferSeconds : error.bufferInfo.len,
+      ...(refilled ? { reportedBufferSeconds: error.bufferInfo.len, waitingAtMs: waiting.atMs } : {}), frameGapMs: error.nextFrameMs - error.lastFrameMs }] : [];
   });
   const expectedAborts = m.emergencyAborts.filter(e => drop && restore && e.level === 1 && e.atMs >= drop.requestMs && e.atMs <= drop.requestMs + GATES.downshiftMs &&
     audit.some(a => a.kind === 'response' && a.url === e.url && a.status === 200 &&

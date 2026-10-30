@@ -9,6 +9,7 @@
     playerErrors: [], videoErrors: [], emergencyAborts: [], switches: [], phases: [], complete: false, probeErrors: [] };
   const loaded = new Map();
   let playing;
+  let waiting;
   const player = new Hls();
   function fragment(frag) { return { level: frag.level, sn: frag.sn, url: frag.url, cc: frag.cc,
     start: frag.startPTS ?? frag.start, end: frag.endPTS ?? frag.end }; }
@@ -32,7 +33,17 @@
   player.on(Hls.Events.ERROR, (_event, data) => m.playerErrors.push({ atMs: now(), details: data.details, type: data.type,
     fatal: data.fatal, status: data.response?.code, url: data.frag?.url, reason: data.reason || data.error?.message,
     bufferInfo: data.bufferInfo, stalledSinceMs: Number.isFinite(data.stalled?.start) ? data.stalled.start - started : null,
+    waiting: waiting ? { ...waiting } : null,
     lastFrameMs: m.lastFrameMs, lastFrameMediaTime: m.mediaTime, nextFrameMs: null, nextFrameMediaTime: null }));
+  // Record the buffer when starvation begins, before an arriving fragment can
+  // refill it and before the player's later error notification reads it again.
+  video.addEventListener('waiting', () => {
+    const mediaTime = video.currentTime;
+    const ranges = Array.from({ length: video.buffered.length }, (_, index) => ({ start: video.buffered.start(index), end: video.buffered.end(index) }));
+    const range = ranges.find(entry => entry.start <= mediaTime && entry.end >= mediaTime);
+    waiting = { atMs: now(), mediaTime, bufferSeconds: range ? range.end - mediaTime : 0,
+      ranges, readyState: video.readyState, paused: video.paused, seeking: video.seeking };
+  });
   video.addEventListener('seeking', () => m.seeks.push({ atMs: now(), mediaTime: video.currentTime }));
   video.addEventListener('error', () => m.videoErrors.push({ atMs: now(), code: video.error?.code, message: video.error?.message }));
   function frame(_at, metadata) {

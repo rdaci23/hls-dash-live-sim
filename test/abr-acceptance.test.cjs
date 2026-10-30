@@ -137,3 +137,37 @@ test('only proven downshift buffer underruns with low buffer and measured frame 
     x => { x.events.at(-2).timestamp = new Date(1033000).toISOString(); },
   ]) { const data = input(); edit(data); assert.equal(evaluate(data).passed, false); }
 });
+
+test('a refilled error-time buffer needs independent low-buffer waiting and matching refill evidence', () => {
+  function input() {
+    const data = baseline();
+    const url = 'http://127.0.0.1/live/1/slow.ts';
+    data.metrics.playerErrors.push({ atMs: 34000, type: 'mediaError', details: 'bufferStalledError', fatal: false,
+      stalledSinceMs: 33800, bufferInfo: { len: 2.05 },
+      waiting: { atMs: 33800, mediaTime: 32.95, bufferSeconds: 0.05, ranges: [{ start: 0, end: 33 }], readyState: 2, paused: false, seeking: false },
+      lastFrameMs: 33950, nextFrameMs: 34050, lastFrameMediaTime: 32.95, nextFrameMediaTime: 33.05 });
+    data.metrics.fragments.push({ requestId: 'slow-high', url, level: 1, sn: 999, bytes: 10000, atMs: 33990, start: 33, end: 35 });
+    data.audit.push({ kind: 'response', requestId: 'slow-high', url, status: 200, faultIds: 'fault-slow', epochMs: 1032100 });
+    data.events.push({ event: 'request.started', requestId: 'slow-high', timestamp: new Date(1032000).toISOString() },
+      { event: 'request.completed', requestId: 'slow-high', timestamp: new Date(1033990).toISOString(), status: 200, bodyBytes: 10000 },
+      { event: 'fault.applied', requestId: 'slow-high', fault: 'response.bandwidth', bandwidthKbps: 450, faultId: 'fault-slow' });
+    return data;
+  }
+  const result = evaluate(input());
+  assert.equal(result.passed, true, result.failures.join('; '));
+  assert.equal(result.expectedDegradationObservations[0].bufferSeconds, 0.05);
+  assert.equal(result.expectedDegradationObservations[0].reportedBufferSeconds, 2.05);
+  for (const edit of [
+    x => { delete x.metrics.playerErrors[0].waiting; },
+    x => { x.metrics.playerErrors[0].waiting.atMs = 32000; },
+    x => { x.metrics.playerErrors[0].waiting.bufferSeconds = 2; },
+    x => { x.metrics.playerErrors[0].waiting.ranges[0].end = 35; },
+    x => { x.metrics.playerErrors[0].waiting.readyState = 4; },
+    x => { x.metrics.playerErrors[0].waiting.paused = true; },
+    x => { x.metrics.playerErrors[0].waiting.seeking = true; },
+    x => { x.metrics.playerErrors[0].waiting.mediaTime = 20; },
+    x => { x.metrics.fragments.at(-1).atMs = 33000; },
+    x => { x.metrics.fragments.at(-1).end = 40; },
+    x => { x.events.at(-2).timestamp = new Date(1033000).toISOString(); },
+  ]) { const data = input(); edit(data); assert.equal(evaluate(data).passed, false); }
+});
