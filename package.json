@@ -73,6 +73,7 @@
     "SECURITY.md",
     "THIRD_PARTY_NOTICES.md",
     "third-party",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ]
 }

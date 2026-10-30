@@ -97,10 +97,11 @@ controlled-local-network browser and physical Roku evidence.
 Actions are pinned to full commit SHAs, checkout credentials are not persisted,
 and the workflow token has only `contents: read`. No deployment, npm publication,
 release creation, repository-visibility change or physical-device access is
-configured. Secrets and private origin URLs are not needed. The private repository's
-normal Actions access controls apply to logs and artifacts. Job timeouts and
+configured. Secrets and private origin URLs are not needed. Repository Actions
+access controls apply to logs and artifacts. Job timeouts and
 per-ref concurrency cancellation bound stale work. CI does not set branch
-protection; maintainers must decide which checks to require before public release.
+protection; maintainers configure required checks as part of the
+[publication checklist](release-checklist.md).
 
 The workflow uses the official [checkout](https://github.com/actions/checkout),
 [setup-node](https://github.com/actions/setup-node) and

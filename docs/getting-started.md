@@ -1,8 +1,8 @@
 # Setup and first stream
 
 This guide starts with generated local media, then explains how to configure a
-session. The repository is currently private; cloning requires an authorized
-GitHub account. No npm release is published.
+session. Version 0.2.0 beta installs from a source checkout; no npm release is
+published. See the [changelog](../CHANGELOG.md) for release scope and known limits.
 
 ## Prerequisites
 
@@ -86,7 +86,7 @@ tool, not an internet-facing hosting service.
 
 | Symptom | Check |
 | --- | --- |
-| Private clone fails | Authenticate an authorized account; this is not a public repo yet. |
+| Clone fails | Check the repository URL and GitHub access; private checkouts require an authorized account. |
 | DASH cannot start | Start Docker, check image-download access and use the pinned image. |
 | Port in use | Stop your own session or select a free `--port`. |
 | Controls have no effect | Stream and control commands must use the same absolute fault-file path. |

@@ -32,5 +32,4 @@ bandwidth measurements may vary with FFmpeg/libx264 versions; the generated mast
 playlist records its actual measured ladder. Rebuild after regeneration. Stop live
 sessions before replacing their media. Project-owned generated fixtures are covered
 by the [MIT License](../LICENSE). External generation tools retain their own
-licenses; see [third-party notices](../THIRD_PARTY_NOTICES.md). The repository
-remains private.
+licenses; see [third-party notices](../THIRD_PARTY_NOTICES.md).

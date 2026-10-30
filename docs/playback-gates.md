@@ -1,7 +1,7 @@
 # Playback verification
 
-Repository visibility and npm `private: true` stay private. Browser success alone
-cannot authorize a public release. The initial hardware claim covers one recorded
+Browser results do not change repository visibility or npm publishing settings.
+The initial hardware claim covers one recorded
 physical Roku model and OS/build; Apple, Android and other Roku generations remain
 unverified. The test channel uses native SceneGraph components.
 

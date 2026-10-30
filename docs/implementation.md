@@ -1,6 +1,7 @@
 # Current implementation and supported limits
 
-This is the current behavior of the private 0.2.0 development line. Older reports
+This is the supported behavior of the 0.2.0 beta. See the [changelog](../CHANGELOG.md)
+for release notes. Older reports
 are listed in [verification history](verification-history.md); their test counts,
 engine versions and limitations must not be read as the current state.
 The project runs independently. Supported baseline streams must be valid; broken
@@ -181,4 +182,5 @@ remain outside the verified support claim. Sports/news/OTT/mobile presets report
 the sample's actual renditions/windows rather than promising those features.
 
 The [release checklist](release-checklist.md) tracks licensing, notices and other
-public-beta requirements. The repository and npm package remain private.
+public-beta requirements. Repository visibility and npm publication are separate
+maintainer decisions.

@@ -29,10 +29,17 @@ async function ready(url, child, logs) {
   try {
     const [packed] = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], { cwd: root, encoding: 'utf8' }));
     assert.equal(require('../package.json').private, true, 'npm publishing must stay disabled');
+    const version = require('../package.json').version;
+    assert.equal(packed.version, version);
+    assert.equal(require('../package-lock.json').version, version);
+    assert.equal(require('../package-lock.json').packages[''].version, version);
     assert.equal(require('../package.json').license, 'MIT');
     assert.equal(require('../package-lock.json').packages[''].license, 'MIT');
     const files = packed.files.map(file => file.path);
     assert.ok(files.includes('LICENSE'), 'Project license must be packaged');
+    assert.ok(files.includes('CHANGELOG.md'), 'Release notes must be packaged');
+    const changelog = await fs.readFile(path.join(root, 'CHANGELOG.md'), 'utf8');
+    assert.ok(changelog.split(/\r?\n/).some(line => line.startsWith('## ' + version + ' —')), 'Changelog must cover the package version');
     assert.ok(files.includes('dist/cli.js'));
     assert.ok(files.includes('dist/support-tools/assets/fault-control/control.js'));
     assert.ok(files.some(file => file.startsWith('dist/support-tools/assets/hls-sample/') && file.endsWith('.ts')));
@@ -64,6 +71,8 @@ async function ready(url, child, logs) {
     assert.equal(JSON.parse(await fs.readFile(path.join(installed, 'package.json'), 'utf8')).license, 'MIT');
     assert.equal(await fs.readFile(path.join(installed, 'LICENSE'), 'utf8'), await fs.readFile(path.join(root, 'LICENSE'), 'utf8'));
     const cli = path.join(directory, 'node_modules/.bin/hls-dash-live-sim');
+    assert.equal(execFileSync(cli, ['--version'], { cwd: directory, encoding: 'utf8' }).trim(), version);
+    assert.equal(await fs.readFile(path.join(installed, 'CHANGELOG.md'), 'utf8'), changelog);
     assert.match(execFileSync(cli, ['--help'], { cwd: directory, encoding: 'utf8' }), /fault-control/);
     const start = args => {
       const child = spawn(cli, args, { cwd: directory, env: { ...process.env, HLS_DASH_CONTROL_TOKEN: '' }, stdio: ['ignore', 'pipe', 'pipe'] });

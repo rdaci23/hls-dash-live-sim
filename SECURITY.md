@@ -1,25 +1,23 @@
 # Security policy
 
-This project is in private beta preparation and uses the [MIT License](LICENSE).
-Public release has not been approved. Security fixes target the current development
-branch and latest 0.2.x candidate; maintenance is best effort with no response-time
-or bounty commitment.
+This project uses the [MIT License](LICENSE). Security fixes target the current
+development branch and latest 0.2.x beta; maintenance is best effort with no
+response-time or bounty commitment.
 
 ## Report privately
 
-The planned public reporting route is GitHub private vulnerability reporting:
-open the repository's [Security advisories](https://github.com/rdaci23/hls-dash-live-sim/security/advisories)
+Use GitHub private vulnerability reporting when available: open the repository's
+[Security advisories](https://github.com/rdaci23/hls-dash-live-sim/security/advisories)
 and select **Report a vulnerability**. That form sends details privately to the
-maintainers, rather than posting a public issue.
+maintainers.
 
-**Current availability:** the repository is private, and this reporting feature
-has not been enabled. This file does not activate it. Before public announcement,
-the maintainer must enable the feature and verify that the reporting button is
-available. [GitHub setup instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository).
-Until then, existing collaborators should use their established private maintainer
-contact. No public security email address has been selected. If the private form
-is unavailable and you lack a private contact, ask only for a reporting channel;
-do not include vulnerability details, credentials or an exploit in an issue.
+Availability depends on GitHub repository settings; this policy file does not
+enable the form. If it is unavailable, existing collaborators should use their
+established private maintainer contact. If you lack a private contact, ask only
+for a reporting channel; do not include vulnerability details, credentials or an
+exploit in an issue. No public security email address is provided. Maintainers
+must enable and verify the form before public announcement; see the
+[publication checklist](docs/release-checklist.md).
 
 Include the affected commit/version, platform, relevant configuration, expected
 versus actual behavior and a minimal reproduction using generated samples or

@@ -1,6 +1,6 @@
 # Public-beta release checklist
 
-**Status: private beta preparation; not approved for public release.** Keep the
+**Status: 0.2.0 first-public-beta preparation; publication is not approved.** Keep the
 GitHub repository private and `package.json` set to `private: true`. No CI command
 publishes the package or changes visibility. Public release needs an explicit
 maintainer decision after the remaining requirements are satisfied.
@@ -69,18 +69,26 @@ that every future commit has passed. For the candidate, inspect the exact
   redistribution/use boundary. [Notices and exceptions](../THIRD_PARTY_NOTICES.md).
 - [x] Trace original media to its introducing commit and verify the historical
   FFmpeg test pattern/tone evidence. [Investigation](historical-media-provenance.md).
-- [ ] Establish a private vulnerability-reporting route and document it before
-  opening public issues. Do not invent a contact address or assume advisory
-  reporting is enabled.
-- [ ] Run the final candidate from a clean clone and confirm every routine CI
-  job passes; review packaged files for unintended configuration or credentials.
+- [x] Selected GitHub private vulnerability reporting and documented the private
+  route in [SECURITY.md](../SECURITY.md). The form is not yet enabled.
+- [ ] Enable and verify private vulnerability reporting at public cutover, before
+  public announcement. A policy file alone does not activate the feature.
+- [x] Recorded the clean-clone review and all 11 routine CI passes for
+  implementation candidate `824c39e`; [scope and evidence](release-review.md).
+- [ ] Run the final publication candidate from a clean clone and confirm routine
+  CI passes; review its exact packaged files before tagging.
 - [ ] Decide and configure required checks/branch protection for the public repo.
-- [ ] Attach candidate-specific full browser playback evidence. Repeat physical
+- [x] Recorded all six full browser playback passes for `824c39e`, tied to the
+  [exact reviewed implementation](release-review.md).
+- [ ] Attach the final publication candidate's full browser evidence. Repeat physical
   healthy-playback compatibility checks when the advertised device support claim
   changes; do not treat a Roku build as device playback evidence. Native recovery
   behavior is outside the simulator release gate.
-- [ ] Review version, changelog, installation path and documented support claim.
-  npm publication remains a separate explicit decision.
+- [x] Finalized 0.2.0 as the first public beta, prepared the
+  [changelog](../CHANGELOG.md), source-checkout installation and documented
+  compatibility limits. The entry stays unreleased until publication.
+- [ ] After approval, create the `v0.2.0` tag/release at the verified publication
+  commit and date the changelog. npm publication remains a separate decision.
 - [ ] Obtain explicit approval to change repository visibility. Keep it private
   until then, even if all technical checks pass.
 

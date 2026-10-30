@@ -1,9 +1,9 @@
-# Contributing during private beta preparation
+# Contributing
 
 Project-owned code, documentation and generated fixtures use the [MIT License](LICENSE).
 Contributions submitted for inclusion use the same license unless explicitly
-agreed otherwise. The repository remains private; official releases, npm
-publication and visibility changes need a separate maintainer decision.
+agreed otherwise. Official releases, npm publication and repository settings are
+maintained separately from ordinary contributions.
 The [release checklist](docs/release-checklist.md) records the remaining decisions.
 
 ## Get started

@@ -3,9 +3,9 @@
 A standalone tool for player developers and QA: serve known HLS/DASH streams,
 inject faults, and inspect what the player requested and how it recovered.
 
-**Private beta preparation.** The repository remains private and npm publishing is
-disabled. See the [release checklist](docs/release-checklist.md) for outstanding
-requirements. A passing CI run does not publish anything or approve a release.
+**0.2.0 beta.** Install from source; no npm release is published. Read the
+[changelog](CHANGELOG.md) for features, verification and known limits. Maintainers
+track publication status in the [release checklist](docs/release-checklist.md).
 
 New here? Follow [setup](docs/getting-started.md), the [three-minute demo](docs/demo.md),
 then [three scenario recipes](docs/scenario-recipes.md). See [configuration](docs/configuration.md)
@@ -27,6 +27,8 @@ HLS needs only Node. DASH additionally needs a running Docker daemon.
 These commands are for a repository checkout:
 
 ```sh
+git clone https://github.com/rdaci23/hls-dash-live-sim.git
+cd hls-dash-live-sim
 npm ci
 npm run build
 npm run hls
@@ -191,6 +193,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Demo](docs/demo.md) | A short real-UI walkthrough with a one-shot HTTP retry. |
 | [Configuration](docs/configuration.md) | Manual files, scenario files, sample settings and protected access. |
 | [Scenario recipes](docs/scenario-recipes.md) | One 404/retry, sustained outage and scheduled network/freeze cycle. |
+| [Changelog](CHANGELOG.md) | Version 0.2.0 beta features, verification scope and known limits. |
 | [Release review](docs/release-review.md) | History/package audit, clean-clone browser checks and publication decisions. |
 | [Dependency notices](THIRD_PARTY_NOTICES.md) | Locked runtime/development inventory and preserved upstream license texts. |
 | [Security policy](SECURITY.md) | Private-reporting procedure and current enablement status. |

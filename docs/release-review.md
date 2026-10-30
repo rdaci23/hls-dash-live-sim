@@ -1,12 +1,39 @@
 # Release review and remaining publication decisions
 
 Review date: 29 October 2026. The initial audit covered standalone source history
-through `b285679`. The repo remains private, npm publication remains disabled and
-this report does not approve a public release. On 30 October 2026 the maintainer
+through `b285679`. The audit did not change repository visibility or publish npm
+packages, and this report does not approve a public release. On 30 October 2026 the maintainer
 selected the [MIT License](../LICENSE) for project-owned code, documentation and
 generated media fixtures; third-party components retain their own licenses.
 Use the exact candidate's retained review report and CI run for final verification;
 results from an older commit do not qualify a newer code change.
+
+## Verified implementation candidate — 30 October 2026
+
+Candidate `824c39ec9702f219fd13d42e7e05d69a60ebdbb3` passed the
+[11 routine CI jobs](https://github.com/rdaci23/hls-dash-live-sim/actions/runs/41061539756)
+and a separate clean-clone `release:review` run. The optional full-browser CI job
+was skipped; the clean-clone review ran all six full Chrome HLS/DASH healthy,
+startup-404 and during-playback-404 cases, and all were release-qualified passes.
+The healthy cases each played for at least three minutes; DASH played four
+periods. Both recovery cases retained correlated HTTP retry and rendered progress
+without a manual restart.
+
+- History scan: 33 commits, zero secret findings.
+- Package scan: 458 files, zero secret findings; MIT license and production-only
+  installation checks passed.
+- Dependency audit: zero known vulnerabilities across all severities.
+- Local docs, notice hashes, types, unit tests and real control-UI checks passed.
+- A separate scan found zero removed-project-name references in all 992 reachable
+  Git objects/paths and the 458 packaged files.
+- Reviewed archive SHA-256:
+  `0dbc781c98710a4c42c960cac928e4d99a965409ee96892e34181fd01d636c9f`.
+
+These results identify the reviewed implementation commit. Later documentation
+and packaging changes do not turn them into evidence for a different candidate.
+Run the review against the final publication commit before tagging it. The
+[0.2.0 changelog](../CHANGELOG.md) records the prepared beta scope; publication
+approval and repository settings remain separate steps.
 
 ## History and private-material review
 
@@ -110,7 +137,12 @@ generated media fixtures. Required third-party attribution is retained.
 - Confirm a private security contact or enable GitHub private vulnerability
   reporting at public cutover, then verify the button before public announcement.
   [Current policy and availability](../SECURITY.md).
-- Decide required checks/branch protection and the release version/changelog.
+- Configure required checks/branch protection at public cutover. The current
+  private-repository plan rejects these settings; do not change visibility just
+  to enable them.
+- Version 0.2.0 is finalized as the first public beta; the
+  [changelog](../CHANGELOG.md) is prepared. Create the tag/release and set its date
+  only after publication approval and candidate verification.
 - Explicitly approve any visibility change. This work keeps the repo private.
 
 The simulator owns valid streams, delivered faults, restoration and diagnostics.
