@@ -4,7 +4,7 @@
   "sourceProject": "Maintainer’s original private tools project",
   "introducedInCommit": "b1356697404887ca2e49a3ae3a55da0577f421d5",
   "introducedOn": "2025-11-03",
-  "standaloneExtractionCommit": "55952e9",
+  "standaloneExtractionCommit": "9ff737c",
   "exactHistoricalCommandRecovered": false,
   "conclusion": "Strong reproducible evidence of FFmpeg testsrc video and synthesized 1000 Hz audio, encoded with libx264/libavcodec.",
   "ffmpegVersionUsedForAnalysis": "ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers",

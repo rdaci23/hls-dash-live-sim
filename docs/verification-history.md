@@ -1,5 +1,9 @@
 # Verification history
 
+Commit IDs in older verification reports identify the original private history.
+A documentation cleanup on 30 October 2026 rewrote that history; old reports
+remain historical evidence and do not qualify the current release candidate.
+
 Use [current implementation](implementation.md), [playback gates](playback-gates.md)
 and the CI run for the candidate commit to assess present behavior. Older evidence
 is retained for traceability; it does not override current tests or establish new

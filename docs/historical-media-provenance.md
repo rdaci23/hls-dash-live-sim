@@ -13,7 +13,7 @@ The original private tools project’s commit
 `assets/hls-sample/segments/segment0.ts`, `segment1.ts`, `audio0.aac` and
 `audio1.aac`. Its README describes the bundled content as color-bar video plus
 tone, with 720p video and mono audio. All four files are byte-identical to the
-copies extracted into this repository at `55952e9`.
+copies extracted into this repository at `9ff737c`.
 
 The original tree's scripts, simulator source and documentation were searched
 for FFmpeg/testsrc/sine generation commands. None was found in that source tree;

@@ -23,7 +23,7 @@ notices are intentional public upstream attribution, not project credentials.
 Git author metadata remains present; the maintainer should review the identity
 exposed when publishing history. No history rewrite was performed.
 
-The original extracted media remains reachable in commit `55952e9`, under
+The original extracted media remains reachable in commit `9ff737c`, under
 `assets/hls-sample/segments/`. A follow-up investigation traced all four files
 byte-for-byte to upstream commit `b135669` (3 November 2025), whose README calls
 them color-bar video plus tone. All 288 video frames closely match newly generated
