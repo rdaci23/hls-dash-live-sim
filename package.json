@@ -53,7 +53,8 @@
     "network:presets": "npm run build && node scripts/verify-network-presets.cjs",
     "resource:verify": "npm run build && node scripts/verify-resource-scenarios.cjs",
     "controls:verify": "npm run build && node scripts/verify-scenario-controls.cjs",
-    "faults:verify": "npm run build && node scripts/verify-core-faults.cjs"
+    "faults:verify": "npm run build && node scripts/verify-core-faults.cjs",
+    "browser:core": "npm run build && node scripts/verify-core-browser.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

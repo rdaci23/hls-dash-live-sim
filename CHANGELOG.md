@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Reproducible phase-correlated browser observation workflow for selective
+  rendition outages, bandwidth starvation and four network oscillation cycles;
+  fault delivery, rendered continuation and compatibility review stay separate.
+
 - Explicit malformed manifest/media and wrong/stale init payload actions, bounded
   header delay/drip, raw HTTP/1.1 framing faults and verified shared network
   composition with an isolated 40-case simulator evidence matrix.

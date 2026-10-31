@@ -44,6 +44,7 @@ async function ready(url, child, logs) {
     assert.ok(files.includes('dist/support-tools/assets/scenarios/next-manifest-retry.json'));
     assert.ok(files.includes('docs/scenario-controls.md'));
     assert.ok(files.includes('docs/payload-transport-scenarios.md'));
+    assert.ok(files.includes('docs/core-browser-observations.md'));
     for (const name of ['next-malformed-manifest', 'next-damaged-media', 'next-wrong-track-init', 'next-stale-init', 'next-video-header-delay', 'next-video-drip', 'next-video-content-length', 'next-video-chunked']) {
       assert.ok(files.includes('examples/scenarios/' + name + '.json'));
       assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));

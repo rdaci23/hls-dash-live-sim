@@ -45,6 +45,7 @@ use your existing Chrome installation.
 | `npm run audio:verify` | DASH audio-only outage isolation/restoration in both Time/Number modes, healthy video/init/MPD/UTC and same-download audio retries. | Docker/pinned image; about 40 seconds, no browser. `--preset-timing` uses the original longer schedule. |
 | `npm run rendition:verify` | HLS high/low and DASH low HTTP outage isolation and restoration. | About one minute; DASH needs the pinned Docker image. |
 | `npm run network:presets` | Starvation and four network cycles for both protocols; pacing, bytes, cancellation and in-flight restoration. | About two minutes; DASH requires pinned Docker image. |
+| `npm run browser:core` | Phase-correlated browser observations for rendition outages, starvation and four-cycle profiles; simulator/recovery outcomes remain separate. | Chrome; DASH needs pinned Docker. About 3–4 minutes per case. |
 | `npm run faults:verify` | Forty payload, raw HTTP/1.1 transport and shared-network completion/cancellation cases for both protocols. | Node only; uses owned procedural media origins. |
 | `npm run controls:verify` | Authenticated manual HLS/DASH arm/start/reset, run isolation, retained outcomes and redacted evidence. | Node; DASH needs pinned Docker image. |
 | `npm run resource:verify` | Eight manifest/init HTTP isolation and retry cases using a local HLS fMP4 origin and real DASH engine. | Node; DASH needs Docker/pinned image; `--protocol hls` needs no Docker. |

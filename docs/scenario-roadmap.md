@@ -7,8 +7,8 @@ limitation must never be hidden or presented as a simulator pass.
 
 | Milestone | Status | Required evidence |
 | --- | --- | --- |
-| 1. Selective rendition outages | HTTP implementation verified; browser observations pending | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
-| 2. Realistic network presets | HTTP implementation verified; browser observations pending | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
+| 1. Selective rendition outages | HTTP implementation verified; browser observation matrix in progress | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
+| 2. Realistic network presets | HTTP implementation verified; browser observation matrix in progress | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Planned | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
@@ -57,3 +57,10 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
   cases passed, including rate changes and cancellation. Regular suite: 338
   passes, eight optional skips; eight Chrome UI tests and installed-package smoke
   passed. Targeted fault-browser observations are still pending.
+
+- Browser observation workflow added for all seven selective-outage/network cases.
+  Development observations: HLS high-outage continuation without rendered low
+  fallback (fault-associated errors retained for review); DASH starvation
+  high/low/high adaptation and continuation. Full committed matrix remains a
+  separate evidence run. CI run `41196562047` at `f67c35e` was also prevented
+  from starting by GitHub account payment/spending-limit restrictions.

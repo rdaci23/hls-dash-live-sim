@@ -228,3 +228,7 @@ remains the default. [Core coverage roadmap](docs/scenario-roadmap.md).
 [Payload and transport scenarios](docs/payload-transport-scenarios.md) cover
 explicit invalid manifests/media/init, header delays, slow progress, HTTP/1.1
 framing failures and verified shared-network combinations.
+
+[Core browser observations](docs/core-browser-observations.md) record rendition
+outages and network cycles with pinned players, rendered frames and explicit
+compatibility outcomes.
