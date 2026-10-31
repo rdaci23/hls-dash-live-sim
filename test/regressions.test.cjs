@@ -41,8 +41,9 @@ async function unusedPort() {
   await new Promise((resolve) => server.close(resolve));
   return port;
 }
-async function waitFor(check) {
-  for (let n = 0; n < 150; n++) {
+async function waitFor(check, timeoutMs = 1500) {
+  const deadline = performance.now() + timeoutMs;
+  while (performance.now() < deadline) {
     if (await check()) return;
     await sleep(10);
   }
@@ -443,70 +444,63 @@ test("custom DASH assets reject unsupported addressing before Docker startup", a
   );
 });
 
-test(
-  "SIGINT during detached DASH creation cleans up the unique owned session",
-  { timeout: 10000 },
+for (const createDelayMs of [0, 2000]) test(
+  "SIGINT during detached DASH creation cleans up the unique owned session" + (createDelayMs ? " after slow worker startup" : ""),
+  { timeout: 15000 },
   async (t) => {
-    const dir = await directory(t);
-    const stateFile = path.join(dir, "container.json");
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sim-regression-"));
+    const stateFile = path.join(dir, "container.json"), acknowledge = path.join(dir, "acknowledge"), eventsFile = path.join(dir, "events.jsonl");
     const executable = path.join(dir, "docker");
-    // A deterministic daemon stand-in delays its acknowledgement after creation.
-    await fs.writeFile(
-      executable,
-      `#!${process.execPath}
+    let child, output = "";
+    t.after(async () => {
+      // Release only this fixture's worker before closing its owner and deleting its files.
+      await fs.writeFile(acknowledge, "release");
+      if (child && child.exitCode === null && child.signalCode === null) {
+        const closed = once(child, "close"); child.kill("SIGINT");
+        const deadline = setTimeout(() => child.kill("SIGKILL"), 5000);
+        try { await closed; } finally { clearTimeout(deadline); }
+      }
+      await fs.rm(dir, { recursive: true, force: true });
+    });
+    // A deterministic daemon stand-in withholds acknowledgement until the test
+    // has sent SIGINT. Slow process scheduling cannot miss a 200 ms race window.
+    await fs.writeFile(executable, `#!${process.execPath}
 const fs = require('node:fs');
-const a = process.argv.slice(2), stateFile = ${JSON.stringify(stateFile)};
+const a = process.argv.slice(2), stateFile = ${JSON.stringify(stateFile)}, acknowledge = ${JSON.stringify(acknowledge)}, eventsFile = ${JSON.stringify(eventsFile)};
+const record = event => fs.appendFileSync(eventsFile, JSON.stringify({event})+'\\n');
 let state = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile)) : null;
 if (a[0] === 'run') {
   const labels = {};
   a.forEach((v, i) => { if(v === '--label') { const [key, value] = a[i+1].split('='); labels[key] = value; } });
   state = { Id: 'a'.repeat(64), Config: { Labels: labels } };
-  fs.writeFileSync(stateFile, JSON.stringify(state));
-  setTimeout(() => console.log(state.Id), 200);
+  setTimeout(() => {
+    fs.writeFileSync(stateFile, JSON.stringify(state)); record('created');
+    const deadline = setTimeout(() => process.exit(2), 8000);
+    const timer = setInterval(() => {
+      if (!fs.existsSync(acknowledge)) return;
+      clearInterval(timer); clearTimeout(deadline); record('acknowledged'); console.log(state.Id);
+    }, 10);
+  }, ${createDelayMs});
 } else if (a[0] === 'ps') {
   if (state && a.some(v => v.startsWith('label=io.hls-dash-live-sim.session='))) console.log(state.Id);
 } else if (a[0] === 'inspect') console.log(JSON.stringify([state]));
-else if (a[0] === 'rm') fs.unlinkSync(stateFile);
-`,
-      { mode: 0o700 },
-    );
-    const child = spawn(
-      process.execPath,
-      [
-        path.resolve(__dirname, "../dist/cli.js"),
-        "livesim",
-        "--sim-type",
-        "dash",
-        "--no-pull",
-        "--port",
-        String(await unusedPort()),
-        "--fault-config",
-        path.join(dir, "faults.json"),
-      ],
-      {
-        cwd: dir,
-        env: { ...process.env, PATH: dir + path.delimiter + process.env.PATH },
-      },
-    );
-    let output = "";
-    child.stdout.on("data", (data) => (output += data));
-    child.stderr.on("data", (data) => (output += data));
-    t.after(async () => {
-      if (child.exitCode === null && child.signalCode === null) {
-        const closed = once(child, "close");
-        child.kill("SIGKILL");
-        await closed;
-      }
-    });
-    await waitFor(() =>
-      fs.access(stateFile).then(
-        () => true,
-        () => false,
-      ),
-    );
+else if (a[0] === 'rm') { record('removed'); fs.unlinkSync(stateFile); }
+`, { mode: 0o700 });
+    child = spawn(process.execPath, [path.resolve(__dirname, "../dist/cli.js"), "livesim", "--sim-type", "dash", "--no-pull", "--port", String(await unusedPort()), "--fault-config", path.join(dir, "faults.json")],
+      { cwd: dir, env: { ...process.env, PATH: dir + path.delimiter + process.env.PATH } });
+    child.stdout.on("data", data => output += data);
+    child.stderr.on("data", data => output += data);
+    await waitFor(async () => {
+      if (child.exitCode !== null || child.signalCode !== null) throw Error("CLI exited before fixture creation: " + output);
+      return fs.access(stateFile).then(() => true, () => false);
+    }, 5000);
     const closed = once(child, "close");
-    child.kill("SIGINT");
+    assert.equal(child.kill("SIGINT"), true);
+    await fs.appendFile(eventsFile, JSON.stringify({event:"sigint-sent"})+"\n");
+    await fs.writeFile(acknowledge, "release");
     assert.equal((await closed)[0], 130, output);
     await assert.rejects(fs.access(stateFile), { code: "ENOENT" });
+    const events = (await fs.readFile(eventsFile, "utf8")).trim().split("\n").map(line => JSON.parse(line).event);
+    assert.deepEqual(events, ["created", "sigint-sent", "acknowledged", "removed"]);
   },
 );
