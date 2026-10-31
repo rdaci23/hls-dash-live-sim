@@ -21,7 +21,11 @@ release-soak qualification. No mode publishes, tags or changes visibility.
 The packaged [smoke profile](../examples/scenarios/endurance-smoke.json) and
 [four-hour profile](../examples/scenarios/endurance-four-hour.json) expose the
 network schedule in the scenario catalog. Running a profile alone is not the
-concurrent-viewer verifier or qualification.
+concurrent-viewer verifier or qualification. The final bandwidth cap has a bounded
+one-minute shutdown grace so independently started source clocks cannot release
+queued bodies just before the common measurement deadline. Qualification still
+requires the full ten minutes or four hours; grace does not shorten or accelerate
+that interval. Every attempted cancellation is retained before its assertion.
 
 ## Workload and gates
 

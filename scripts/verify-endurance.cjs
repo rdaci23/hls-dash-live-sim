@@ -100,7 +100,8 @@ async function main() {
                 const start = performance.now();
                 if (cancel) {
                     const r = await raw(resource.media, { signal: controller.signal, cancelAfterBytes: 128, timeoutMs: 10000 });
-                    assert.ok(!r.complete && r.clientCancelled);
+                    state.evidence.append('http.cancel-attempt', {role,track:resource.track,status:r.status,complete:r.complete,clientCancelled:r.clientCancelled,bytes:r.bytes.length,contentLength:r.headers['content-length'],requestId:r.headers['x-sim-request-id']});
+                    assert.ok(!r.complete && r.clientCancelled, protocol + ' viewer ' + role + ': cancellation must be incomplete; complete=' + r.complete + ', clientCancelled=' + r.clientCancelled + ', bytes=' + r.bytes.length);
                     state.cancellations++;
                     state.evidence.append('http.cancel', { role, track: resource.track, bytes: r.bytes.length, requestId: r.headers['x-sim-request-id'] });
                     return;

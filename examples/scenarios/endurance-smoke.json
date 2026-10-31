@@ -19,7 +19,7 @@
     },
     {
       "afterMs": 68000,
-      "beforeMs": 600000,
+      "beforeMs": 660000,
       "network": {
         "bandwidthKbps": 3000
       }

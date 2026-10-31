@@ -241,3 +241,15 @@ GET. `npm run manifest:preview` retains both-protocol HTTP isolation, cache body
 identity and restoration evidence; UI tests verify the browser path separately.
 HLS/DASH advertised resource kinds also override filename extensions. Final candidate
 qualification must include this change rather than reuse an earlier soak.
+
+### Endurance boundary correction
+
+The clean `aad1e31` control completed four actual hours with valid decoded A/V,
+publication, memory and drained cleanup, but failed its cancellation assertion at
+the measurement boundary. Its result remains failed and unqualified. The final
+network phase ended on a source clock slightly before the common viewer clock,
+releasing a pending body to unlimited delivery before cancellation. A short real
+HTTP regression reproduces that completed-body result. The workload now keeps
+the final cap for a bounded one-minute shutdown grace, without changing required
+measurement time or fairness cycles. Cancel attempts are recorded before asserting
+incomplete delivery. A new exact-candidate full run is required.
