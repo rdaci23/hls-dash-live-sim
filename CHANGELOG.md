@@ -5,6 +5,10 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## 0.2.0 — Unreleased
 
+- Bounded owned-video timestamp reset, sequence rollback and incompatible-media
+  URL reuse, plus isolated DVR retention, outage joining and long-freeze probes.
+
+
 - Owned local encoder restarts with aligned HLS discontinuities/new initialization
   URLs and DASH Period/PTO transitions; growing event ENDLIST/static completion,
   isolated HTTP verification and rendered lifecycle checks.

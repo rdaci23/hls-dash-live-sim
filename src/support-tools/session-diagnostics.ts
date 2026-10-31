@@ -54,8 +54,8 @@ type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
-  lifecycleKind?: "encoder-restart" | "event-completion";
-  lifecycleState?: "scheduled" | "active" | "completed";
+  lifecycleKind?: "encoder-restart" | "event-completion" | "unannounced-timestamp-reset" | "sequence-rollback" | "reused-url-incompatible-media";
+  lifecycleState?: "scheduled" | "active" | "completed" | "restored";
   generation?: number;
   sourceMediaTimeMs?: number;
   networkScope?: "session" | "track";
@@ -131,8 +131,8 @@ export interface DiagnosticsOptions {
 export const TRACE_HEADERS =
   "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids, X-Sim-Run-Id";
 const values = {
-  lifecycleKind:["encoder-restart","event-completion"],
-  lifecycleState:["scheduled","active","completed"],
+  lifecycleKind:["encoder-restart","event-completion","unannounced-timestamp-reset","sequence-rollback","reused-url-incompatible-media"],
+  lifecycleState:["scheduled","active","completed","restored"],
   networkScope:["session","track"],
   publicationAction: ["delay","lag"],
   cacheDecision: ["origin","fill","hit","bypass","restore"],

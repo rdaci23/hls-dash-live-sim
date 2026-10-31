@@ -213,9 +213,9 @@ jobs:
           retention-days: 7
 
   owned-lifecycle:
-    name: Owned restart and finite event completion
+    name: Owned lifecycle and DVR
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -226,6 +226,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx --no-install playwright install --with-deps chrome
+      - run: npm run lifecycle:invalid -- --output output/ci-invalid-lifecycle
+      - run: npm run dvr:verify -- --output output/ci-dvr-http
+      - run: npm run browser:dvr -- --output output/ci-dvr-browser
+        if: github.event_name == 'workflow_dispatch' && inputs.playback
       - run: npm run lifecycle:verify -- --output output/ci-lifecycle-http
       - run: npm run browser:lifecycle -- --output output/ci-lifecycle-browser
       - name: Retain lifecycle evidence
@@ -234,6 +238,9 @@ jobs:
         with:
           name: lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            output/ci-invalid-lifecycle/
+            output/ci-dvr-http/
+            output/ci-dvr-browser/
             output/ci-lifecycle-http/
             output/ci-lifecycle-browser/
           if-no-files-found: error

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "lifecycle": {
+    "kind": "sequence-rollback",
+    "track": "video:0",
+    "afterMs": 30000,
+    "durationMs": 15000
+  }
+}

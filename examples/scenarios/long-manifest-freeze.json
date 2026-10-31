@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "rules": [],
+  "timeline": [
+    {
+      "afterMs": 30000,
+      "beforeMs": 75000,
+      "manifestFreeze": true
+    },
+    {
+      "afterMs": 75000,
+      "beforeMs": 90000,
+      "manifestFreeze": false
+    }
+  ]
+}

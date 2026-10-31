@@ -63,7 +63,10 @@
     "tracks:verify": "npm run build && node scripts/verify-track-scenarios.cjs",
     "browser:tracks": "npm run build && node scripts/verify-track-browser.cjs",
     "lifecycle:verify": "npm run build && node scripts/verify-lifecycle-scenarios.cjs",
-    "browser:lifecycle": "npm run build && node scripts/verify-lifecycle-browser.cjs"
+    "browser:lifecycle": "npm run build && node scripts/verify-lifecycle-browser.cjs",
+    "lifecycle:invalid": "npm run build && node scripts/verify-invalid-lifecycle.cjs",
+    "dvr:verify": "npm run build && node scripts/verify-dvr-scenarios.cjs",
+    "browser:dvr": "npm run build && node scripts/verify-dvr-browser.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

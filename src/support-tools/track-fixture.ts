@@ -48,10 +48,10 @@ function box(bytes: Buffer, type: string, parent?: Box): Box {
   const found = boxes(bytes, parent?.body, parent?.end).filter(b => b.type === type); if (found.length !== 1)
     throw Error('Fixture requires one ' + type); return found[0];
 }
-export function retimeFragment(input: Buffer, track: FixtureTrack, sequence: number): Buffer {
+export function retimeFragment(input: Buffer, track: FixtureTrack, sequence: number, timestampSequence = sequence): Buffer {
   if (!Number.isSafeInteger(sequence) || sequence < 0 || sequence >= 0xffffffff)
     throw new HttpError(410, 'Fixture sequence exceeds supported lifetime');
-  const bytes = Buffer.from(input), cycle = BigInt(Math.floor(sequence / track.segments.length)), offset = cycle * BigInt(track.cycleTicks), moof = box(bytes, 'moof'), traf = box(bytes, 'traf', moof), tfdt = box(bytes, 'tfdt', traf), mfhd = box(bytes, 'mfhd', moof);
+  const bytes = Buffer.from(input), cycle = BigInt(Math.floor(timestampSequence / track.segments.length)), offset = cycle * BigInt(track.cycleTicks), moof = box(bytes, 'moof'), traf = box(bytes, 'traf', moof), tfdt = box(bytes, 'tfdt', traf), mfhd = box(bytes, 'mfhd', moof);
   const readTime = (b: Box, at: number) => bytes[b.body] === 1 ? bytes.readBigUInt64BE(at) : BigInt(bytes.readUInt32BE(at));
   const writeTime = (b: Box, at: number, value: bigint) => {
     if (bytes[b.body] === 1)
@@ -137,9 +137,9 @@ export class TrackFixturePublisher {
     }
     return lines.join('\n') + '\n';
   }
-  hlsPlaylist(t:FixtureTrack):string{
+  hlsPlaylist(t:FixtureTrack,withFault=false):string{
     const {first,end}=this.bound(t),generations=this.lifecycle.allGenerations,discontinuities=generations.filter(g=>g.id&&g.startSeconds/2<first).length;
-    const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+Math.ceil(Math.max(...t.segments.map(s=>s.duration/t.timescale))),'#EXT-X-MEDIA-SEQUENCE:'+first,'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
+    const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+Math.ceil(Math.max(...t.segments.map(s=>s.duration/t.timescale))),'#EXT-X-MEDIA-SEQUENCE:'+(withFault&&this.lifecycle.activeFault()?.kind==='sequence-rollback'&&this.lifecycle.activeFault()?.track===t.id?Math.max(0,first-4):first),'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
     if(this.mode!=='live')lines.push('#EXT-X-PLAYLIST-TYPE:'+this.mode.toUpperCase());
     if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,this.lifecycle.generationAt(first).id)+'"');
     for(let n=first;n<end;n++){
@@ -149,7 +149,7 @@ export class TrackFixturePublisher {
     }
     if(this.mode==='vod'||this.lifecycle.ended)lines.push('#EXT-X-ENDLIST');return lines.join('\n')+'\n';
   }
-  mpd():string{
+  mpd(withFault=false):string{
     const dynamic=this.mode!=='vod'&&!this.lifecycle.ended,duration=this.mode==='vod'?8:this.lifecycle.endSeconds;
     const lines=['<?xml version="1.0" encoding="UTF-8"?>','<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="'+(dynamic?'dynamic':'static')+'" minBufferTime="PT2S"'+(dynamic?' availabilityStartTime="'+new Date(this.ast).toISOString()+'" publishTime="'+new Date().toISOString()+'" minimumUpdatePeriod="PT1S" timeShiftBufferDepth="PT'+(this.windowSegments*2)+'S" suggestedPresentationDelay="PT'+Math.min(6,this.windowSegments*2-2)+'S"':' mediaPresentationDuration="PT'+duration+'S"')+'>'];
     if(dynamic)lines.push('<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-head:2014" value="/utc"/>');
@@ -158,11 +158,11 @@ export class TrackFixturePublisher {
       const startSequence=g.startSeconds/2,next=generations[index+1],endSequence=next?next.startSeconds/2:Infinity;
       if(!this.tracks.every(t=>{const b=this.bound(t);return Math.max(b.first,startSequence)<Math.min(b.end,endSequence);}))continue;
       lines.push('<Period id="'+(g.id?'owned-'+g.id:'owned')+'" start="PT'+g.startSeconds+'S"'+(next?' duration="PT'+(next.startSeconds-g.startSeconds)+'S"':'')+'>');
-      this.periodTracks(lines,g,startSequence,endSequence);lines.push('</Period>');
+      this.periodTracks(lines,g,startSequence,endSequence,withFault);lines.push('</Period>');
     }
     lines.push('</MPD>');return lines.join('\n')+'\n';
   }
-  private periodTracks(lines:string[],g:FixtureGeneration,startSequence:number,endSequence:number):void{
+  private periodTracks(lines:string[],g:FixtureGeneration,startSequence:number,endSequence:number,withFault=false):void{
     let adaptation=0;
     for(const group of [this.tracks.filter(t=>t.type==='video'),...this.tracks.filter(t=>t.type!=='video').map(t=>[t])]){
       const first=group[0];lines.push('<AdaptationSet id="'+adaptation+++'" contentType="'+first.type+'" segmentAlignment="true"'+(first.language?' lang="'+first.language+'"':'')+'>');
@@ -170,7 +170,7 @@ export class TrackFixturePublisher {
       for(const t of group){const b=this.bound(t),start=Math.max(b.first,startSequence),end=Math.min(b.end,endSequence);if(start>=end)continue;
         lines.push('<Representation id="'+t.id.replace(':','-')+'" mimeType="'+(t.type==='text'?'application':t.type)+'/mp4" codecs="'+t.codec+'" bandwidth="'+t.bandwidth+'"'+(t.type==='video'?' width="'+t.width+'" height="'+t.height+'"':t.type==='audio'?' audioSamplingRate="48000"':'')+'>');
         if(t.type==='audio')lines.push('<AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>');
-        lines.push('<SegmentTemplate timescale="'+t.timescale+'" presentationTimeOffset="'+(g.startSeconds*t.timescale)+'" startNumber="'+(start+1)+'" initialization="'+this.initUri(t,g.id)+'" media="'+this.prefix(t,g.id)+'/number-$Number$.m4s"><SegmentTimeline>');
+        lines.push('<SegmentTemplate timescale="'+t.timescale+'" presentationTimeOffset="'+(g.startSeconds*t.timescale)+'" startNumber="'+(withFault&&this.lifecycle.activeFault()?.kind==='sequence-rollback'&&this.lifecycle.activeFault()?.track===t.id?Math.max(1,start-3):start+1)+'" initialization="'+this.initUri(t,g.id)+'" media="'+this.prefix(t,g.id)+'/number-$Number$.m4s"><SegmentTimeline>');
         for(let n=start;n<end;n++){const s=t.segments[n%4],time=BigInt(s.baseTime)+BigInt(Math.floor(n/4))*BigInt(t.cycleTicks);lines.push('<S t="'+time+'" d="'+s.duration+'"/>');}
         lines.push('</SegmentTimeline></SegmentTemplate></Representation>');
       }lines.push('</AdaptationSet>');
@@ -183,7 +183,7 @@ export class TrackFixturePublisher {
       return;
     }
     if (url.pathname === '/dash/manifest.mpd') {
-      send(res, 200, this.mpd(), { 'Content-Type': 'application/dash+xml' }, req.method);
+      send(res, 200, this.mpd(req.method==='GET'), { 'Content-Type': 'application/dash+xml' }, req.method);
       return;
     }
     if (url.pathname === '/utc') {
@@ -196,7 +196,7 @@ export class TrackFixturePublisher {
     if (!track)
       throw new HttpError(404, 'Unknown owned fixture resource');
     if (match[3] === 'stream.m3u8') {
-      send(res, 200, this.hlsPlaylist(track), { 'Content-Type': 'application/vnd.apple.mpegurl' }, req.method);
+      send(res, 200, this.hlsPlaylist(track,req.method==='GET'), { 'Content-Type': 'application/vnd.apple.mpegurl' }, req.method);
       return;
     }
     let body: Buffer, contentType = track.type === 'text' ? 'application/mp4' : track.type + '/mp4';
@@ -215,8 +215,11 @@ export class TrackFixturePublisher {
         body = Buffer.from(webVttSegment(track, sequence, this.lifecycle.generationAt(sequence).startSeconds));
         contentType = 'text/vtt';
       }
-      else
-        body = retimeFragment(this.files.get(track.segments[sequence % 4].file), track, sequence);
+      else {
+        const fault=req.method==='GET'?this.lifecycle.activeFault():undefined;
+        const donor=fault?.kind==='reused-url-incompatible-media'&&fault.track===track.id?this.tracks.find(t=>t.id==='video:1'):track;
+        body = retimeFragment(this.files.get(donor.segments[sequence % 4].file), donor, sequence, fault?.kind==='unannounced-timestamp-reset'&&fault.track===track.id?sequence%4:sequence);
+      }
     }
     let status = 200, headers: Record<string, string> = { 'Content-Type': contentType, 'Accept-Ranges': 'bytes', ETag: '"' + createHash('sha256').update(body).digest('hex') + '"' };
     if (req.method === 'GET' && req.headers.range) {

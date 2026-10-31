@@ -30,6 +30,9 @@ use your existing Chrome installation.
 
 | Command | Coverage | Requirements |
 | --- | --- | --- |
+| `npm run lifecycle:invalid` | Six intentional timestamp/sequence/incompatible-URL checks; controls, HEAD and restoration. | Node, no Docker. |
+| `npm run dvr:verify` | Retention expiry, join outage and 45-second freeze/resume HTTP checks. | Node, no Docker; about three minutes. |
+| `npm run browser:dvr` | Explicit pause/seek and separate automatic join/long-freeze observations. | Chrome, no Docker; several minutes. |
 | `npm run lifecycle:verify` | Owned aligned restart and finite event HTTP authoring, retained bytes and cleanup, both protocols. | Node; no Docker. |
 | `npm run browser:lifecycle` | Rendered restart, decoded audio/captions and actual native event completion. | Chrome; no Docker; no restart/seek after initial configuration. |
 | `npm run docs:check` | Local documentation link targets exist. Does not verify remote URLs or heading fragments. | Node; no network. |

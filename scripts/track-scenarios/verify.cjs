@@ -5,7 +5,7 @@ const{read:raw}=require('../transport-scenarios/verify.cjs');
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),hash=body=>createHash('sha256').update(body).digest('hex');
 async function read(url,options){const r=await fetch(url,{signal:AbortSignal.timeout(6000),...options}),body=Buffer.from(await r.arrayBuffer());return{status:r.status,body,sha256:hash(body),headers:r.headers,requestId:r.headers.get('x-sim-request-id')};}
 async function tracks(session,protocol){
- const root=await read(session.url);assert.equal(root.status,200);if(protocol==='dash')return catalog(root.body.toString(),session.url,protocol);
+ const root=await read(session.url);assert.equal(root.status,200);if(protocol==='dash')return (await catalog(root.body.toString(),session.url,protocol)).map(r=>({...r,manifest:new URL(session.url)}));
  const children=variantEntries(root.body.toString()).map((v,i)=>({uri:v.uri,track:'video:'+i}));let audio=0,text=0;
  for(const line of root.body.toString().split('\n'))if(line.startsWith('#EXT-X-MEDIA:')){const a=attributes(line);children.push({uri:a.URI,track:a.TYPE==='AUDIO'?'audio:'+audio++:'text:'+text++});}
  const result=[];for(const child of children){const manifest=new URL(child.uri,session.url),playlist=await read(manifest);assert.equal(playlist.status,200);const content=playlist.body.toString(),map=content.split('\n').filter(l=>l.startsWith('#EXT-X-MAP:')).at(-1);result.push({track:child.track,manifest,init:map?new URL(attributes(map).URI,manifest):undefined,media:new URL(mediaSegments(content).at(-1).uri,manifest)});}return result;

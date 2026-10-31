@@ -13,7 +13,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Simulator HTTP implementation verified; targeted browser evidence pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
 | 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault browser observations pending | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
-| 7. Restart/DVR/event completion | Valid restart/event HTTP and browser checks pass locally; invalid/DVR cases pending | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
+| 7. Restart/DVR/event completion | Valid restart/event and invalid/DVR HTTP checks pass locally; DVR browser limits retained | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | Planned | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
 | 9. Endurance/concurrency | Planned | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
 | 10. Final publication review | Pending all gates | Exact-commit CI/browser/soak evidence, history/package/licenses/docs review, support matrix, branch protection and security-reporting preparation. Publication remains a separate approval. |
@@ -135,3 +135,15 @@ has not executed these commits because of its account payment/spending-limit gat
   across discontinuities, AAC priming edits and redundant test-harness audio
   selection were corrected. Exact committed rechecks follow this checkpoint.
   Invalid restart/DVR work, endurance and CI qualification remain open.
+
+- Valid lifecycle checkpoint `86e4e16`: clean isolated four-case HTTP and
+  four-case Chrome reports at `output/lifecycle-http-clean-86e4e16/report.json`
+  and `output/lifecycle-browser-clean-86e4e16/report.json`. Native ending and
+  post-restart decoded audio/captions passed for both protocols.
+
+- Invalid source development matrix: six HTTP passes; DVR matrix: six HTTP
+  passes; 468 regular tests pass, eight optional skips. Explicit pause/seek
+  passed in both browsers. Sustained startup-503 recovery failed with default
+  player settings in both protocols; long-freeze recovery passed HLS decoded
+  tracks/continuation but DASH stalled after its automatic seek. These are
+  retained compatibility observations, not simulator or release recovery passes.
