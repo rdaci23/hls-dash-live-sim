@@ -1,3 +1,4 @@
+import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
 import {
   OriginPolicy,
   fetchRemote,
@@ -56,16 +57,17 @@ export async function startDashFaultProxy(
     diagnostics.close();
     throw error;
   }
-  const needsMediaIdentity = manual || scenario && (scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
-  const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.rules.some(rule => rule.target.resource === "init"));
+  const needsMediaIdentity = manual || scenario && (scenario.definition.http?.target.resource === "media" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.http?.target.resource === "init" || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
-    manual || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
+    manual || scenario?.definition.http?.target.resource === "init" || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks }, async (next, previousRunId) => {
+  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks,
+    resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
     scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
     if (previousRunId) await transport.cancelRun(previousRunId);
     faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline);
@@ -148,25 +150,27 @@ export async function startDashFaultProxy(
       }
       const profile = scenario?.timeline?.profile();
       if (
-        scenario && (scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
-        !scenario.settled &&
+        scenario && (scenario.definition.http?.target.resource === "media" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
+        (scenario.http || !scenario.settled) &&
         segment &&
         !logical &&
         req.method === "GET"
       )
         scenario.unidentifiedMedia();
       const failure = scenario
-        ? scenario.decide(logical, req.headers.range, trace, req.method)
+        ? scenario.decide(logical, req.headers.range, trace, req.method, req.headers)
         : segment && req.method !== "HEAD"
           ? faults.segmentStatus(request.pathname, trace)
           : 0;
       if (failure) {
-        send(res, failure, "Injected DASH resource failure", {}, req.method);
+        send(res, failure, "Injected DASH resource failure", scenario?.failureHeaders(trace) ?? {}, req.method);
         return;
       }
       const reply = async (status: number, body: Buffer | string, headers: Record<string, string>) => {
-        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace, () => faults.transportGrant(trace)))
-          send(res, status, body, headers, req.method);
+        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace, () => faults.transportGrant(trace))) {
+          const ordinary = conditionalResponse(status,body,headers,req.method,conditionalHeaders(req.headers));
+          send(res,ordinary.status,ordinary.body,ordinary.headers,req.method);
+        }
       };
       const cached = manifest ? snapshots.held(manifestKey) : undefined;
       if (cached) {
@@ -179,7 +183,7 @@ export async function startDashFaultProxy(
         upstreamBase + request.pathname + request.search,
         policy,
         {
-          range: req.headers.range,
+          range: scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range,
           signal,
           maxBytes: manifest ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
         },
@@ -196,13 +200,14 @@ export async function startDashFaultProxy(
         return;
       }
       if (manifest) {
+        removeOriginValidators(remote.headers);
         remote.headers["cache-control"] = "no-store";
         // A relative BaseURL remains valid on localhost and a separate player device.
         let text = remote.body.toString("utf8");
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && (!scenario || !scenario.settled))
+          if (scenarioIndex && (!scenario || scenario.http || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
           const choice = snapshots.observe(manifestKey, remote);
           if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);
@@ -221,9 +226,10 @@ export async function startDashFaultProxy(
             )
           : remote.body;
       if (await scenario?.deliver(res, remote.status, body, remote.headers, req.method, signal, trace, () => faults.transportGrant(trace))) return;
+      const ordinary = trace.hasBodyFault() ? {status:remote.status,body,headers:remote.headers} : conditionalResponse(remote.status,body,remote.headers,req.method,conditionalHeaders(req.headers));
       if (segment)
-        await faults.sendMedia(res, remote.status, body, remote.headers, req.method, signal, trace, !scenario || !!scenario.timeline);
-      else send(res, remote.status, body, remote.headers, req.method);
+        await faults.sendMedia(res, ordinary.status, ordinary.body, ordinary.headers, req.method, signal, trace, !scenario || !!scenario.timeline);
+      else send(res, ordinary.status, ordinary.body, ordinary.headers, req.method);
     } catch (error) {
       if (!signal.aborted)
         trace.record("request.error", {

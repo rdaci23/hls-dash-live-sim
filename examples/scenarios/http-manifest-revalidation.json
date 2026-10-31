@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "http": {
+    "target": {
+      "resource": "manifest",
+      "track": "root"
+    },
+    "validators": true,
+    "ranges": false
+  }
+}

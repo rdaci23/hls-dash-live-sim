@@ -42,11 +42,13 @@ type EventType =
   | "scenario.result"
   | "scenario.profile"
   | "scenario.closed"
-  | "scenario.run";
+  | "scenario.run"
+  | "http.response";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
+  bodyIdentity?: string;
   runId?: string;
   scenarioId?: string;
   ruleId?: string;
@@ -162,6 +164,7 @@ const values = {
 };
 function allowedField(key: string, value: unknown): boolean {
   if (values[key]) return values[key].includes(value);
+  if (key === "bodyIdentity") return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
   if (key === "requestId" || key === "runId")
     return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
   if (key === "faultId")
@@ -297,6 +300,7 @@ export class SessionDiagnostics {
     };
     // Copy a fixed set of fields even when called from plain JS with extra data.
     for (const key of [
+      "bodyIdentity",
       "runId",
       "scenarioId",
       "ruleId",
@@ -468,6 +472,10 @@ export class RequestTrace {
   }
   get runId(): string | undefined { return this.resourceFields.runId; }
   run(id: string): void { this.resourceFields.runId = id; if (!this.res.headersSent) this.res.setHeader("X-Sim-Run-Id", id); }
+  private runAffected = false;
+  runEffect(): void { this.runAffected = true; }
+  affectedByRun(): boolean { return this.runAffected || this.effects.length > 0; }
+  hasBodyFault(): boolean { return this.effects.some(effect => ["corrupt_body", "corrupt_range", "replace_payload"].includes(effect.fields.action)); }
   hasFault(): boolean { return this.effects.length > 0; }
   resource(value: string, kind: ResourceKind, source: ResourceSource): void {
     this.resourceFields = {

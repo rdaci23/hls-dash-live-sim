@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "http": {
+    "target": {
+      "resource": "init",
+      "track": "video:0"
+    },
+    "validators": true,
+    "ranges": true
+  }
+}

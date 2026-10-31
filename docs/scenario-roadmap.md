@@ -11,7 +11,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 2. Realistic network presets | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
-| 5. CDN/publication/HTTP policy | Planned | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
+| 5. CDN/publication/HTTP policy | HTTP policy and safe header/status work implemented; CDN/publication actors pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
 | 6. Fixtures and independent tracks | Planned | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Planned | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | Planned | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
@@ -100,3 +100,8 @@ working tree. The seven-case browser observation matrix is **not** seven recover
 passes. Milestones 5–10, targeted payload/transport browser qualification, the
 unexercised browser cases and CI qualification remain outstanding. GitHub Actions
 has not executed these commits because of its account payment/spending-limit gate.
+
+- Fresh DASH oscillation observation at `4fd5b35` verified the complete closed
+  diagnostic-file path: 1,979 events with a recorded SHA-256/byte manifest, no
+  missing/truncated evidence, and rendered continuation. It does not establish
+  return to the high rendition.

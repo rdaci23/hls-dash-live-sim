@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "track": "video:0",
+        "segment": "next"
+      },
+      "status": 401,
+      "headers": {
+        "challenge": "bearer",
+        "cache": "no-store"
+      },
+      "expectRetry": true
+    }
+  ]
+}

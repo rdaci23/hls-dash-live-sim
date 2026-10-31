@@ -232,3 +232,7 @@ framing failures and verified shared-network combinations.
 [Core browser observations](docs/core-browser-observations.md) record rendition
 outages and network cycles with pinned players, rendered frames and explicit
 compatibility outcomes.
+
+[HTTP policy scenarios](docs/http-policy-scenarios.md) add revalidation, exact
+range resumption and bounded status-response headers, with HTTP evidence kept
+separate from player recovery.

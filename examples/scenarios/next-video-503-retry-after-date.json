@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "track": "video:0",
+        "segment": "next"
+      },
+      "status": 503,
+      "headers": {
+        "retryAfterDateOffsetSeconds": 2,
+        "cache": "no-store"
+      },
+      "expectRetry": true
+    }
+  ]
+}

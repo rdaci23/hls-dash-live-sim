@@ -28,6 +28,9 @@ See [payload/transport actions](payload-transport-scenarios.md) for intentionall
 invalid bodies, header delay, slow progress, HTTP/1.1 framing and supported
 shared-network combinations. These are scenario actions, not watched manual fields.
 
+See [HTTP policy and controlled response headers](http-policy-scenarios.md) for
+conditional requests, range resumption and bounded status-header presets.
+
 ## Ready-to-copy manual configurations
 
 | Starting file | Behavior |

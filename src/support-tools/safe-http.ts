@@ -96,7 +96,7 @@ export class OriginPolicy {
     for (const [key, value] of Object.entries(this.credentials)) {
       if (
         !/^[!#$%&'*+.^_`|~\w-]+$/.test(key) ||
-        /^(host|connection|content-length|transfer-encoding|proxy-.*)$/i.test(
+        /^(host|connection|content-length|transfer-encoding|accept-encoding|range|if-.*|proxy-.*)$/i.test(
           key,
         ) ||
         typeof value !== "string" ||
@@ -148,6 +148,7 @@ export async function fetchRemote(
       signal,
       headers: {
         ...policy.headers(url),
+        "Accept-Encoding": "identity",
         ...(options.range ? { Range: options.range } : {}),
       },
     });
@@ -185,9 +186,17 @@ export async function fetchRemote(
       "last-modified",
       "cache-control",
       "date",
+      "retry-after",
+      "www-authenticate",
+      "age",
+      "expires",
+      "vary",
     ]) {
       const header = response.headers.get(key);
       if (header) headers[key] = header;
+    }
+    if (response.headers.get("content-encoding") && response.headers.get("content-encoding").toLowerCase() !== "identity") {
+      delete headers.etag; delete headers["last-modified"];
     }
     return {
       status: response.status,
@@ -301,7 +310,7 @@ export function sessionServer(
   return {
     server,
     async cancelRun(runId) {
-      const affected = [...records].filter(([, value]) => value.trace?.runId === runId && value.trace.hasFault());
+      const affected = [...records].filter(([, value]) => value.trace?.runId === runId && value.trace.affectedByRun());
       for (const [controller, value] of affected) { controller.abort("scenario_reset"); value.res.destroy(); }
       await Promise.allSettled(affected.map(([, value]) => value.work));
     },
@@ -328,7 +337,7 @@ export function send(
   if (res.destroyed) return;
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
   sendHeaders(res, status, buffer.length, headers);
-  res.end(method === "HEAD" ? undefined : buffer);
+  res.end(method === "HEAD" || [204, 304].includes(status) ? undefined : buffer);
 }
 
 export function sendHeaders(
@@ -337,12 +346,14 @@ export function sendHeaders(
   length: number,
   headers: Record<string, string> = {},
 ): void {
+  const bodyless = [204, 304].includes(status);
+  if (bodyless) headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !/^content-length$/i.test(name)));
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
+    "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, ${TRACE_HEADERS}`,
     "Cache-Control": "no-store",
     ...headers,
-    "Content-Length": String(length),
+    ...(bodyless ? {} : { "Content-Length": String(length) }),
   });
 }
 
@@ -381,8 +392,8 @@ export function preflight(
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": controls ? "GET, HEAD, POST, OPTIONS" : "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": controls ? "Range, Content-Type, Authorization, X-Sim-Session-Id" : "Range",
-      "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
+      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range" + (controls ? ", Content-Type, Authorization, X-Sim-Session-Id" : ""),
+      "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, ${TRACE_HEADERS}`,
     });
     res.end();
     return true;

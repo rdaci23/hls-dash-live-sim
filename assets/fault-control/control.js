@@ -249,7 +249,7 @@
     $('scenario-fields').disabled = !enabled;
     const armed = scenarioSnapshot?.state === 'armed';
     $('scenario-arm').disabled = !enabled || !['idle', 'armed'].includes(scenarioSnapshot?.state) || !scenarioCatalog.find(p => p.id === $('scenario-preset').value)?.enabled;
-    $('scenario-start').disabled = !enabled || !armed;
+    $('scenario-start').disabled = !enabled || !armed || !scenarioCatalog.find(p => p.id === scenarioSnapshot?.presetId)?.enabled;
   }
   function renderScenario() {
     const run = scenarioSnapshot;
@@ -260,7 +260,7 @@
     $('scenario-trigger').textContent = run?.scenario ? JSON.stringify(run.nextTrigger) : run ? 'Arm, then Start; elapsed time begins at Start.' : '—';
     $('scenario-history').textContent = String(run?.previousRuns?.length || 0) + (run?.droppedPreviousRuns ? ' · ' + run.droppedPreviousRuns + ' older results dropped' : '');
     const preset = scenarioCatalog.find(p => p.id === $('scenario-preset').value);
-    $('scenario-description').textContent = preset ? (preset.enabled ? preset.requires + '. ' + preset.expectedEffect + '. Targets: ' + JSON.stringify(preset.targets) : preset.reason) : '';
+    $('scenario-description').textContent = preset ? (preset.enabled ? (preset.protocols || []).join(' / ').toUpperCase() + ' · ' + preset.requires + '. ' + preset.expectedEffect + '. Targets: ' + JSON.stringify(preset.targets) : preset.reason) : '';
     enableScenarios();
   }
   async function scenarioRequest(path, body) {
@@ -437,6 +437,7 @@
     if (reset) { currentUrl = undefined; rootUrl = undefined; streamSnapshot = undefined; $('stream-details').hidden = true; $('stream-fault-panel').hidden = true; $('playlist-label').hidden = true; }
     const timer = setTimeout(() => controller.abort(), 135000);
     clearManifest();
+    scenarioCatalog = [];
     enableControls();
     manifestStatus('Reading simulator… Intentional latency can delay this request.');
     $('stream-status').textContent = 'Loading stream and manifest…';

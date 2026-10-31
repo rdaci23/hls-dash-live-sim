@@ -74,3 +74,13 @@ test('rearming binds a new immutable definition to a fresh ID and rejects stale 
   await assert.rejects(runs.action('start', { runId: first.runId }), /changed/);
   assert.equal(runs.report().presetId, 'next-video-retry');
 });
+
+test('manual start validates observed resource metadata again and never fetches a target while checking', async t => {
+  const { ScenarioRuns } = require('../dist/support-tools/scenario-runs.js'),{SessionDiagnostics}=require('../dist/support-tools/session-diagnostics.js');
+  const diagnostics=new SessionDiagnostics('dash');t.after(()=>diagnostics.close());let advertised=false,starts=0,active;
+  const runs=new ScenarioRuns(diagnostics,{protocol:'dash',generated:true,initialization:true,videoTracks:2,resourceAvailable:(kind,track)=>kind==='manifest'||advertised},async next=>{active?.close();active=next;if(next)starts++;},randomUUID(),{version:1,rules:[{target:{resource:'init',track:'video:0',segment:'next'},status:503}]});
+  assert.equal(runs.catalog().find(p=>p.id==='loaded').enabled,false);
+  await assert.rejects(runs.action('start',{runId:runs.runId}),/advertised/);assert.equal(starts,0);assert.equal(runs.report().state,'armed');
+  advertised=true;assert.equal(runs.catalog().find(p=>p.id==='loaded').enabled,true);
+  await runs.action('start',{runId:runs.runId});assert.equal(starts,1);await runs.action('reset',{runId:runs.runId});
+});

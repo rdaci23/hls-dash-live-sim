@@ -28,7 +28,10 @@ Open the printed control URL, enter the token, and select **Connect**. Load the
 stream's printed manifest URL. **Scenario runs** shows the preset catalog,
 requirements, resource targets, expected effect, current run ID and outcome.
 Arming binds the definition to a fresh run ID; another arm creates a new ID even
-if the previous definition was never started. Unsupported presets explain why they cannot be armed; HLS TS has no separate
+if the previous definition was never started. Unsupported presets explain why they cannot be armed; metadata-dependent
+targets require loading the advertised manifest/child playlist first. Refresh Run
+after inspecting a new child playlist. Start validates that inventory again,
+without fetching a target or consuming a fault; HLS TS has no separate
 initialization object. Select **Arm Preset**, prepare your player, then **Start
 Scenario**. **Refresh Run** updates progress without consuming a fault. Manifest
 inspection can consume a manifest fault, so refresh run status when observing

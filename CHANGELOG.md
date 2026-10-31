@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Named HTTP revalidation/range policies with completed-delivery accounting,
+  conservative healthy default conditions and HEAD handling, controlled
+  Retry-After/cache/challenge headers and a 54-case failure-status matrix.
+
 - Reproducible phase-correlated browser observation workflow for selective
   rendition outages, bandwidth starvation and four network oscillation cycles;
   fault delivery, rendered continuation and compatibility review stay separate.

@@ -13,6 +13,10 @@ export class HlsScenarioIndex {
   private canonical(value: string): string {
     const url = new URL(value); url.hash = ""; return url.href;
   }
+  available(resource: string, track: string): boolean {
+    for (const entry of this.entries.values()) if (entry.kind === resource && [entry.trackId, entry.trackType, "any"].includes(track)) return true;
+    return false;
+  }
   resolve(value: string): LogicalMedia | undefined { return this.entries.get(this.canonical(value)); }
   observe(text: string, base: string, owner: string): void {
     const parent = this.resolve(owner);

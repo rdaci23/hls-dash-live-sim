@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { ScenarioResponseHeaders, parseResponseHeaders, responseHeaders } from "./scenario-response-headers.js";
+import { HttpResponsePolicy, HttpResponsePolicyDefinition, ConditionalHeaders, conditionalHeaders, parseHttpPolicy } from "./http-response-policy.js";
 import { createHash } from "node:crypto";
 import { HttpError } from "./safe-http.js";
 import { getFaultConfig } from "./live-stream-fault-config.js";
@@ -41,6 +43,7 @@ export interface ScenarioRule {
   status?: number;
   transport?: TransportFault;
   payload?: PayloadFault;
+  headers?: ScenarioResponseHeaders;
   expectRetry: boolean;
 }
 export interface ScenarioDefinition {
@@ -48,8 +51,9 @@ export interface ScenarioDefinition {
   seed: number;
   rules: ScenarioRule[];
   timeline?: TimelinePhase[];
+  http?: HttpResponsePolicyDefinition;
 }
-const statuses = [403, 404, 408, 429, 500, 502, 503, 504];
+const statuses = [401, 403, 404, 408, 429, 500, 502, 503, 504];
 const fail = (message: string): never => {
   throw new Error(`Invalid scenario: ${message}`);
 };
@@ -70,7 +74,7 @@ function immutable<T>(value: T): T {
   return value;
 }
 export function parseScenario(input: unknown): ScenarioDefinition {
-  object(input, ["version", "seed", "rules", "timeline"], "scenario");
+  object(input, ["version", "seed", "rules", "timeline", "http"], "scenario");
   const source = input as ScenarioDefinition;
   if (source.version !== 1) fail("version must be 1");
   if (!integer(source.seed ?? 0, 0, 0xffffffff))
@@ -80,8 +84,10 @@ export function parseScenario(input: unknown): ScenarioDefinition {
     source.rules.length > 64
   )
     fail("rules must be an array of up to 64 HTTP rules; use [] with a timeline");
+  const http = source.http === undefined ? undefined : parseHttpPolicy(source.http);
+  if (http && (source.rules.length || source.timeline)) fail("HTTP policy cannot combine with rules or a timeline until that composition is verified");
   const timeline = source.timeline === undefined ? undefined : parseTimeline(source.timeline);
-  if (!source.rules.length && !timeline) fail("provide HTTP rules or a timeline");
+  if (!source.rules.length && !timeline && !http) fail("provide HTTP rules or a timeline");
   const ids = new Set<string>();
   const rules = source.rules.map((rule, index) => {
     const label = `rule ${index}`;
@@ -99,6 +105,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         "status",
         "transport",
         "payload",
+        "headers",
         "expectRetry",
       ],
       label,
@@ -174,6 +181,9 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       fail(`${label} probability must be from 0 to 1`);
     if (!integer(maxApplications, 1, 10000))
       fail(`${label} maxApplications must be from 1 to 10000`);
+    const headers = rule.headers === undefined ? undefined : parseResponseHeaders(rule.headers, rule.status);
+    if (headers && (rule.payload || rule.transport)) fail(`${label} header actions require an HTTP status rule`);
+    if (rule.status === 401 && !headers?.challenge) fail(`${label} 401 requires an explicit authentication challenge`);
     let payload: PayloadFault | undefined;
     if (rule.payload !== undefined) {
       object(rule.payload, ["kind", "replacementTrack"], `${label} payload`);
@@ -260,10 +270,11 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       probability,
       maxApplications,
       ...(payload ? { payload } : transport ? { transport } : { status: rule.status }),
+      ...(headers ? { headers } : {}),
       expectRetry: rule.expectRetry ?? false,
     };
   });
-  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}) };
+  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}), ...(http ? { http } : {}) };
 }
 export function loadScenario(file?: string): ScenarioDefinition | undefined {
   if (!file) return undefined;
@@ -317,6 +328,9 @@ export class ScenarioEngine {
   readonly definition: ScenarioDefinition;
   readonly scenarioId: string;
   readonly timeline?: ScenarioTimeline;
+  readonly http?: HttpResponsePolicy;
+  private httpRequests = new WeakMap<RequestTrace, { resource: LogicalMedia; conditions: ConditionalHeaders }>();
+  handlesHttp(trace: RequestTrace): boolean { return this.httpRequests.has(trace); }
   private started: number;
   private states: RuleState[];
   private attempts = new Map<string, Attempts>();
@@ -330,6 +344,8 @@ export class ScenarioEngine {
   private closed = false;
   private deliveries = new WeakMap<RequestTrace, { fault: TransportFault; effect: { prepare(): void }; ready: boolean }>();
   private transport = new TransportDelivery();
+  private responseHeaderActions = new WeakMap<RequestTrace, ScenarioResponseHeaders>();
+  failureHeaders(trace: RequestTrace): Record<string,string> { return responseHeaders(this.responseHeaderActions.get(trace)); }
   private payloads = new PayloadSnapshots();
   private resources = new WeakMap<RequestTrace, { media: LogicalMedia; ranged: boolean }>();
   private payloadDeliveries = new WeakMap<RequestTrace, { fault: PayloadFault; effect: { prepare(): void }; ready: boolean }>();
@@ -341,6 +357,11 @@ export class ScenarioEngine {
     signal: AbortSignal, trace: RequestTrace,
     grantFactory?: () => (maximum: number, signal: AbortSignal) => Promise<number>,
   ): Promise<boolean> {
+    const httpRequest = this.httpRequests.get(trace);
+    if (httpRequest && this.http) {
+      const response = this.http.apply(status, body, headers, method, httpRequest.conditions, trace);
+      send(res, response.status, response.body, response.headers, method); return true;
+    }
     const resource = this.resources.get(trace), payload = this.payloadDeliveries.get(trace);
     if (method === "GET" && resource && [200, 206].includes(status)) {
       const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
@@ -379,6 +400,7 @@ export class ScenarioEngine {
           rules: this.definition.rules.map(({ id, ...rule }) => rule),
         }),
       ).slice(0, 32);
+    this.http = this.definition.http ? new HttpResponsePolicy(this.definition.http) : undefined;
     this.started = clock();
     this.states = this.definition.rules.map(() => ({
       selected: 0,
@@ -391,7 +413,7 @@ export class ScenarioEngine {
       this.timeline = new ScenarioTimeline(this.definition.timeline, this.definition.seed, this.scenarioId, diagnostics, () => this.time());
   }
   assertCompatible(): void {
-    if (this.settled && !this.invalid && !this.definition.timeline) return;
+    if (this.settled && !this.invalid && !this.definition.timeline && !this.definition.http) return;
     if (manualFaultConflict())
       this.invalid = "manual_fault_conflict";
     if (this.invalid)
@@ -416,7 +438,7 @@ export class ScenarioEngine {
       : (this.elapsed = Math.max(this.elapsed, this.clock() - this.started, 0));
   }
   get settled(): boolean {
-    return (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
+    return (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
       (_, index) => this.stateStatus(index) !== "pending",
     );
   }
@@ -451,9 +473,14 @@ export class ScenarioEngine {
     range: string | undefined,
     trace: RequestTrace,
     method: string,
+    conditions: Record<string, string | string[] | undefined> = {},
   ): number {
     this.assertCompatible();
     if (this.closed) throw new HttpError(409, "Scenario is closed");
+    if (media && this.http?.matches(media) && ["GET", "HEAD"].includes(method)) {
+      this.httpRequests.set(trace, { resource: media, conditions: conditionalHeaders({ ...conditions, range }) });
+      trace.runEffect(); trace.logical({ trackId: media.trackId, targetKind: media.kind });
+    }
     if (!media || method !== "GET") return 0;
     if (this.definition.rules.some(rule => rule.payload)) this.resources.set(trace, { media, ranged: !!range });
     if (media.kind === "media") this.tracks.add(media.trackId);
@@ -577,6 +604,7 @@ export class ScenarioEngine {
       state.targetOrdinal = segmentOrdinal;
       const ruleId = `rule:${index}`;
       matchedRules.add(index);
+      if (rule.headers) this.responseHeaderActions.set(trace, rule.headers);
       const effect = trace.select({
         scenarioId: this.scenarioId,
         ruleId,
@@ -675,6 +703,7 @@ export class ScenarioEngine {
         status: rule.status,
         ...(rule.transport ? { transport: rule.transport } : {}),
         ...(rule.payload ? { payload: rule.payload } : {}),
+        ...(rule.headers ? { headers: rule.headers } : {}),
         expectRetry: rule.expectRetry,
         selected: state.selected,
         applied: state.applied,
@@ -688,7 +717,8 @@ export class ScenarioEngine {
       };
     });
     const timeline = this.timeline?.report();
-    const outcomes = [...rules, ...(timeline ?? [])];
+    const http = this.http?.report();
+    const outcomes = [...rules, ...(timeline ?? []), ...(http ? [http] : [])];
     return structuredClone({
       version: 1,
       scenarioId: this.scenarioId,
@@ -712,6 +742,7 @@ export class ScenarioEngine {
       rules,
       ...(this.definition.rules.some(rule => rule.payload) ? { payload: this.payloadStatus() } : {}),
       ...(timeline ? { timeline, profile: this.timeline.profile() } : {}),
+      ...(http ? { http } : {}),
     });
   }
   close(): void {
@@ -719,6 +750,7 @@ export class ScenarioEngine {
       this.time();
       this.timeline?.close();
       this.payloads.close();
+      this.http?.close();
       this.closed = true;
       this.diagnostics.record("scenario.closed", {
         scenarioId: this.scenarioId,

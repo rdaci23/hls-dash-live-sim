@@ -36,6 +36,11 @@ export class DashScenarioIndex {
     for (const [key, value] of this.entries)
       if (value.expires < now) this.entries.delete(key);
   }
+  available(resource: string, track: string): boolean {
+    this.prune();
+    for (const entry of this.entries.values()) if (entry.media.kind === resource && [entry.media.trackId, entry.media.trackType, "any"].includes(track)) return true;
+    return false;
+  }
   resolve(value: string): LogicalMedia | undefined {
     this.prune();
     return this.entries.get(this.canonical(value))?.media;

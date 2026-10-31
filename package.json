@@ -54,7 +54,9 @@
     "resource:verify": "npm run build && node scripts/verify-resource-scenarios.cjs",
     "controls:verify": "npm run build && node scripts/verify-scenario-controls.cjs",
     "faults:verify": "npm run build && node scripts/verify-core-faults.cjs",
-    "browser:core": "npm run build && node scripts/verify-core-browser.cjs"
+    "browser:core": "npm run build && node scripts/verify-core-browser.cjs",
+    "http:verify": "npm run build && node scripts/verify-http-policy.cjs",
+    "headers:verify": "npm run build && node scripts/verify-status-headers.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

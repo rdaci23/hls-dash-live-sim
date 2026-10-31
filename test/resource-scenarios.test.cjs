@@ -183,3 +183,11 @@ for (const protocol of ['hls', 'dash']) for (const [resource, track] of [['manif
     }
   });
 }
+
+test('HLS metadata preserves independent advertised query-only rendition identities', () => {
+  const index = new HlsScenarioIndex('http://127.0.0.1/master.m3u8', true);
+  const master = '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100000\nvariant.m3u8?quality=low\n#EXT-X-STREAM-INF:BANDWIDTH=500000\nvariant.m3u8?quality=high\n';
+  index.observe(master, 'http://127.0.0.1/master.m3u8', 'http://127.0.0.1/master.m3u8');
+  assert.equal(index.resolve('http://127.0.0.1/variant.m3u8?quality=low').trackId, 'video:0');
+  assert.equal(index.resolve('http://127.0.0.1/variant.m3u8?quality=high').trackId, 'video:1');
+});

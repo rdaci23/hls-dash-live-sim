@@ -198,6 +198,7 @@ for (const protocol of ['hls', 'hls-origin', 'dash']) {
     config.persistFaultConfig({ segment: { missing: 'once' } }, true);
     assert.equal((await fetch(f.media)).status, 404, 'injected error body bypasses bandwidth');
     const pending = await fetch(f.media);
+    assert.equal(pending.status, 200, 'the next download is healthy and still shaped');
     const start = performance.now();
     await f.session.close();
     await assert.rejects(pending.arrayBuffer());
