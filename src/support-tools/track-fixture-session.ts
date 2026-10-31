@@ -45,12 +45,12 @@ export async function startTrackFixture(options: TrackFixtureOptions): Promise<H
         applyConfigOverride({ profile: options.faultProfile });
       if (options.verbose !== undefined)
         applyConfigOverride({ logging: { verbose: options.verbose } });
-      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol),serviceHooks:publisher.services.hooks(), listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
-      session = { url: `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(':') ? '[' + host + ']' : host}:${port}/dash/manifest.mpd`, diagnostics: proxy.diagnostics, networkOwnership: proxy.networkOwnership, get scenario() { return proxy.scenario; }, runs: proxy.runs, close: () => proxy.close() };
+      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol),serviceHooks:publisher.services.hooks(), listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile,diagnosticsRotateFiles:options.diagnosticsRotateFiles,diagnosticsMaxFileBytes:options.diagnosticsMaxFileBytes, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
+      session = { url: `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(':') ? '[' + host + ']' : host}:${port}/dash/manifest.mpd`, diagnostics: proxy.diagnostics, networkOwnership: proxy.networkOwnership,resourceOwnership:proxy.resourceOwnership, get scenario() { return proxy.scenario; }, runs: proxy.runs, close: () => proxy.close() };
       console.info('Owned DASH track fixture ready: ' + session.url);
     }
     options.signal?.throwIfAborted();
-    return { url: session.url,sourceOwnership:()=>({lifecycleActions:publisher.lifecycle.pendingActions,serviceActions:publisher.services.pendingActions}), networkOwnership: session.networkOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
+    return { url: session.url,sourceOwnership:()=>publisher.ownership(), networkOwnership: session.networkOwnership,resourceOwnership:session.resourceOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
   }
   catch (error) {
     await close();

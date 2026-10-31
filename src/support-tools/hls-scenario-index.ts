@@ -16,6 +16,8 @@ export class HlsScenarioIndex {
     const key = this.canonical(root);
     this.entries.set(key, { kind: "manifest", trackId: "root", trackType: "root", key: `hls:manifest:${key}` });
   }
+  snapshot(){this.prune();return{indexEntries:this.entries.size,indexTracks:this.tracks.size};}
+  close(){this.entries.clear();this.expirations.clear();this.tracks.clear();this.manifestCounts.clear();this.liveManifests.clear();}
   private canonical(value: string): string {
     const url = new URL(value); url.hash = ""; return url.href;
   }

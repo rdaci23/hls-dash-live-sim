@@ -126,6 +126,7 @@ const startOptions = (builder) =>
         "Run immutable resource fault rules and network timelines from a scenario JSON file",
     })
     .option("scenario-start", { choices: ["auto", "manual"], default: "auto", description: "Auto-start a definition, or expose authenticated manual scenario controls" })
+    .option("diagnostics-rotate-files",{type:"number",description:"Opt-in append-only diagnostic rotation, 2–256 files, 10 MiB each; no eviction"})
     .option("diagnostics-file", {
       type: "string",
       description:
@@ -161,7 +162,7 @@ async function runTemplate(name: string, args) {
       await starting((signal) =>
         startLivesim2({
           signal,
-          diagnosticsFile: args["diagnostics-file"],
+          diagnosticsFile: args["diagnostics-file"],diagnosticsRotateFiles:args["diagnostics-rotate-files"],
           scenarioFile: args.scenario,
         scenarioStart: args["scenario-start"],
           verbose: args.verbose,
@@ -179,7 +180,7 @@ async function runTemplate(name: string, args) {
       await starting((signal) =>
         startHlsim({
           signal,
-          diagnosticsFile: args["diagnostics-file"],
+          diagnosticsFile: args["diagnostics-file"],diagnosticsRotateFiles:args["diagnostics-rotate-files"],
           scenarioFile: args.scenario,
         scenarioStart: args["scenario-start"],
           verbose: args.verbose,
@@ -341,7 +342,7 @@ const program = yargs(hideBin(process.argv))
         preserveManifest: args["preserve-manifest"],
         faultConfigPath: args["fault-config"],
         faultProfile: args["fault-profile"],
-        diagnosticsFile: args["diagnostics-file"],
+        diagnosticsFile: args["diagnostics-file"],diagnosticsRotateFiles:args["diagnostics-rotate-files"],
         scenarioFile: args.scenario,
         scenarioStart: args["scenario-start"],
         verbose: args.verbose,
@@ -425,6 +426,7 @@ for (const name of ["sports", "news", "ott", "mobile", "low-latency"])
   );
 program
   .check((args) => {
+    if(args["diagnostics-rotate-files"]!==undefined&&(!args["diagnostics-file"]||!Number.isInteger(args["diagnostics-rotate-files"])||Number(args["diagnostics-rotate-files"])<2||Number(args["diagnostics-rotate-files"])>256))throw new Error("diagnostics-rotate-files requires diagnostics-file and an integer from 2 to 256");
     if (args.port !== undefined) portNumber(args.port as number);
     if (args.host !== undefined) bindHost(args.host as string);
     for (const key of ["periods", "periods-per-hour"])

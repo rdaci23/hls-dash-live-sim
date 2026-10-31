@@ -8,15 +8,15 @@ const definition = (resource, action) => ({ version: 1, seed: 42, rules: [{
     ...(action === 'abort' ? {} : { durationMs: 200 }), deadlineMs: 3000 }, expectRetry: true,
 }] });
 // Observe HTTP/1.1 completion, not just the status. The timer spans the body too.
-function read(url, { method = 'GET', range, signal, cancelAfterBytes, timeoutMs = 6000 } = {}) {
+function read(url, { method = 'GET', range, signal, cancelAfterBytes, timeoutMs = 6000, agent = false, slowReadMs = 0 } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) return Promise.reject(Error('HTTP timeoutMs must be from 1 to 60000'));
   return new Promise((resolve, reject) => {
-    const began = performance.now(), chunks = [], timing = []; let response, settled = false, clientCancelled = false;
+    const began = performance.now(), chunks = [], timing = [];let resumeTimer; let response, settled = false, clientCancelled = false;
     const elapsed = () => performance.now() - began;
-    const request = http.request(url, { method, agent: false, headers: range ? { Range: range } : {} }, res => {
+    const request = http.request(url, { method, agent, headers: range ? { Range: range } : {} }, res => {
       response = res; const headersMs = elapsed();
       res.on('data', chunk => {
-        chunks.push(chunk); timing.push({ atMs: elapsed(), bytes: chunk.length });
+        chunks.push(chunk); timing.push({ atMs: elapsed(), bytes: chunk.length });if(slowReadMs){res.pause();resumeTimer=setTimeout(()=>{resumeTimer=undefined;res.resume();},slowReadMs);}
         if (cancelAfterBytes !== undefined && Buffer.concat(chunks).length >= cancelAfterBytes) { clientCancelled = true; res.destroy(); }
       });
       res.on('error', () => {});
@@ -28,7 +28,7 @@ function read(url, { method = 'GET', range, signal, cancelAfterBytes, timeoutMs 
     const aborted = () => { request.destroy(); finish(undefined, Error('Verification interrupted')); };
     signal?.addEventListener('abort', aborted, { once: true });
     const finish = (value, error) => {
-      if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', aborted);
+      if (settled) return; settled = true; clearTimeout(timer);clearTimeout(resumeTimer); signal?.removeEventListener('abort', aborted);
       error ? reject(error) : resolve(value);
     };
     request.on('error', error => { if (!response) finish(undefined, error); });

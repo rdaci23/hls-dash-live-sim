@@ -23,6 +23,8 @@ export class HlsResourceRegistry {
     private capacity = 100000,
   ) {}
 
+  snapshot(){this.prune(true);return{registryResources:this.resources.size,registryPlaylists:this.playlists.size};}
+  close(){this.resources.clear();this.playlists.clear();}
   private release(owner: string, now: number): void {
     const previous = this.playlists.get(owner);
     if (!previous) return;

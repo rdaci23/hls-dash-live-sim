@@ -165,9 +165,10 @@ export class ScenarioTimeline {
       return { phaseId: `phase:${index}`, ...p, ...(p.tracks?{trackObservations:tracks}:{}),...state, failure: this.failureReason, result };
     });
   }
+  ownership(){return{scenarioTimers:this.timer?1:0,scenarioListeners:this.listeners.size};}
   close(): void {
     if (this.closed) return;
-    this.sync(); this.stoppedAt = this.elapsed(); this.closed = true; this.active = -1; clearTimeout(this.timer);
+    this.sync(); this.stoppedAt = this.elapsed(); this.closed = true; this.active = -1; clearTimeout(this.timer);this.timer=undefined;
     for (const listener of this.listeners) listener({ ...HEALTHY_PROFILE });
     this.listeners.clear(); this.lanes.clear();
   }

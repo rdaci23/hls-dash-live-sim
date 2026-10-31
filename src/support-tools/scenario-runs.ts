@@ -24,6 +24,8 @@ const presets = [
   ["dash-sustained-outage", "DASH sustained media outage", "dash"],
   ["dash-low-rendition-outage", "DASH low rendition outage", "dash"],
   ["dash-audio-only-outage", "DASH audio media outage", "dash"],
+  ["endurance-smoke", "Ten-minute endurance network profile", "both"],
+  ["endurance-four-hour", "Four-hour endurance network profile", "both"],
   ["bandwidth-starvation", "Below-minimum bandwidth and restoration", "both"],
   ["bandwidth-oscillation", "Four bandwidth cycles", "both"],
   ["next-malformed-manifest", "Malformed manifest with valid control", "both"],

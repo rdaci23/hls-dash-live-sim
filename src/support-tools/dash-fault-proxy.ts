@@ -25,12 +25,15 @@ export interface DashFaultProxyOptions {
   host?: string;
   manifestPath?: string;
   diagnosticsFile?: string;
+  diagnosticsRotateFiles?:number;
+  diagnosticsMaxFileBytes?:number;
   scenario?: ScenarioDefinition;
   scenarioStart?: "auto" | "manual";
   controlToken?: string;
   videoTracks?: number;
 }
 export interface DashFaultProxy {
+  resourceOwnership:()=>Record<string,number>;
   networkOwnership:()=>ReturnType<FaultRuntime["ownership"]>;
   diagnostics: SessionDiagnostics;
   scenario?: ScenarioEngine;
@@ -52,7 +55,7 @@ export async function startDashFaultProxy(
   const upstreamBase = `http://127.0.0.1:${options.upstreamPort}`;
   const policy = new OriginPolicy(upstreamBase);
   const diagnostics = new SessionDiagnostics("dash", {
-    file: options.diagnosticsFile,
+    file: options.diagnosticsFile,rotateFiles:options.diagnosticsRotateFiles,maxFileBytes:options.diagnosticsMaxFileBytes,
     verbose: () => getFaultConfig().logging?.verbose,
   });
   let scenario: ScenarioEngine | undefined;
@@ -279,6 +282,7 @@ export async function startDashFaultProxy(
   return {
     upstreamBase,
     networkOwnership:()=>faults.ownership(),
+    resourceOwnership:()=>({...transport.ownership(),...scenario?.ownership(),...(scenarioIndex?.snapshot()??{indexEntries:0,indexTracks:0})}),
     diagnostics,
     get scenario() { return scenario; },
     runs,
@@ -287,6 +291,7 @@ export async function startDashFaultProxy(
       snapshots.close();
       unsubscribeTimeline?.();
       await transport.close();
+      scenarioIndex?.close();
       scenario?.close();
       diagnostics.close();
     },

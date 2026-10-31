@@ -58,6 +58,8 @@ export interface LivesimStartOptions {
   utc?: "local" | "external";
   signal?: AbortSignal;
   diagnosticsFile?: string;
+  diagnosticsRotateFiles?:number;
+  diagnosticsMaxFileBytes?:number;
   scenarioFile?: string;
   scenarioStart?: "auto" | "manual";
   controlToken?: string;
@@ -70,6 +72,7 @@ export interface LivesimLogsOptions {
   name?: string;
 }
 export interface DashSession {
+  resourceOwnership?:()=>Record<string,number>;
   url: string;
   networkOwnership?: Awaited<ReturnType<typeof startDashFaultProxy>>["networkOwnership"];
   diagnostics?: SessionDiagnostics;
@@ -406,7 +409,7 @@ export async function startLivesim2(
         upstreamPort: internalPort,
         host,
         manifestPath,
-        diagnosticsFile: options.diagnosticsFile,
+        diagnosticsFile: options.diagnosticsFile,diagnosticsRotateFiles:options.diagnosticsRotateFiles,diagnosticsMaxFileBytes:options.diagnosticsMaxFileBytes,
         scenario: definition,
         scenarioStart: options.scenarioStart,
         controlToken: options.controlToken,
@@ -438,7 +441,7 @@ export async function startLivesim2(
     return {
       url,
       close,
-      networkOwnership:proxy?.networkOwnership,
+      networkOwnership:proxy?.networkOwnership,resourceOwnership:proxy?.resourceOwnership,
       diagnostics: proxy?.diagnostics,
       get scenario() { return proxy?.scenario; },
       get runs() { return proxy?.runs; },

@@ -1,3 +1,4 @@
+import {DiagnosticRotation} from "./diagnostic-rotation.js";
 import fs from "node:fs";
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -127,6 +128,7 @@ export interface DiagnosticsOptions {
   file?: string;
   maxEvents?: number;
   maxFileBytes?: number;
+  rotateFiles?:number;
   verbose?: () => boolean;
 }
 export const TRACE_HEADERS =
@@ -237,6 +239,7 @@ export class SessionDiagnostics {
   private capacity: number;
   private fileLimit: number;
   private fd?: number;
+  private rotation?:DiagnosticRotation;
   private fileBytes = 0;
   private fileLimitReached = false;
   private fileWriteFailed = false;
@@ -263,7 +266,9 @@ export class SessionDiagnostics {
       throw new Error(
         "Diagnostics maxFileBytes must be an integer from 1024 to 1073741824",
       );
-    if (options.file) {
+    if(options.rotateFiles!==undefined&&!options.file)throw Error("Diagnostic rotation requires an explicit file");
+    if(options.rotateFiles!==undefined)this.rotation=new DiagnosticRotation(options.file,this.fileLimit,options.rotateFiles,{sessionId:this.sessionId,protocol});
+    if (options.file&&!this.rotation) {
       try {
         this.fd = fs.openSync(options.file, "wx", 0o600);
       } catch {
@@ -379,6 +384,7 @@ export class SessionDiagnostics {
     }
     const line = JSON.stringify(value) + "\n";
     if (this.options.verbose?.()) console.error(line.trimEnd());
+    if(this.rotation){const failed=this.rotation.failed,limited=this.rotation.limited;this.rotation.write(line,value.eventId);if(!failed&&this.rotation.failed){console.error('[diagnostics] Rotated file recording failed; evidence is incomplete.');this.record('diagnostics.file_error');}else if(!limited&&this.rotation.limited){console.error('[diagnostics] Rotation bound reached; evidence is incomplete.');this.record('diagnostics.file_limit');}}
     if (this.fd !== undefined && !this.fileLimitReached) {
       // Reserve room for a final, valid JSONL truncation marker.
       if (
@@ -409,8 +415,9 @@ export class SessionDiagnostics {
       eventsRecorded: this.sequence,
       droppedEvents: this.sequence - this.events.length,
       fileEnabled: Boolean(this.options.file),
-      fileLimitReached: this.fileLimitReached,
-      fileWriteFailed: this.fileWriteFailed,
+      fileLimitReached: this.fileLimitReached||!!this.rotation?.limited,
+      fileWriteFailed: this.fileWriteFailed||!!this.rotation?.failed,
+      ...(this.rotation?{rotation:this.rotation.snapshot()}:{}),
       events,
     });
   }
@@ -427,6 +434,7 @@ export class SessionDiagnostics {
     if (this.closed) return;
     this.record("session.closed");
     this.closed = true;
+    this.rotation?.close();
     if (this.fd !== undefined) {
       fs.closeSync(this.fd);
       this.fd = undefined;

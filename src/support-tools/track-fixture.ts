@@ -245,6 +245,7 @@ export class TrackFixturePublisher {
     }
     send(res, status, body, headers, req.method);
   }
+  ownership(){return{lifecycleActions:this.lifecycle.pendingActions,serviceActions:this.services.pendingActions,sourceFiles:this.files.size,sourceTimelines:this.timelines.size,...(this.origin?.ownership()??{activeRequests:0,pendingWork:0})};}
   async start(): Promise<{
     port: number;
     url: string;
@@ -271,6 +272,6 @@ export class TrackFixturePublisher {
     const port = (transport.server.address() as {
       port: number;
     }).port;
-    return { port,url:'http://127.0.0.1:'+port,close:async()=>{this.lifecycle.close();this.services.close();await transport.close();} };
+    return { port,url:'http://127.0.0.1:'+port,close:async()=>{this.lifecycle.close();this.services.close();await transport.close();this.files.clear();this.timelines.clear();} };
   }
 }

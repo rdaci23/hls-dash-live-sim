@@ -68,7 +68,11 @@
     "dvr:verify": "npm run build && node scripts/verify-dvr-scenarios.cjs",
     "browser:dvr": "npm run build && node scripts/verify-dvr-browser.cjs",
     "services:verify": "npm run build && node scripts/verify-local-services.cjs",
-    "browser:services": "npm run build && node scripts/verify-service-browser.cjs"
+    "browser:services": "npm run build && node scripts/verify-service-browser.cjs",
+    "endurance:smoke": "npm run build && node scripts/verify-endurance.cjs --mode smoke",
+    "endurance:release": "npm run build && node scripts/verify-endurance.cjs --mode release",
+    "endurance:dev": "npm run build && node scripts/verify-endurance.cjs --mode development",
+    "endurance:cleanup": "npm run build && node scripts/verify-endurance-cleanup.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

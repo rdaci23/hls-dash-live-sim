@@ -67,6 +67,8 @@ export interface HLSStartOptions {
   forcePull?: boolean;
   signal?: AbortSignal;
   diagnosticsFile?: string;
+  diagnosticsRotateFiles?:number;
+  diagnosticsMaxFileBytes?:number;
   scenarioFile?: string;
   scenarioStart?: "auto" | "manual";
   controlToken?: string;
@@ -79,7 +81,8 @@ export interface HLSLogsOptions {
   name?: string;
 }
 export interface HlsSession {
-  sourceOwnership?: () => {lifecycleActions:number;serviceActions?:number};
+  sourceOwnership?: () => Record<string,number>;
+  resourceOwnership?:()=>Record<string,number>;
   networkOwnership?: () => ReturnType<FaultRuntime["ownership"]>;
   url: string;
   diagnostics?: SessionDiagnostics;
@@ -252,7 +255,7 @@ export async function startHlsim(
       return resources.get(url.pathname.match(/^\/r\/([a-f0-9]{32})\./)?.[1]);
   }
   const diagnostics = new SessionDiagnostics("hls", {
-    file: options.diagnosticsFile,
+    file: options.diagnosticsFile,rotateFiles:options.diagnosticsRotateFiles,maxFileBytes:options.diagnosticsMaxFileBytes,
     verbose: () => getFaultConfig().logging?.verbose,
   });
   let scenario: ScenarioEngine | undefined;
@@ -628,6 +631,7 @@ export async function startHlsim(
   return {
     url,
     networkOwnership:()=>faults.ownership(),
+    resourceOwnership:()=>({...transport.ownership(),...scenario?.ownership(),...resources.snapshot(),...(scenarioIndex?.snapshot()??{indexEntries:0,indexTracks:0})}),
     diagnostics,
     get scenario() { return scenario; },
     runs,
@@ -636,6 +640,7 @@ export async function startHlsim(
       snapshots.close();
       unsubscribeTimeline?.();
       await transport.close();
+      resources.close();scenarioIndex?.close();
       scenario?.close();
       diagnostics.close();
     },

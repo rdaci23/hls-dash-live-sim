@@ -47,6 +47,10 @@ DASH uses separate audio/text AdaptationSets and explicit finite timelines.
 `--mode vod` serves the finite eight-second fixture; event completion and encoder
 restart controls are described in [owned lifecycle scenarios](lifecycle-scenarios.md).
 
+The optional source also has an authored 0.4-second white corner / audio-amplitude
+pulse every eight seconds for [independent endurance timing](endurance.md). The
+continuous 440/880 Hz signals stay distinguishable between pulses.
+
 The authored caption schedule repeats in media time:
 
 | Position within an eight-second cycle | Expected output |

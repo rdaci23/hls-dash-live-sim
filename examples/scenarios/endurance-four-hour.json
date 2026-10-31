@@ -1,0 +1,350 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "timeline": [
+    {
+      "afterMs": 0,
+      "beforeMs": 60000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 60000,
+      "beforeMs": 68000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 68000,
+      "beforeMs": 660000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 660000,
+      "beforeMs": 668000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 668000,
+      "beforeMs": 1260000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 1260000,
+      "beforeMs": 1268000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 1268000,
+      "beforeMs": 1860000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 1860000,
+      "beforeMs": 1868000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 1868000,
+      "beforeMs": 2460000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 2460000,
+      "beforeMs": 2468000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 2468000,
+      "beforeMs": 3060000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 3060000,
+      "beforeMs": 3068000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 3068000,
+      "beforeMs": 3660000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 3660000,
+      "beforeMs": 3668000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 3668000,
+      "beforeMs": 4260000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 4260000,
+      "beforeMs": 4268000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 4268000,
+      "beforeMs": 4860000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 4860000,
+      "beforeMs": 4868000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 4868000,
+      "beforeMs": 5460000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 5460000,
+      "beforeMs": 5468000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 5468000,
+      "beforeMs": 6060000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 6060000,
+      "beforeMs": 6068000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 6068000,
+      "beforeMs": 6660000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 6660000,
+      "beforeMs": 6668000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 6668000,
+      "beforeMs": 7260000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 7260000,
+      "beforeMs": 7268000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 7268000,
+      "beforeMs": 7860000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 7860000,
+      "beforeMs": 7868000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 7868000,
+      "beforeMs": 8460000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 8460000,
+      "beforeMs": 8468000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 8468000,
+      "beforeMs": 9060000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 9060000,
+      "beforeMs": 9068000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 9068000,
+      "beforeMs": 9660000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 9660000,
+      "beforeMs": 9668000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 9668000,
+      "beforeMs": 10260000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 10260000,
+      "beforeMs": 10268000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 10268000,
+      "beforeMs": 10860000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 10860000,
+      "beforeMs": 10868000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 10868000,
+      "beforeMs": 11460000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 11460000,
+      "beforeMs": 11468000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 11468000,
+      "beforeMs": 12060000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 12060000,
+      "beforeMs": 12068000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 12068000,
+      "beforeMs": 12660000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 12660000,
+      "beforeMs": 12668000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 12668000,
+      "beforeMs": 13260000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 13260000,
+      "beforeMs": 13268000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 13268000,
+      "beforeMs": 13860000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 13860000,
+      "beforeMs": 13868000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 13868000,
+      "beforeMs": 14400000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    }
+  ]
+}

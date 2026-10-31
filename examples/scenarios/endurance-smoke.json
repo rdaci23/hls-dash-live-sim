@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "timeline": [
+    {
+      "afterMs": 0,
+      "beforeMs": 60000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    },
+    {
+      "afterMs": 60000,
+      "beforeMs": 68000,
+      "network": {
+        "bandwidthKbps": 1200
+      }
+    },
+    {
+      "afterMs": 68000,
+      "beforeMs": 600000,
+      "network": {
+        "bandwidthKbps": 3000
+      }
+    }
+  ]
+}

@@ -40,5 +40,7 @@ using the owned fragmented-WebVTT builder. It includes genuine 180p/360p video a
 an optional 540p third rendition, two separate AAC signals, HLS WebVTT and DASH
 wvtt. The generator validates exact eight-second coded loops; no upstream media
 or caption content is copied. Input audio is trimmed to account for AAC encoder
-priming so the complete sample timeline aligns with video/text. Initial generation
-used FFmpeg 7.1.1. [Setup, scope and verification](../docs/track-fixtures.md).
+priming so the complete sample timeline aligns with video/text. The owned loop also includes a white-corner / audio-amplitude pulse for
+independent A/V drift measurement; no third-party image/audio is used. AAC
+initialization omits the priming edit while retaining its coded samples. Initial
+generation used FFmpeg 7.1.1. [Setup, scope and verification](../docs/track-fixtures.md).

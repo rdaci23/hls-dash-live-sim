@@ -39,6 +39,8 @@ export class DashScenarioIndex {
     private strictInitialization = false,
     private sourceAddresses = false,
   ) {}
+  snapshot(){this.prune();return{indexEntries:this.entries.size,indexTracks:this.tracks.size};}
+  close(){this.entries.clear();this.tracks.clear();this.scopes.clear();this.bindings.clear();}
   private canonical(value: string): string {
     const url = new URL(value);
     return url.origin + url.pathname;

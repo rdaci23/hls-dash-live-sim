@@ -258,7 +258,7 @@ export function sessionServer(
     trace?: RequestTrace,
   ) => Promise<void>,
   diagnostics?: SessionDiagnostics,
-): { server: http.Server; close(): Promise<void>; cancelRun(runId: string): Promise<void> } {
+): { server: http.Server; close(): Promise<void>; cancelRun(runId: string): Promise<void>;ownership():{activeRequests:number;pendingWork:number} } {
   const controllers = new Set<AbortController>();
   const records = new Map<AbortController, { res: http.ServerResponse; trace?: RequestTrace; work?: Promise<void> }>();
   const pending = new Set<Promise<void>>();
@@ -311,6 +311,7 @@ export function sessionServer(
   });
   return {
     server,
+    ownership:()=>({activeRequests:records.size,pendingWork:pending.size}),
     async cancelRun(runId) {
       const affected = [...records].filter(([, value]) => value.trace?.runId === runId && value.trace.affectedByRun());
       for (const [controller, value] of affected) { controller.abort("scenario_reset"); value.res.destroy(); }

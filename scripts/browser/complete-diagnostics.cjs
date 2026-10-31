@@ -16,6 +16,7 @@ function validate(bytes, metadata) {
   return { ...metadata, source: 'closed-file', events, completeFile: { file: 'requests.jsonl', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), eventCount: events.length, firstEventId: 1, lastEventId: events.length, memoryDroppedEvents: metadata.droppedEvents, complete: true } };
 }
 async function read(file, metadata) {
+  if(metadata?.rotation)return require("./rotated-diagnostics.cjs").read(file,metadata);
   const stat = await fs.stat(file); if (stat.size > MAX_BYTES) throw Error('Diagnostic file exceeds verification limit');
   const result = validate(await fs.readFile(file), metadata); result.completeFile.file = path.basename(file); return result;
 }

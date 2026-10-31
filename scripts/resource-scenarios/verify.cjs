@@ -47,7 +47,7 @@ async function catalog(text, base, protocol, { latestGeneration = false } = {}) 
         const chosen = segments[Math.max(0, segments.length - 2)];
         const replace = value => value.replaceAll('$RepresentationID$', id).replaceAll('$Bandwidth$', String(representation['@_bandwidth']))
           .replaceAll('$Time$', String(chosen.time)).replaceAll('$Number$', String(chosen.number));
-        const resource = { track: byTrack.get(key), init: new URL(replace(template['@_initialization']), base), media: new URL(replace(template['@_media']), base) };
+        const resource = { track: byTrack.get(key), advertisedTimeTicks:chosen.time.toString(), advertisedTimescale:Number(template['@_timescale']??1), init: new URL(replace(template['@_initialization']), base), media: new URL(replace(template['@_media']), base) };
         const previous = resources.findIndex(entry => entry.track === resource.track);
         if (previous >= 0) resources[previous] = resource; else resources.push(resource);
       }

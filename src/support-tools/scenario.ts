@@ -794,6 +794,7 @@ export class ScenarioEngine {
       ...(services?{services}:{}),
     });
   }
+  ownership(){return{...(this.timeline?.ownership()??{scenarioTimers:0,scenarioListeners:0}),lifecycleTimers:this.lifecycle?.report().pendingTimers??0,cacheTimers:this.cache?.report().pendingTimers??0,cacheBytes:this.cache?.report().retainedBytes??0,...this.payloads.snapshot()};}
   close(): void {
     if (!this.closed) {
       this.time();

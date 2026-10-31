@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Ten-minute/concurrent-viewer and four-hour release-soak runners, authored A/V
+  markers, bounded append-only diagnostic rotation, complete-file validation and
+  explicit request/index/source cleanup counters.
+
 - Local rotating HLS AES-128/clear cycles, key unavailability/wrong responses,
   session-authenticated media token issue/expiry/renewal and named local UTC
   failures, malformed responses and bounded skew. Secret-free evidence exports.
