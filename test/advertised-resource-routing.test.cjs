@@ -34,6 +34,9 @@ test('HLS advertised media with a playlist extension is rejected as a preview re
  const scenarioFile=path.join(dir,'scenario.json');await fs.writeFile(scenarioFile,JSON.stringify({version:1,rules:[{target:{resource:'init',track:'video:0',segment:'next'},status:503}]}));
  session=await startHlsim({port:await port(),faultConfigPath:path.join(dir,'faults.json'),manifestUrl:origin.url+'/master.m3u8',scenarioFile});
  const master=await(await fetch(session.url)).text(),child=new URL(variantEntries(master)[0].uri,session.url),playlist=await(await fetch(child)).text(),media=new URL(mediaSegments(playlist)[0].uri,child);
+ const before=session.diagnostics.snapshot().events.filter(e=>e.event==='origin.completed').length;
+ assert.equal((await fetch(new URL('/pl?u='+encodeURIComponent(origin.url+'/master.m3u8'),session.url),{headers:{'X-Sim-Manifest-Preview':'baseline-v1'}})).status,400);
+ assert.equal(session.diagnostics.snapshot().events.filter(e=>e.event==='origin.completed').length,before);
  assert.equal((await fetch(media,{headers:{'X-Sim-Manifest-Preview':'baseline-v1'}})).status,400);assert.equal(session.scenario.report().rules[0].selected,0);
  const ordinary=await fetch(media);assert.equal(ordinary.status,200);assert.deepEqual(Buffer.from(await ordinary.arrayBuffer()),origin.files.get('/chunk-0-1.m4s'));
  const init=new URL(playlist.match(/#EXT-X-MAP:URI="([^"]+)"/)[1],child);assert.equal((await fetch(init)).status,503);assert.equal((await fetch(init)).status,200);

@@ -31,7 +31,7 @@ async function verify(session,protocol,kind,signal,dir){
  }else if(kind==='negative-cache'){
   const layer=await require('./manifest-preview/negative-cache.cjs').verify(session,protocol,dir,signal,preview,get);evidence.push({kind:'negative-cache',...layer});
  }else if(kind==='reject-resources'){
-  const resources=await tracks(session,protocol),video=resources.find(r=>r.track==='video:0');for(const url of [video.media,video.init,...(protocol==='dash'?[new URL('/utc',session.url)]:[])].filter(Boolean))assert.equal((await get(url)).response.status,400);
+  const resources=await tracks(session,protocol),video=resources.find(r=>r.track==='video:0');for(const url of [video.media,video.init,...(protocol==='dash'?[new URL('/utc',session.url)]:[new URL('/pl?u='+encodeURIComponent(session.url),session.url)])].filter(Boolean))assert.equal((await get(url)).response.status,400);
   assert.equal(session.scenario.report().rules[0].selected,0);const bad=await get(video.media,false);assert.equal(bad.response.status,503);assert.ok(bad.response.headers.get('X-Sim-Fault-Ids'));
  }
  assert.ok(session.diagnostics.snapshot().events.some(e=>e.event==='manifest.preview'));return{protocol,kind,passed:true,simulatorBehaviorVerified:true,playerRecoveryVerified:false,evidence};

@@ -299,7 +299,11 @@ export async function startHlsim(
     try {
       if (preflight(req, res, host, !!runs)) return;
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
-      const observing = manifestPreview(req,res,dummy ? requestUrl.pathname === "/proxy.m3u8" || variants.some(v=>requestUrl.pathname === "/live/"+v.uri) : lookupResource(requestUrl)?.kind === "playlist",trace);
+      const rootPreview = requestUrl.pathname === "/proxy.m3u8";
+      const childPreview = dummy
+        ? variants.some(v => requestUrl.pathname === "/live/" + v.uri)
+        : /^\/r\/[a-f0-9]{32}\.m3u8$/.test(requestUrl.pathname) && lookupResource(requestUrl)?.kind === "playlist";
+      const observing = manifestPreview(req, res, rootPreview || childPreview, trace);
       if (observing) scenario = undefined;
       if (runs && await runs.handle(req, res)) return;
       if (scenario && runs) trace.run(runs.runId);

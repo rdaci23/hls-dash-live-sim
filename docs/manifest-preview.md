@@ -19,7 +19,9 @@ response. Old peers are rejected before requesting a manifest; there is no raw
 playback fallback. Only known root/advertised HLS playlists and the configured
 DASH root MPD accept this header, and only with GET/HEAD. Bad versions, resource
 kinds and methods return 400 before run controls or fault selection. Media, keys,
-initialization and UTC cannot use it to bypass faults.
+initialization and UTC cannot use it to bypass faults. Legacy `/pl?u=…` proxy
+wrappers also reject previews; use the registered playlist URLs returned by the
+manifest instead. Ordinary legacy requests retain their behavior.
 
 The browser still accepts only local simulator URLs, sends no control token or
 cookies to manifest origins, rejects redirects and bounds the preview body/time.
