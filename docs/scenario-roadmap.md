@@ -7,8 +7,8 @@ limitation must never be hidden or presented as a simulator pass.
 
 | Milestone | Status | Required evidence |
 | --- | --- | --- |
-| 1. Selective rendition outages | HTTP implementation verified; browser observation matrix in progress | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
-| 2. Realistic network presets | HTTP implementation verified; browser observation matrix in progress | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
+| 1. Selective rendition outages | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
+| 2. Realistic network presets | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Planned | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
@@ -70,3 +70,33 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
   superseded. The corrected owned source retains old bytes/URLs, advertises
   new init/media resources with matching dimensions, and adds aligned HLS
   discontinuities / a new DASH Period before injecting old initialization.
+
+## Browser observation checkpoint
+
+Execution commits are `22d7081` (first four runs) and `6c00f86` (remaining three).
+These observations are separate from the HTTP pass and do not qualify release.
+
+| Case | Observed response | Remaining limit |
+| --- | --- | --- |
+| HLS high outage | Injected failures reached the player; playback continued after restoration. | No rendered low-rendition fallback; fault-associated errors retained for review. |
+| HLS low outage | Playback stayed healthy on the high rendition. | Low rendition was not requested; fallback/re-entry unverified. |
+| DASH low outage | Playback stayed healthy on the high rendition. | Low rendition was not requested; fallback/re-entry unverified. |
+| HLS starvation | The constrained phase reached the player; rendering resumed. | High rendition stayed selected; fault-associated errors retained for review. |
+| DASH starvation | Constrained delivery, down/up rendered adaptation and continuation observed. | Broader compatibility/endurance gates remain separate. |
+| HLS four cycles | All constrained phases observed; down/up rendering and continuation observed. | No guarantee of one quality switch per phase. |
+| DASH four cycles | All constrained phases observed; continuation observed. | Rendered downshift occurred; return to high was not observed in the window. |
+
+The first DASH oscillation report rejected its in-memory snapshot after seven
+ring-buffer evictions. Its on-disk file retained every event, from ID 1 through
+2009 and session close. The corrected verifier validates that closed file's
+identity, contiguous IDs, endpoints, final newline and absence of loss markers,
+and records a complete-file SHA-256/byte/event manifest. Ring eviction remains
+visible; missing/truncated disk evidence still fails. Archived reports must keep
+their execution commit separate from any later analysis commit. Diagnostic
+rotation and the endurance milestones remain unimplemented.
+
+The corrected 40-case payload/transport matrix passed at `6c00f86` with a clean
+working tree. The seven-case browser observation matrix is **not** seven recovery
+passes. Milestones 5–10, targeted payload/transport browser qualification, the
+unexercised browser cases and CI qualification remain outstanding. GitHub Actions
+has not executed these commits because of its account payment/spending-limit gate.

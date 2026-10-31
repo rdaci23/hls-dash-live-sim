@@ -19,7 +19,7 @@ function evaluate({ metrics, samples, audit, scenario, injectionMs, restoredMs, 
   if (exceptions.length) failures.push('Browser exceptions require investigation');
   if (!metrics || !Number.isFinite(metrics.frames) || metrics.frames <= 0) failures.push('Rendered frame count missing or empty');
   if (!metrics?.retrySettings) failures.push('Player retry configuration missing');
-  if (metrics?.dropped || auditDropped || !diagnostics || diagnostics.droppedEvents || diagnostics.fileLimitReached || diagnostics.fileWriteFailed) failures.push('Evidence missing or truncated');
+  if (metrics?.dropped || auditDropped || !diagnostics || (diagnostics.source === 'closed-file' ? !diagnostics.completeFile?.complete : diagnostics.droppedEvents) || diagnostics.fileLimitReached || diagnostics.fileWriteFailed) failures.push('Evidence missing or truncated');
   const applied = diagnostics?.events?.filter(e => e.event === 'fault.applied') || [];
   const constrained = (scenario?.timeline || []).filter(phase => phase.network.bandwidthKbps > 0 && phase.network.bandwidthKbps < 1500);
   const unobservedPhases = constrained.filter(phase => !applied.some(e => e.fault === 'response.bandwidth' && e.phaseId === phase.phaseId)).map(phase => phase.phaseId);

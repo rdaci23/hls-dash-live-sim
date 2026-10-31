@@ -39,6 +39,13 @@ when the healthy before/after windows do not qualify. Neither mode is a public
 release approval, and all reports keep `releaseReady: false`. The separate full
 healthy gate still requires three minutes and two played DASH Period transitions.
 
+The verifier validates the closed diagnostic file from session start through
+session close, with contiguous event IDs, matching session/protocol, a complete
+final line and no loss markers. Its manifest records SHA-256, bytes and event
+count. In-memory ring eviction stays visible but cannot masquerade as on-disk
+loss when the complete file is independently verified. A missing/truncated file
+still fails; there is no fallback to a partial ring snapshot.
+
 Each fresh output directory contains definitions, request JSONL, raw frames/
 errors/HTTP audit, a screenshot and per-case/combined reports with commit and
 dirty-tree state. The optional CI dispatch input captures seven cases in separate

@@ -9,6 +9,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { chromium } = require('playwright');
 const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { startLivesim2, DEFAULT_IMAGE } = require('../dist/support-tools/dash-sim-runner.js');
+const { read: readCompleteDiagnostics } = require('./browser/complete-diagnostics.cjs');
 const { evaluate, healthy, GATES } = require('./browser/core-acceptance.cjs');
 const root = path.resolve(__dirname, '..');
 const CASES = ['hls-high', 'hls-low', 'dash-low', 'hls-starvation', 'dash-starvation', 'hls-oscillation', 'dash-oscillation'];
@@ -84,10 +85,14 @@ async function run(caseId, directory, signal) {
     await browser?.close(); await session?.close();
     if (web) { web.closeAllConnections(); await new Promise(resolve => web.close(resolve)); }
   }
+  if (session?.diagnostics) {
+    try { diagnostics = await readCompleteDiagnostics(path.join(directory, 'requests.jsonl'), session.diagnostics.snapshot()); }
+    catch (error) { harnessError ||= error.message; }
+  }
   const result = evaluate({ metrics, samples, audit, scenario, injectionMs, restoredMs, harnessError, diagnostics, auditDropped });
   const report = { schemaVersion: 1, caseId, commit, workingTreeModified, recordedAt: new Date().toISOString(), protocol, preset, definition, scenario, browserVersion,
     playerVersion: JSON.parse(await fs.readFile(path.join(root, 'node_modules', protocol === 'hls' ? 'hls.js/package.json' : 'dashjs/package.json'), 'utf8')).version,
-    engineImage: protocol === 'dash' ? DEFAULT_IMAGE : undefined, injectionMs, restoredMs, auditDropped, harnessError, ...result };
+    diagnosticFile: diagnostics?.completeFile, engineImage: protocol === 'dash' ? DEFAULT_IMAGE : undefined, injectionMs, restoredMs, auditDropped, harnessError, ...result };
   await fs.writeFile(path.join(directory, 'raw.json'), JSON.stringify({ metrics, samples, audit, diagnosticMetadata: diagnostics && { ...diagnostics, events: undefined } }, null, 2) + '\n', { mode: 0o600 });
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
   console.log(caseId + ': ' + report.browserCompatibility + (report.failures.length ? ' — ' + report.failures.join('; ') : ''));
