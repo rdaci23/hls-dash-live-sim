@@ -474,7 +474,7 @@ if (a[0] === 'run') {
   a.forEach((v, i) => { if(v === '--label') { const [key, value] = a[i+1].split('='); labels[key] = value; } });
   state = { Id: 'a'.repeat(64), Config: { Labels: labels } };
   setTimeout(() => {
-    fs.writeFileSync(stateFile, JSON.stringify(state)); record('created');
+    record('created'); fs.writeFileSync(stateFile, JSON.stringify(state));
     const deadline = setTimeout(() => process.exit(2), 8000);
     const timer = setInterval(() => {
       if (!fs.existsSync(acknowledge)) return;
