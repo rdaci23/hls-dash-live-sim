@@ -1,0 +1,1 @@
+{"version":1,"seed":42,"rules":[],"timeline":[{"afterMs":0,"beforeMs":30000,"network":{"bandwidthKbps":1500}},{"afterMs":30000,"beforeMs":50000,"network":{"bandwidthKbps":50}},{"afterMs":50000,"beforeMs":80000,"network":{"bandwidthKbps":1500}}]}

@@ -8,7 +8,7 @@ limitation must never be hidden or presented as a simulator pass.
 | Milestone | Status | Required evidence |
 | --- | --- | --- |
 | 1. Selective rendition outages | HTTP implementation verified; browser observations pending | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
-| 2. Realistic network presets | Planned | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
+| 2. Realistic network presets | HTTP implementation verified; browser observations pending | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | Planned | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | Planned | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Planned | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
@@ -39,3 +39,8 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
 - Rendition outage development matrix: HLS high/low and DASH low HTTP passes;
   269 regular tests pass, six optional tests skipped. Exact committed evidence is
   recorded by the isolated runner; browser fallback/re-entry remains pending.
+
+- Network preset development matrix: all four HLS/DASH starvation/oscillation
+  cases passed, including paced bytes, cancellation and active-transfer
+  restoration. Regular suite: 285 passes, six optional skips. Browser observations
+  remain separate and pending.

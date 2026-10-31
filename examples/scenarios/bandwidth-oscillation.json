@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "timeline": [
+    {
+      "afterMs": 0,
+      "beforeMs": 30000,
+      "network": {
+        "bandwidthKbps": 1500
+      }
+    },
+    {
+      "afterMs": 30000,
+      "beforeMs": 45000,
+      "network": {
+        "bandwidthKbps": 450
+      }
+    },
+    {
+      "afterMs": 45000,
+      "beforeMs": 60000,
+      "network": {
+        "bandwidthKbps": 1500
+      }
+    },
+    {
+      "afterMs": 60000,
+      "beforeMs": 75000,
+      "network": {
+        "bandwidthKbps": 450
+      }
+    },
+    {
+      "afterMs": 75000,
+      "beforeMs": 90000,
+      "network": {
+        "bandwidthKbps": 1500
+      }
+    },
+    {
+      "afterMs": 90000,
+      "beforeMs": 105000,
+      "network": {
+        "bandwidthKbps": 450
+      }
+    },
+    {
+      "afterMs": 105000,
+      "beforeMs": 120000,
+      "network": {
+        "bandwidthKbps": 1500
+      }
+    },
+    {
+      "afterMs": 120000,
+      "beforeMs": 135000,
+      "network": {
+        "bandwidthKbps": 450
+      }
+    },
+    {
+      "afterMs": 135000,
+      "beforeMs": 150000,
+      "network": {
+        "bandwidthKbps": 1500
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+const{test}=require('node:test');const assert=require('node:assert/strict');
+const{definition,accept}=require('../scripts/network-presets/verify.cjs');const{parseScenario}=require('../dist/support-tools/scenario.js');const{read}=require('../scripts/transport-scenarios/verify.cjs');
+for(const name of ['starvation','oscillation'])test(name+' is bounded, explicit and keeps shipped definitions immutable',()=>{const shipped=definition(name,true),fast=definition(name);parseScenario(shipped);parseScenario(fast);assert.ok(shipped.timeline.every(p=>p.network.bandwidthKbps>0));if(name==='starvation')assert.deepEqual(shipped.timeline.map(p=>p.network.bandwidthKbps),[1500,50,1500]);else assert.equal(shipped.timeline.filter(p=>p.network.bandwidthKbps===450).length,4);assert.equal(definition(name,true).timeline[0].beforeMs,30000);});
+function fixture(name='starvation'){
+ const d=definition(name),r={name,definition:d,measuredLowestKbps:200,phases:[],manifestsAdvanced:true,scenario:{result:'passed',profile:{bandwidthKbps:0,jitterMs:0,manifestFreeze:false}}},events=[];
+ for(const[index,p]of d.timeline.entries()){const requestId='r'+index;r.phases.push({requestId,index,status:200,bytes:25000,chunks:8,kbps:p.network.bandwidthKbps,position:String(index*2),durationMs:25000/(p.network.bandwidthKbps*125)*1000,sha256:'same',referenceSha256:'same'});events.push({event:'fault.applied',requestId,fault:'response.bandwidth',bandwidthKbps:p.network.bandwidthKbps,phaseId:'phase:'+index});}
+ r.cancellation={complete:false,requestId:'cancel'};events.push({event:'request.cancelled',requestId:'cancel'});r.activeTransfer={startedBeforeBoundary:true,endedAfterBoundary:true,durationMs:700};return{r,events};
+}
+for(const name of ['starvation','oscillation'])test(name+' complete pacing evidence qualifies',()=>{const{r,events}=fixture(name);accept(r,events);});
+const mutations={ 'missing phase':r=>r.phases.pop(),'unpaced body':r=>r.phases[1].durationMs=1,'wrong bytes':r=>r.phases[1].sha256='wrong','stale phase publication':r=>r.phases[1].position='0','zero starvation cap':r=>r.phases[1].kbps=0,'above-minimum starvation':r=>r.measuredLowestKbps=40,'no in-flight acceleration':r=>r.activeTransfer.endedAfterBoundary=false,'cancelled request completed':r=>r.cancellation.complete=true,'truncated evidence':(_r,e)=>e.push({event:'diagnostics.file_limit'}),'wrong phase correlation':(_r,e)=>e[1].phaseId='phase:0','missing restoration':r=>r.scenario.profile.bandwidthKbps=50};
+for(const[name,change]of Object.entries(mutations))test('rejects '+name,()=>{const{r,events}=fixture();change(r,events);assert.throws(()=>accept(r,events));});
+test('raw HTTP verification timeout is bounded and spans an unfinished response body',async t=>{
+ for(const timeoutMs of [0,-1,60001,'100',NaN])await assert.rejects(read('http://127.0.0.1:1/',{timeoutMs}),/timeoutMs/);
+ const http=require('node:http'),server=http.createServer((_req,res)=>{res.writeHead(200,{'Content-Length':1000});res.write(Buffer.alloc(10));});await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>{server.closeAllConnections();return new Promise(r=>server.close(r));});
+ await assert.rejects(read('http://127.0.0.1:'+server.address().port,{timeoutMs:100}),/deadline exceeded/);
+});

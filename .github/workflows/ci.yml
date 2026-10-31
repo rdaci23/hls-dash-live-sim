@@ -108,6 +108,15 @@ jobs:
           path: output/ci-rendition-outages/
           if-no-files-found: warn
           retention-days: 7
+      - run: npm run network:presets -- --output output/ci-network-presets
+      - name: Retain realistic network preset evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: network-presets-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ci-network-presets/
+          if-no-files-found: warn
+          retention-days: 7
       - run: npm run resource:verify -- --output output/ci-resource-targets
       - name: Retain manifest and initialization targeting evidence
         if: always()

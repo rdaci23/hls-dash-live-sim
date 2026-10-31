@@ -11,6 +11,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Nonzero bandwidth-starvation and four-cycle oscillation presets with HTTP
+  pacing, byte preservation, cancellation and in-flight restoration verification.
+
 - Selective HLS high/low and DASH low rendition outage presets, HTTP isolation
   and restoration verification, and a tracked private core-coverage roadmap.
 

@@ -200,6 +200,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Implementation](docs/implementation.md) | Current behavior, supported imports and explicit limits. |
 | [Development and CI](docs/development.md) | Install, checks, CI matrix and packaged-CLI smoke test. |
 | [Network scenario timelines](docs/network-scenarios.md) | Scheduled bandwidth, seeded jitter, freeze/resume and HTTP replay evidence. |
+| [Network presets](docs/network-presets.md) | Below-minimum starvation, four bandwidth cycles, byte/pacing and active-transfer restoration evidence. |
 | [Core roadmap](docs/scenario-roadmap.md) | Remaining pre-release milestones and their evidence gates. |
 | [Rendition outages](docs/rendition-outages.md) | HLS high/low and DASH low isolation and restoration. |
 | [DASH audio-only outage](docs/dash-audio-outage.md) | Independent audio failure, healthy video/init/MPD/UTC, and same-download restoration evidence. |

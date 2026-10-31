@@ -8,7 +8,8 @@ const definition = (resource, action) => ({ version: 1, seed: 42, rules: [{
     ...(action === 'abort' ? {} : { durationMs: 200 }), deadlineMs: 3000 }, expectRetry: true,
 }] });
 // Observe HTTP/1.1 completion, not just the status. The timer spans the body too.
-function read(url, { method = 'GET', range, signal, cancelAfterBytes } = {}) {
+function read(url, { method = 'GET', range, signal, cancelAfterBytes, timeoutMs = 6000 } = {}) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60000) return Promise.reject(Error('HTTP timeoutMs must be from 1 to 60000'));
   return new Promise((resolve, reject) => {
     const began = performance.now(), chunks = [], timing = []; let response, settled = false, clientCancelled = false;
     const elapsed = () => performance.now() - began;
@@ -23,7 +24,7 @@ function read(url, { method = 'GET', range, signal, cancelAfterBytes } = {}) {
         clientCancelled, chunks: timing, bytes: Buffer.concat(chunks), error: res.complete ? undefined : 'incomplete_message' }));
       if (cancelAfterBytes === 0) { clientCancelled = true; res.destroy(); }
     });
-    const timer = setTimeout(() => { request.destroy(); finish(undefined, Error('HTTP verification deadline exceeded')); }, 6000);
+    const timer = setTimeout(() => { request.destroy(); finish(undefined, Error('HTTP verification deadline exceeded')); }, timeoutMs);
     const aborted = () => { request.destroy(); finish(undefined, Error('Verification interrupted')); };
     signal?.addEventListener('abort', aborted, { once: true });
     const finish = (value, error) => {
