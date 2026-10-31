@@ -130,7 +130,7 @@ export interface RemoteResponse {
 export async function fetchRemote(
   value: string,
   policy: OriginPolicy,
-  options: { range?: string; maxBytes?: number; signal?: AbortSignal } = {},
+  options: { range?: string; maxBytes?: number; signal?: AbortSignal; method?: "GET" | "HEAD" } = {},
 ): Promise<RemoteResponse> {
   let url = value;
   const signal = (
@@ -145,6 +145,7 @@ export async function fetchRemote(
     policy.check(url);
     const response = await fetch(url, {
       redirect: "manual",
+      method: options.method ?? "GET",
       signal,
       headers: {
         ...policy.headers(url),
@@ -195,8 +196,9 @@ export async function fetchRemote(
       const header = response.headers.get(key);
       if (header) headers[key] = header;
     }
+    if (options.method === "HEAD" && /^\d+$/.test(response.headers.get("content-length") ?? "")) headers["content-length"] = response.headers.get("content-length");
     if (response.headers.get("content-encoding") && response.headers.get("content-encoding").toLowerCase() !== "identity") {
-      delete headers.etag; delete headers["last-modified"];
+      delete headers.etag; delete headers["last-modified"];delete headers["content-length"];
     }
     return {
       status: response.status,
@@ -336,14 +338,15 @@ export function send(
 ): void {
   if (res.destroyed) return;
   const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
-  sendHeaders(res, status, buffer.length, headers);
+  const headLength = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-length")?.[1];
+  sendHeaders(res, status, method === "HEAD" && /^\d+$/.test(headLength ?? "") ? Number(headLength) : method === "HEAD" && !buffer.length ? undefined : buffer.length, headers);
   res.end(method === "HEAD" || [204, 304].includes(status) ? undefined : buffer);
 }
 
 export function sendHeaders(
   res: http.ServerResponse,
   status: number,
-  length: number,
+  length: number | undefined,
   headers: Record<string, string> = {},
 ): void {
   const bodyless = [204, 304].includes(status);
@@ -353,7 +356,7 @@ export function sendHeaders(
     "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, ${TRACE_HEADERS}`,
     "Cache-Control": "no-store",
     ...headers,
-    ...(bodyless ? {} : { "Content-Length": String(length) }),
+    ...(bodyless || length === undefined ? {} : { "Content-Length": String(length) }),
   });
 }
 

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "cache": {
+    "kind": "negative",
+    "target": {
+      "resource": "init",
+      "track": "video:0"
+    },
+    "afterMs": 0,
+    "beforeMs": 30000,
+    "ttlMs": 3000
+  }
+}

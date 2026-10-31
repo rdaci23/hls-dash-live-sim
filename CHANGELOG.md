@@ -100,3 +100,6 @@ not relabel the implementation candidate's evidence as a new verification run.
 
 See [supported behavior](docs/implementation.md), [dependency notices](THIRD_PARTY_NOTICES.md)
 and the maintainer's [publication checklist](docs/release-checklist.md).
+
+- Added bounded manifest rollback and actual negative-cache actors with origin/edge
+  decisions, byte identity, HEAD/no-cache bypass, expiry and restoration evidence.

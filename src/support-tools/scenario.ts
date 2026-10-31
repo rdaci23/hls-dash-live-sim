@@ -1,3 +1,4 @@
+import { ScenarioCache, CacheDefinition, parseCache } from "./scenario-cache.js";
 import fs from "node:fs";
 import { ScenarioResponseHeaders, parseResponseHeaders, responseHeaders } from "./scenario-response-headers.js";
 import { HttpResponsePolicy, HttpResponsePolicyDefinition, ConditionalHeaders, conditionalHeaders, parseHttpPolicy } from "./http-response-policy.js";
@@ -52,6 +53,7 @@ export interface ScenarioDefinition {
   rules: ScenarioRule[];
   timeline?: TimelinePhase[];
   http?: HttpResponsePolicyDefinition;
+  cache?: CacheDefinition;
 }
 const statuses = [401, 403, 404, 408, 429, 500, 502, 503, 504];
 const fail = (message: string): never => {
@@ -74,7 +76,7 @@ function immutable<T>(value: T): T {
   return value;
 }
 export function parseScenario(input: unknown): ScenarioDefinition {
-  object(input, ["version", "seed", "rules", "timeline", "http"], "scenario");
+  object(input, ["version", "seed", "rules", "timeline", "http", "cache"], "scenario");
   const source = input as ScenarioDefinition;
   if (source.version !== 1) fail("version must be 1");
   if (!integer(source.seed ?? 0, 0, 0xffffffff))
@@ -84,10 +86,12 @@ export function parseScenario(input: unknown): ScenarioDefinition {
     source.rules.length > 64
   )
     fail("rules must be an array of up to 64 HTTP rules; use [] with a timeline");
+  const cache = source.cache === undefined ? undefined : parseCache(source.cache);
+  if (cache && (source.rules.length || source.timeline || source.http)) fail("Cache actors cannot combine with rules, HTTP policy or a timeline until verified");
   const http = source.http === undefined ? undefined : parseHttpPolicy(source.http);
   if (http && (source.rules.length || source.timeline)) fail("HTTP policy cannot combine with rules or a timeline until that composition is verified");
   const timeline = source.timeline === undefined ? undefined : parseTimeline(source.timeline);
-  if (!source.rules.length && !timeline && !http) fail("provide HTTP rules or a timeline");
+  if (!source.rules.length && !timeline && !http && !cache) fail("provide HTTP rules or a timeline");
   const ids = new Set<string>();
   const rules = source.rules.map((rule, index) => {
     const label = `rule ${index}`;
@@ -274,7 +278,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       expectRetry: rule.expectRetry ?? false,
     };
   });
-  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}), ...(http ? { http } : {}) };
+  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}), ...(http ? { http } : {}), ...(cache ? { cache } : {}) };
 }
 export function loadScenario(file?: string): ScenarioDefinition | undefined {
   if (!file) return undefined;
@@ -329,6 +333,8 @@ export class ScenarioEngine {
   readonly scenarioId: string;
   readonly timeline?: ScenarioTimeline;
   readonly http?: HttpResponsePolicy;
+  readonly cache?: ScenarioCache;
+  serveCache(res: ServerResponse, trace: RequestTrace): boolean { const response=this.cache?.lookup(trace,this.time());if(!response)return false;send(res,response.status,response.body,response.headers,"GET");return true; }
   private httpRequests = new WeakMap<RequestTrace, { resource: LogicalMedia; conditions: ConditionalHeaders }>();
   handlesHttp(trace: RequestTrace): boolean { return this.httpRequests.has(trace); }
   private started: number;
@@ -357,6 +363,7 @@ export class ScenarioEngine {
     signal: AbortSignal, trace: RequestTrace,
     grantFactory?: () => (maximum: number, signal: AbortSignal) => Promise<number>,
   ): Promise<boolean> {
+    this.cache?.observe(trace,this.time(),status,body,headers);
     const httpRequest = this.httpRequests.get(trace);
     if (httpRequest && this.http) {
       const response = this.http.apply(status, body, headers, method, httpRequest.conditions, trace);
@@ -400,6 +407,7 @@ export class ScenarioEngine {
           rules: this.definition.rules.map(({ id, ...rule }) => rule),
         }),
       ).slice(0, 32);
+    this.cache = this.definition.cache ? new ScenarioCache(this.definition.cache, diagnostics.protocol, this.scenarioId) : undefined;
     this.http = this.definition.http ? new HttpResponsePolicy(this.definition.http) : undefined;
     this.started = clock();
     this.states = this.definition.rules.map(() => ({
@@ -413,7 +421,7 @@ export class ScenarioEngine {
       this.timeline = new ScenarioTimeline(this.definition.timeline, this.definition.seed, this.scenarioId, diagnostics, () => this.time());
   }
   assertCompatible(): void {
-    if (this.settled && !this.invalid && !this.definition.timeline && !this.definition.http) return;
+    if (this.settled && !this.invalid && !this.definition.timeline && !this.definition.http && !this.definition.cache) return;
     if (manualFaultConflict())
       this.invalid = "manual_fault_conflict";
     if (this.invalid)
@@ -438,7 +446,7 @@ export class ScenarioEngine {
       : (this.elapsed = Math.max(this.elapsed, this.clock() - this.started, 0));
   }
   get settled(): boolean {
-    return (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
+    return (!this.cache || this.cache.report().result !== "pending") && (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
       (_, index) => this.stateStatus(index) !== "pending",
     );
   }
@@ -477,6 +485,7 @@ export class ScenarioEngine {
   ): number {
     this.assertCompatible();
     if (this.closed) throw new HttpError(409, "Scenario is closed");
+    if (media && this.cache?.matches(media)) this.cache.bind(media,conditionalHeaders({ ...conditions, range }),conditions,trace,method);
     if (media && this.http?.matches(media) && ["GET", "HEAD"].includes(method)) {
       this.httpRequests.set(trace, { resource: media, conditions: conditionalHeaders({ ...conditions, range }) });
       trace.runEffect(); trace.logical({ trackId: media.trackId, targetKind: media.kind });
@@ -718,7 +727,8 @@ export class ScenarioEngine {
     });
     const timeline = this.timeline?.report();
     const http = this.http?.report();
-    const outcomes = [...rules, ...(timeline ?? []), ...(http ? [http] : [])];
+    const cache = this.cache?.report();
+    const outcomes = [...rules, ...(timeline ?? []), ...(http ? [http] : []), ...(cache ? [cache] : [])];
     return structuredClone({
       version: 1,
       scenarioId: this.scenarioId,
@@ -743,6 +753,7 @@ export class ScenarioEngine {
       ...(this.definition.rules.some(rule => rule.payload) ? { payload: this.payloadStatus() } : {}),
       ...(timeline ? { timeline, profile: this.timeline.profile() } : {}),
       ...(http ? { http } : {}),
+      ...(cache ? { cache } : {}),
     });
   }
   close(): void {
@@ -751,6 +762,7 @@ export class ScenarioEngine {
       this.timeline?.close();
       this.payloads.close();
       this.http?.close();
+      this.cache?.close();
       this.closed = true;
       this.diagnostics.record("scenario.closed", {
         scenarioId: this.scenarioId,

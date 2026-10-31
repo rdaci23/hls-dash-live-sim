@@ -43,6 +43,7 @@ export async function startDashFaultProxy(
     throw new Error("DASH has one root MPD; manifest targets must use track root or any");
   if (definition?.rules.some(rule => rule.target.resource === "init" && rule.target.track === "root"))
     throw new Error("DASH initialization targets require a declared track or any, not root");
+  if (definition?.cache?.target.resource === "manifest" && definition.cache.target.track !== "root") throw new Error("DASH cache manifest targets require root");
   const upstreamBase = `http://127.0.0.1:${options.upstreamPort}`;
   const policy = new OriginPolicy(upstreamBase);
   const diagnostics = new SessionDiagnostics("dash", {
@@ -57,16 +58,17 @@ export async function startDashFaultProxy(
     diagnostics.close();
     throw error;
   }
-  const needsMediaIdentity = manual || scenario && (scenario.definition.http?.target.resource === "media" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
-  const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.http?.target.resource === "init" || scenario.definition.rules.some(rule => rule.target.resource === "init"));
+  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsIndex = manual || scenario && (needsMediaIdentity || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
-    manual || scenario?.definition.http?.target.resource === "init" || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
+    manual || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks,
+    advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
     scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
     if (previousRunId) await transport.cancelRun(previousRunId);
@@ -150,8 +152,8 @@ export async function startDashFaultProxy(
       }
       const profile = scenario?.timeline?.profile();
       if (
-        scenario && (scenario.definition.http?.target.resource === "media" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
-        (scenario.http || !scenario.settled) &&
+        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
+        (scenario.http || scenario.cache || !scenario.settled) &&
         segment &&
         !logical &&
         req.method === "GET"
@@ -166,6 +168,7 @@ export async function startDashFaultProxy(
         send(res, failure, "Injected DASH resource failure", scenario?.failureHeaders(trace) ?? {}, req.method);
         return;
       }
+      if (scenario?.serveCache(res,trace)) return;
       const reply = async (status: number, body: Buffer | string, headers: Record<string, string>) => {
         if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace, () => faults.transportGrant(trace))) {
           const ordinary = conditionalResponse(status,body,headers,req.method,conditionalHeaders(req.headers));
@@ -183,6 +186,7 @@ export async function startDashFaultProxy(
         upstreamBase + request.pathname + request.search,
         policy,
         {
+          method: req.method === "HEAD" && !scenario?.handlesHttp(trace) ? "HEAD" : "GET",
           range: scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range,
           signal,
           maxBytes: manifest ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
@@ -192,6 +196,7 @@ export async function startDashFaultProxy(
         status: remote.status,
         bodyBytes: remote.body.length,
       });
+      if (manifest && req.method === "HEAD" && !scenario?.handlesHttp(trace)) { removeOriginValidators(remote.headers);delete remote.headers["content-length"]; }
       const latestProfile = scenario?.timeline?.profile();
       const held = manifest ? snapshots.held(manifestKey) : undefined;
       if (held) {
@@ -199,7 +204,7 @@ export async function startDashFaultProxy(
         await reply(held.status, held.body, held.headers);
         return;
       }
-      if (manifest) {
+      if (manifest && remote.status === 200 && req.method !== "HEAD") {
         removeOriginValidators(remote.headers);
         remote.headers["cache-control"] = "no-store";
         // A relative BaseURL remains valid on localhost and a separate player device.
@@ -207,7 +212,7 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && (!scenario || scenario.http || !scenario.settled))
+          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
           const choice = snapshots.observe(manifestKey, remote);
           if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);

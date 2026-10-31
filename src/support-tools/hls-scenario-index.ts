@@ -5,6 +5,8 @@ import type { LogicalMedia, TrackType } from "./scenario.js";
 /** Only advertised playlists and EXT-X-MAP resources; never guess media identity. */
 export class HlsScenarioIndex {
   private entries = new Map<string, LogicalMedia>();
+  private liveManifests = new Map<string,boolean>();
+  advancing(track: string): boolean { return this.liveManifests.get(track) === true; }
   private tracks = new Map<string, string>();
   constructor(root: string, private initialization = false, private capacity = 10000) {
     const key = this.canonical(root);
@@ -61,5 +63,6 @@ export class HlsScenarioIndex {
       put(url, { kind: "init", ...owningTrack, key: `hls:init:${this.canonical(url)}` });
     }
     this.entries = entries; this.tracks = tracks;
+    this.liveManifests.set(parent.trackId, /^#EXTINF:/m.test(text) && !/^#EXT-X-ENDLIST/m.test(text));
   }
 }

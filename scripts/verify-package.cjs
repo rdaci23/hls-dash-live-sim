@@ -47,7 +47,7 @@ async function ready(url, child, logs) {
     assert.ok(files.includes('docs/core-browser-observations.md'));
     assert.ok(files.includes('docs/http-policy-scenarios.md'));
     assert.ok(files.includes('docs/http-policy-research.md'));
-    for (const name of ['http-manifest-revalidation','http-video-range-resume','http-video-init-range-resume','next-video-429-retry-after','next-video-503-retry-after-date','next-video-401-challenge','next-video-cacheable-404']) assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));
+    for (const name of ['hls-manifest-rollback','dash-manifest-rollback','negative-video-init-cache','next-video-init-cacheable-404','http-manifest-revalidation','http-video-range-resume','http-video-init-range-resume','next-video-429-retry-after','next-video-503-retry-after-date','next-video-401-challenge','next-video-cacheable-404']) assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));
     for (const name of ['next-malformed-manifest', 'next-damaged-media', 'next-wrong-track-init', 'next-stale-init', 'next-video-header-delay', 'next-video-drip', 'next-video-content-length', 'next-video-chunked']) {
       assert.ok(files.includes('examples/scenarios/' + name + '.json'));
       assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));

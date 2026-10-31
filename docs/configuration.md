@@ -118,3 +118,6 @@ Existing diagnostic files are never overwritten. `/health` observes status;
 `/scenario` reports an active scenario; `/diagnostics` exports recent redacted
 events. Configuration files, scenario definitions and player results serve
 different purposes: a delivered fault does not by itself prove player recovery.
+
+[Cache scenarios](cache-scenarios.md) document bounded rollback/negative-cache
+definitions and distinct origin/edge session configuration.

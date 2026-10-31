@@ -160,12 +160,13 @@ export async function startHlsim(
   if (options.verbose !== undefined)
     applyConfigOverride({ logging: { verbose: options.verbose } });
   if (options.proxy === false) return startVod(options, host, port);
+  if (definition?.cache?.kind === "manifest-rollback" && definition.cache.target.track === "root") throw new Error("HLS rollback requires a media-playlist track rather than the master");
   const dummy = options.dummyContent ?? !options.manifestUrl;
-  if (definition && !dummy && (definition.http?.target.resource === "media" || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
+  if (definition && !dummy && ((definition.http?.target.resource === "media" || definition.cache?.target.resource === "media") || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new Error(
       "HLS media/timeline scenarios require generated sample media; origin scenarios support only manifest and init targets",
     );
-  if (definition && dummy && (definition.http?.target.resource === "init" || definition.rules.some(rule => rule.target.resource === "init")))
+  if (definition && dummy && ((definition.http?.target.resource === "init" || definition.cache?.target.resource === "init") || definition.rules.some(rule => rule.target.resource === "init")))
     throw new Error("Generated HLS MPEG-TS has no initialization resource; use a proxied fMP4 HLS origin with EXT-X-MAP for init scenarios");
   if (!dummy && !options.manifestUrl)
     throw new Error("Remote proxy mode requires --manifest-url");
@@ -254,10 +255,11 @@ export async function startHlsim(
   }
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const scenarioIndex = (scenario || manual) && !dummy ? new HlsScenarioIndex(options.manifestUrl,
-    manual || definition?.http?.target.resource === "init" || !!definition?.rules.some(rule => rule.target.resource === "init")) : undefined;
+    manual || (definition?.http?.target.resource === "init" || definition?.cache?.target.resource === "init") || !!definition?.rules.some(rule => rule.target.resource === "init")) : undefined;
   const snapshots = new ManifestSnapshots<string>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "hls", generated: dummy, initialization: !dummy, videoTracks: dummy ? variants.length : undefined,
+    advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
       if (kind === "manifest" && ["root", "any"].includes(track)) return true;
       if (!dummy) return scenarioIndex?.available(kind, track) ?? false;
@@ -365,6 +367,7 @@ export async function startHlsim(
         if (url.pathname === "/proxy.m3u8") {
           const failure = scenario?.decide({ kind: "manifest", trackId: "root", trackType: "root", key: "hls:manifest:root" }, req.headers.range, trace, req.method, req.headers);
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
+          if (scenario?.serveCache(res,trace)) return;
           const rewritten = master.replace(
             /^(low|main)\/stream.m3u8$/gm,
             (_line, name) => `/live/${name}/stream.m3u8`,
@@ -382,6 +385,7 @@ export async function startHlsim(
           const trackId = `video:${variants.findIndex(variant => variant.uri.startsWith(match[1] + "/"))}`;
           const failure = scenario?.decide({ kind: "manifest", trackId, trackType: "video", key: `hls:manifest:${match[1]}` }, req.headers.range, trace, req.method, req.headers);
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
+          if (scenario?.serveCache(res,trace)) return;
           const profile = scenario?.timeline?.profile();
           const choice = snapshots.observe(url.pathname, timeline.playlist(match[1]));
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
@@ -415,6 +419,7 @@ export async function startHlsim(
           send(res, status, "Injected segment failure", (scenario?.failureHeaders(trace) ?? {}), req.method);
           return;
         }
+        if (scenario?.serveCache(res,trace)) return;
         const segment = timeline.segments[sequence % timeline.segments.length];
         let body = fs.readFileSync(path.join(root, match[1], segment.uri));
         const range = scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range;
@@ -472,6 +477,7 @@ export async function startHlsim(
         (resource.kind === "init" && identified?.kind === "init") ? identified : undefined;
       const scenarioFailure = scenario?.decide(logical, req.headers.range, trace, req.method, req.headers);
       if (scenarioFailure) { send(res, scenarioFailure, "Injected HLS resource failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
+      if (scenario?.serveCache(res,trace)) return;
       if (
         resource.kind === "playlist" &&
         snapshots.held(resource.url) !== undefined
@@ -501,6 +507,7 @@ export async function startHlsim(
         return;
       }
       const remote = await fetchRemote(resource.url, policy, {
+        method: req.method === "HEAD" && !scenario?.handlesHttp(trace) ? "HEAD" : "GET",
         range: scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range,
         maxBytes:
           resource.kind === "playlist" ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
@@ -510,6 +517,7 @@ export async function startHlsim(
         status: remote.status,
         bodyBytes: remote.body.length,
       });
+      if (resource.kind === "playlist" && req.method === "HEAD") { removeOriginValidators(remote.headers);delete remote.headers["content-length"]; }
       let body: Buffer | string = remote.body;
       const headers = remote.headers;
       const held = resource.kind === "playlist" ? snapshots.held(resource.url) : undefined;
@@ -518,14 +526,14 @@ export async function startHlsim(
         await reply(200, held, { "Content-Type": "application/vnd.apple.mpegurl" });
         return;
       }
-      if (resource.kind === "playlist" && remote.status === 200) {
+      if (resource.kind === "playlist" && remote.status === 200 && req.method !== "HEAD") {
         body = resources.rewrite(
           remote.body.toString("utf8"),
           remote.url,
           resource.url,
           policy,
         );
-        if (scenarioIndex && (!scenario || scenario.http || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
+        if (scenarioIndex && (!scenario || scenario.http || scenario.cache || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
         const choice = snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");

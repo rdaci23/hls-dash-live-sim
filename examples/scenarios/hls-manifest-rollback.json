@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "cache": {
+    "kind": "manifest-rollback",
+    "target": {
+      "resource": "manifest",
+      "track": "video:0"
+    },
+    "afterMs": 30000,
+    "beforeMs": 45000
+  }
+}

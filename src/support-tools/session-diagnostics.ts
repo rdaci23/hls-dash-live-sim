@@ -14,7 +14,8 @@ export type DiagnosticFault =
   | "manifest.freeze"
   | "scenario.status"
   | "scenario.transport"
-  | "scenario.payload";
+  | "scenario.payload"
+  | "scenario.cache";
 type EventType =
   | "session.started"
   | "session.closed"
@@ -43,11 +44,14 @@ type EventType =
   | "scenario.profile"
   | "scenario.closed"
   | "scenario.run"
-  | "http.response";
+  | "http.response"
+  | "edge.decision";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
+  cacheDecision?: "origin" | "fill" | "hit" | "bypass" | "restore";
+  originBodyIdentity?: string;
   bodyIdentity?: string;
   runId?: string;
   scenarioId?: string;
@@ -117,6 +121,7 @@ export interface DiagnosticsOptions {
 export const TRACE_HEADERS =
   "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids, X-Sim-Run-Id";
 const values = {
+  cacheDecision: ["origin","fill","hit","bypass","restore"],
   result: ["pending", "passed", "failed", "incomplete"],
   method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
   resourceKind: ["manifest", "segment", "init", "key", "other"],
@@ -135,6 +140,7 @@ const values = {
     "scenario.status",
     "scenario.transport",
     "scenario.payload",
+    "scenario.cache",
   ],
   mode: ["once", "random", "always"],
   reason: [
@@ -164,7 +170,7 @@ const values = {
 };
 function allowedField(key: string, value: unknown): boolean {
   if (values[key]) return values[key].includes(value);
-  if (key === "bodyIdentity") return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+  if (key === "bodyIdentity" || key === "originBodyIdentity") return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
   if (key === "requestId" || key === "runId")
     return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
   if (key === "faultId")
@@ -301,6 +307,8 @@ export class SessionDiagnostics {
     // Copy a fixed set of fields even when called from plain JS with extra data.
     for (const key of [
       "bodyIdentity",
+      "originBodyIdentity",
+      "cacheDecision",
       "runId",
       "scenarioId",
       "ruleId",

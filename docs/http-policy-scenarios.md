@@ -2,8 +2,9 @@
 
 These scenarios exercise HTTP behavior separately from browser retry/recovery.
 They extend version 1 without changing existing rule fingerprints or automatic
-startup. CDN rollback, lag, publication delay and negative-cache actors are
-separate work; a cache header alone does not establish an actual cache hit.
+startup. The [cache actors](cache-scenarios.md) implement rollback and actual negative
+caching separately; a cache header alone does not establish an actual cache hit.
+Rendition lag and publication-delay actors remain pending.
 [Primary-source implementation notes](http-policy-research.md).
 
 ## Revalidation and resumption

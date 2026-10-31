@@ -129,3 +129,6 @@ readiness. It skips full browser playback by default and cannot run a physical
 Roku. Use the [playback procedure](playback-gates.md) and
 [release checklist](release-checklist.md) for those gates. Retain evidence tied to
 the release candidate commit. Do not relabel earlier reports as freshly verified.
+
+`npm run cache:verify` checks [real origin/edge caching](cache-scenarios.md) with
+separate diagnostic files and full-body identities.

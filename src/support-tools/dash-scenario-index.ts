@@ -19,6 +19,8 @@ function uint(value: unknown): bigint {
 
 /** Identify advertised media from the MPD, rather than guessing from file extensions. */
 export class DashScenarioIndex {
+  private dynamic = false;
+  advancing(): boolean { return this.dynamic; }
   private entries = new Map<string, { media: LogicalMedia; expires: number }>();
   private tracks = new Map<string, string>();
   private scopes = new Map<string, number>();
@@ -207,6 +209,7 @@ export class DashScenarioIndex {
     )
       throw new HttpError(503, "DASH scenario retained index capacity reached");
     for (const [key, media] of next) this.entries.set(key, { media, expires });
+    this.dynamic = root["@_type"] === "dynamic";
     this.tracks = tracks;
     this.scopes = scopes;
   }

@@ -77,7 +77,7 @@ async function verify(session, protocol, resource, track) {
   }
   const head = await read(target, 'HEAD');
   assert.equal(head.bytes.length, 0);
-  assert.ok(Number(head.response.headers.get('content-length')) > 100);
+  assert.ok(targetKind === 'manifest' && head.response.headers.get('content-length') === null || Number(head.response.headers.get('content-length')) > 100, 'HEAD length is accurate when present; rewritten manifests may omit it');
   assert.equal(session.scenario.report().trackedDownloads, 0, 'unrelated resources and HEAD do not count');
   const failed = await read(target, 'GET', 503);
   const retry = new URL(target); retry.searchParams.set('cache-bust', 'retry');

@@ -236,3 +236,6 @@ compatibility outcomes.
 [HTTP policy scenarios](docs/http-policy-scenarios.md) add revalidation, exact
 range resumption and bounded status-response headers, with HTTP evidence kept
 separate from player recovery.
+
+See [origin and edge-cache scenarios](docs/cache-scenarios.md) for fresh/newer/stale
+manifests, real negative caching, setup and isolated verification.

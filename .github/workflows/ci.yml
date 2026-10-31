@@ -197,6 +197,7 @@ jobs:
           docker pull --platform linux/amd64 "$IMAGE"
       - run: npm run http:verify -- --output output/ci-http-policy
       - run: npm run headers:verify -- --output output/ci-status-headers
+      - run: npm run cache:verify -- --output output/ci-cache-scenarios
       - name: Retain HTTP evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -205,6 +206,7 @@ jobs:
           path: |
             output/ci-http-policy/
             output/ci-status-headers/
+            output/ci-cache-scenarios/
           if-no-files-found: error
           retention-days: 7
 
