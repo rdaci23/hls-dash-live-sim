@@ -1,14 +1,16 @@
 const fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http'), { execFileSync } = require('node:child_process'), { createHash, randomUUID } = require('node:crypto'), assert = require('node:assert/strict');
-const { startTrackFixture } = require('../dist/support-tools/track-fixture-session.js'), { tracks } = require('./track-scenarios/verify.cjs'), { open } = require('./browser/owned-player.cjs'), { read: raw } = require('./transport-scenarios/verify.cjs'), { read: completeDiagnostics } = require('./browser/complete-diagnostics.cjs'), { Evidence } = require('./endurance/evidence.cjs'), { fairness, Drift, qualifyDrift, qualification } = require('./endurance/acceptance.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs'), { initialization, fragment } = require('./dash-abr/fixture.cjs');
+const { create: startTrackFixture } = require('./endurance/source-process.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { open } = require('./browser/owned-player.cjs'), { read: raw } = require('./transport-scenarios/verify.cjs'), { read: completeDiagnostics } = require('./browser/complete-diagnostics.cjs'), { Evidence } = require('./endurance/evidence.cjs'), { fairness, Drift, qualifyDrift, qualification } = require('./endurance/acceptance.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs'), { initialization, fragment } = require('./dash-abr/fixture.cjs');
 const root = path.resolve(__dirname, '..'), pause = ms => new Promise(r => setTimeout(r, ms)), hash = b => createHash('sha256').update(b).digest('hex');
 async function closeAgent(agent) { const sockets = [...Object.values(agent.sockets), ...Object.values(agent.freeSockets)].flat(), closed = sockets.map(socket => socket.closed ? Promise.resolve() : new Promise(resolve => socket.once('close', resolve))); agent.destroy(); await Promise.all(closed); assert.equal(Object.values(agent.requests).flat().length, 0); }
 async function port() { const s = http.createServer(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
 const { timeline } = require('./endurance/workload.cjs');
-async function closeState(state, duration) {
+async function closeState(state, duration, memoryCheckpoint) {
     const result = { protocol: state.protocol, firstFrameMs: state.firstFrameMs, frames: state.lastFrames, mediaTime: state.lastMediaTime, downloads: state.downloads, churn: state.churn, slowReaders: state.slow, cancellations: state.cancellations, retentionProbes: state.retentionProbes, fairness: state.fairness, drift: state.drift.report(), decodedChecks: state.decodedChecks, publications: Object.fromEntries(state.publications), browserVersion: state.ui?.browserVersion, playerVersion: state.ui?.playerVersion, ownedContainers: 0, errors: [] };
     const attempt = async (action) => {
         try {
-            return await action();
+            const value = await action();
+            memoryCheckpoint?.();
+            return value;
         }
         catch (e) {
             result.errors.push(e.message);
@@ -36,11 +38,15 @@ async function closeState(state, duration) {
     await attempt(() => state.evidence.close());
     result.cleanup = { httpClients: { activeSockets: state.agents.flatMap(agent => [...Object.values(agent.sockets), ...Object.values(agent.freeSockets)].flat()).filter(socket => !socket.closed).length, queuedRequests: state.agents.flatMap(agent => Object.values(agent.requests).flat()).length }, network: state.session.networkOwnership(), resources: state.session.resourceOwnership(), source: state.session.sourceOwnership() };
     result.browserProcess = state.ui?.processOwnership();
+    result.simulatorProcess = state.session.processOwnership();
+    result.cleanup.sourceProcess = { pendingMessages: result.simulatorProcess.pendingMessages, samplerTimers: result.simulatorProcess.samplerTimers };
     await attempt(async () => { result.sourceEvidence = (await completeDiagnostics(path.join(state.dir, 'requests.jsonl'), state.session.diagnostics.snapshot())).completeFile; });
     await attempt(async () => { result.viewerEvidence = (await completeDiagnostics(state.evidence.file, state.evidence.metadata())).completeFile; });
     await attempt(async () => {
         if (Object.values(result.cleanup).some(group => Object.values(group).some(n => n)))
             throw Error('Owned work failed to drain');
+        if (!result.simulatorProcess.exited || result.simulatorProcess.exitCode !== 0 || result.simulatorProcess.memory.breach)
+            throw Error('Owned simulator process exit or RSS gate failed');
         if (!result.browserProcess?.exited)
             throw Error('Owned browser process did not exit');
         if ((duration >= 60000 && (!state.retentionProbes || !state.slow || !state.cancellations || !state.churn)) || state.fairness.length !== timeline(duration).filter(p => p.network.bandwidthKbps === 1200).length)
@@ -57,14 +63,18 @@ async function closeState(state, duration) {
 }
 async function main() {
     const args = require('yargs/yargs')(process.argv.slice(2)).option('mode', { choices: ['development', 'smoke', 'release'], default: 'smoke' }).option('development-seconds', { type: 'number' }).option('output', { type: 'string', default: 'output/endurance-' + Date.now() }).strict().parseSync();
-    if(!['development','smoke','release'].includes(args.mode))throw Error('Choose exactly one endurance mode');
+    if (!['development', 'smoke', 'release'].includes(args.mode))
+        throw Error('Choose exactly one endurance mode');
     if (args['development-seconds'] !== undefined && (args.mode !== 'development' || !Number.isInteger(args['development-seconds']) || args['development-seconds'] < 30 || args['development-seconds'] > 300))
         throw Error('development-seconds requires development mode and 30–300 seconds');
     const duration = (args.mode === 'release' ? 14400 : args.mode === 'smoke' ? 600 : args['development-seconds'] ?? 90) * 1000, directory = path.resolve(args.output);
     await fs.mkdir(path.dirname(directory), { recursive: true });
     await fs.mkdir(directory, { mode: 0o700 });
     const git = () => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(), dirty = () => !!execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim(), commit = git(), controller = new AbortController(), sessions = [], jobs = [], began = performance.now(), wallBegan = Date.now();
-    let baselineRss, peakRss = 0, error, stopping = false, runBegan;
+    let baselineRss, peakRss = 0, aggregateBaseline, aggregatePeak = 0, error, stopping = false, runBegan;
+    const memoryCheckpoint = () => { peakRss = Math.max(peakRss, process.memoryUsage().rss, process.resourceUsage().maxRSS * 1024); const source = sessions.map(s => s.session.processOwnership()).filter(p => !p.exited); aggregatePeak = Math.max(aggregatePeak, peakRss + source.reduce((n, p) => n + p.memory.peakBytes, 0)); if (baselineRss !== undefined && aggregateBaseline === undefined && sessions.every(s => Number.isFinite(s.session.processOwnership().memory.warmBaselineBytes)))
+        aggregateBaseline = baselineRss + sessions.reduce((n, s) => n + s.session.processOwnership().memory.warmBaselineBytes, 0); if (aggregateBaseline !== undefined && aggregatePeak > aggregateBaseline + 128 * 1024 * 1024)
+        throw Error('Aggregate Node RSS exceeded warm-up baselines by 128 MiB'); };
     const fail = e => { error ??= e.message; controller.abort(e); }, stop = () => fail(Error('Endurance interrupted'));
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
@@ -75,7 +85,7 @@ async function main() {
             await fs.mkdir(dir, { mode: 0o700 });
             const scenarioFile = path.join(dir, 'scenario.json');
             await fs.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, rules: [], timeline: timeline(duration) }) + '\n', { mode: 0o600 });
-            const session = await startTrackFixture({ protocol, port: await port(), faultConfigPath: path.join(dir, 'faults.json'), diagnosticsFile: path.join(dir, 'requests.jsonl'), diagnosticsRotateFiles: args.mode === 'release' ? 128 : 64, diagnosticsMaxFileBytes: args.mode === 'release' ? 8 * 1024 * 1024 : 1024 * 1024, scenarioFile, scenarioStart: 'manual', controlToken: randomUUID(), signal: controller.signal });
+            const session = await startTrackFixture({ protocol, port: await port(), faultConfigPath: path.join(dir, 'faults.json'), diagnosticsFile: path.join(dir, 'requests.jsonl'), diagnosticsRotateFiles: args.mode === 'release' ? 128 : 64, diagnosticsMaxFileBytes: args.mode === 'release' ? 8 * 1024 * 1024 : 1024 * 1024, scenarioFile, scenarioStart: 'manual', controlToken: randomUUID(), warmupMs: Math.min(60000, duration / 3) });
             const evidence = new Evidence(path.join(dir, 'viewers.jsonl'), protocol, args.mode === 'release' ? 8 * 1024 * 1024 : 1024 * 1024), state = { protocol, dir, session, evidence, drift: new Drift(), identities: new Map(), timing: new Map(), publications: new Map(), downloads: 0, churn: 0, slow: 0, cancellations: 0, fairness: [], lastFrames: 0, lastMediaTime: 0, firstMediaTime: undefined, decodedChecks: 0, samples: 0, pausedForFairness: false, startedAt: performance.now(), httpViewers: 2, agents: [new http.Agent({ keepAlive: true, maxSockets: 4 }), new http.Agent({ keepAlive: true, maxSockets: 4 })], retentionProbes: 0 };
             sessions.push(state);
             state.ui = await open(session, protocol, controller.signal, { markerProbe: true, captureProcess: true });
@@ -188,7 +198,7 @@ async function main() {
         }
         for (const state of sessions) {
             await tracks(state.session, state.protocol);
-            await state.session.runs.action('start', { runId: state.session.runs.runId });
+            await state.session.start();
         }
         runBegan = performance.now();
         let nextSample = 0, nextFair = 60000, prepared = false;
@@ -201,6 +211,10 @@ async function main() {
                 throw Error('Node RSS exceeded warm-up baseline by 128 MiB');
             if (elapsed >= nextSample) {
                 for (const state of sessions) {
+                    const sourceStats = await state.session.refresh();
+                    memoryCheckpoint();
+                    if (sourceStats.memory.breach)
+                        throw Error(state.protocol + ' simulator Node RSS exceeded its warm-up baseline by 128 MiB');
                     const m = await state.ui.page.evaluate(() => window.drainTrackMetrics());
                     state.samples++;
                     state.lastFrames = m.frames;
@@ -246,10 +260,11 @@ async function main() {
             }
             if (prepared && elapsed >= nextFair) {
                 await Promise.all(sessions.map(async (state) => {
-                    while (state.session.scenario.report().elapsedMs < nextFair + 250) {
+                    while ((await state.session.refresh()).scenario.elapsedMs < nextFair + 250) {
                         controller.signal.throwIfAborted();
                         await pause(25);
                     }
+                    await state.session.refresh();
                     assert.equal(state.session.scenario.report().profile.bandwidthKbps, 1200);
                     const results = await Promise.all([0, 1, 2].map(i => raw(state.fairControl.url, { range: 'bytes=0-65535', agent: i < 2 ? state.agents[i] : false, timeoutMs: 15000, signal: controller.signal })));
                     for (const r of results)
@@ -259,7 +274,7 @@ async function main() {
                     state.fairness.push(observed);
                     state.evidence.append('http.fairness', observed);
                     state.fairControl = undefined;
-                    while (state.session.scenario.report().elapsedMs < nextFair + 8050) {
+                    while ((await state.session.refresh()).scenario.elapsedMs < nextFair + 8050) {
                         controller.signal.throwIfAborted();
                         await pause(50);
                     }
@@ -281,7 +296,7 @@ async function main() {
         controller.abort();
         await Promise.allSettled(jobs);
         for (const state of sessions) {
-            const result = await closeState(state, duration);
+            const result = await closeState(state, duration, memoryCheckpoint);
             report.protocols.push(result);
             if (result.errors.length)
                 error ??= state.protocol + ': ' + result.errors[0];
@@ -293,11 +308,14 @@ async function main() {
             error ??= 'Node RSS exceeded warm-up baseline by 128 MiB';
         report.elapsedMs = performance.now() - began;
         report.wallElapsedMs = Date.now() - wallBegan;
+        report.aggregateRss = { warmBaselineBytes: aggregateBaseline, peakConservativeBytes: aggregatePeak, maximumGrowthBytes: 128 * 1024 * 1024 };
+        if (aggregateBaseline !== undefined && aggregatePeak > aggregateBaseline + 128 * 1024 * 1024)
+            error ??= "Aggregate Node RSS exceeded warm-up baselines by 128 MiB";
         report.rss = { warmBaselineBytes: baselineRss, peakBytes: peakRss, maximumGrowthBytes: 128 * 1024 * 1024 };
         report.workingTreeModified ||= dirty() || git() !== commit;
         report.error = error;
         report.passed = !error && report.protocols.length === 2 && report.streamingElapsedMs >= duration;
-        Object.assign(report,qualification({mode:args.mode,passed:report.passed,dirty:report.workingTreeModified,elapsedMs:report.streamingElapsedMs}));
+        Object.assign(report, qualification({ mode: args.mode, passed: report.passed, dirty: report.workingTreeModified, elapsedMs: report.streamingElapsedMs }));
         await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
         if (!report.passed)
             process.exitCode = 1;

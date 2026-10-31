@@ -43,12 +43,14 @@ concurrent-viewer verifier or qualification.
   audio energy independently. Pulse separation must stay within 250 ms and drift
   within 150 ms of the initial five-cycle median. These bounds account for the
   analyser window and 100 ms sampling; they do not measure speaker latency.
-- Node-process RSS is sampled against its post-warm-up baseline, with a maximum
-  increase of 128 MiB. OS high-water RSS is retained too. Browser-process memory
-  is separate and is not mislabelled as simulator RSS.
+- Each simulator runs in a separate owned Node process. The driver and both
+  simulators are sampled against their own post-warm-up baselines, each with
+  a maximum increase of 128 MiB. Their combined growth must also stay within
+  128 MiB; separating processes cannot hide combined growth. OS high-water RSS
+  is retained. Browser-process memory is recorded separately.
 - Resource indexes, pending work and transfer ownership are sampled. After close,
   all owned transfers/timers, active requests, indexes, buffered source files and
-  source actions must drain, and the owned browser process must exit. The runner
+  source actions must drain, and every owned simulator and browser process must exit. The runner
   starts no containers and does not stop unrelated processes.
 
 The four-hour test uses real source/publication/UTC clocks. Time acceleration and
@@ -75,8 +77,15 @@ browser/HTTP evidence. Smoke parts are 1 MiB; release source parts are 8 MiB wit
 at most 128 parts per protocol, and viewer evidence allows 64 parts. Keep each
 manifest with **all** named files. Missing, modified, truncated, oversized or
 out-of-sequence evidence fails the check, even if recent in-memory events remain.
+Closed-file validation streams bounded chunks and retains only a bounded recent
+event window. A replay regression measures actual RSS while repeatedly validating
+a long trace. The owned browser viewer uses a native origin policy, including
+redirect checks, without routing every healthy request through Playwright.
+`npm run browser:routing` verifies blocked undeclared origins, blocked redirects
+and 10,000 healthy requests within the memory budget.
+
 The real-browser interruption check sends SIGINT, requires failed qualification
-and checks that browser PIDs have exited, counters drain and closed files validate.
+and checks that simulator/browser PIDs have exited, counters drain and closed files validate.
 Failed/interrupted runs still close their owned resources and retain partial
 reports with explicit failure reasons.
 

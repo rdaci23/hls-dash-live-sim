@@ -31,10 +31,13 @@ async function main() {
         assert.equal(p.sourceEvidence.complete, true);
         assert.equal(p.viewerEvidence.complete, true);
         assert.equal(p.browserProcess.exited, true);
+        assert.equal(p.simulatorProcess.exited, true);
+        assert.equal(p.simulatorProcess.exitCode, 0);
         assert.ok(Object.values(p.cleanup).every(group => Object.values(group).every(n => n === 0)));
+        for(const owned of [p.browserProcess,p.simulatorProcess]) {
         let alive = true;
         try {
-            process.kill(p.browserProcess.pid, 0);
+            process.kill(owned.pid, 0);
         }
         catch (error) {
             if (error.code === 'ESRCH')
@@ -42,9 +45,10 @@ async function main() {
             else
                 throw error;
         }
-        assert.equal(alive, false, 'Owned browser PID is gone');
+        assert.equal(alive, false, 'Owned process PID is gone');
+        }
     }
-    await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify({ schemaVersion: 1, passed: true, scope: 'Intentional interrupt must fail qualification while preserving complete closed evidence and draining all owned work', commit: report.commit, workingTreeModified: report.workingTreeModified, checks: report.protocols.map(p => ({ protocol: p.protocol, browserProcess: p.browserProcess, cleanup: p.cleanup, sourceEvidence: p.sourceEvidence, viewerEvidence: p.viewerEvidence })) }, null, 2) + '\n', { mode: 0o600 });
+    await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify({ schemaVersion: 1, passed: true, scope: 'Intentional interrupt must fail qualification while preserving complete closed evidence and draining all owned work', commit: report.commit, workingTreeModified: report.workingTreeModified, checks: report.protocols.map(p => ({ protocol: p.protocol, browserProcess: p.browserProcess, simulatorProcess:p.simulatorProcess, cleanup: p.cleanup, sourceEvidence: p.sourceEvidence, viewerEvidence: p.viewerEvidence })) }, null, 2) + '\n', { mode: 0o600 });
     console.log('Interrupted endurance cleanup PASS');
 }
 main().catch(e => { console.error(e.message); process.exitCode = 1; });
