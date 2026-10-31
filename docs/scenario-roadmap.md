@@ -12,7 +12,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Simulator HTTP implementation verified; targeted browser evidence pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
-| 6. Fixtures and independent tracks | Planned | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
+| 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault browser observations pending | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Planned | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | Planned | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
 | 9. Endurance/concurrency | Planned | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
@@ -115,3 +115,8 @@ has not executed these commits because of its account payment/spending-limit gat
   `output/cache-scenarios-committed-2b60075/report.json`. This includes actual
   stored negative responses, independent origin restoration, cache-body identity,
   no upstream fetch on hit, expiry, and fresh/newer/stale/restored manifests.
+
+- Publication actors: `a7c56ed`, clean four-case report at
+  `output/publication-committed-a7c56ed/report.json`; advertised timing, effective
+  per-representation frontiers, repeated/new downloads and restoration are HTTP
+  results. Targeted fault-browser qualification remains separate.

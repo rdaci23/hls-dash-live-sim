@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { HttpError } from "./safe-http.js";
 import type { DiagnosticFault, DiagnosticFields, FaultEffect, RequestTrace, SessionDiagnostics } from "./session-diagnostics.js";
 
+export interface TrackNetwork { bandwidthKbps:number;jitterMs:number; }
 export interface TimelinePhase {
+  tracks?: Record<string,TrackNetwork>;
   afterMs: number;
   beforeMs: number;
   network: { bandwidthKbps: number; jitterMs: number };
@@ -10,6 +12,7 @@ export interface TimelinePhase {
 }
 export const HEALTHY_PROFILE = Object.freeze({ bandwidthKbps: 0, jitterMs: 0, manifestFreeze: false });
 export interface TimelineProfile {
+  tracks?: Record<string,TrackNetwork>;
   phaseId?: string;
   bandwidthKbps: number;
   jitterMs: number;
@@ -17,19 +20,19 @@ export interface TimelineProfile {
 }
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 type EffectKind = "bandwidth" | "jitter" | "freeze";
-interface Observation { index: number; applied: Set<EffectKind>; }
+interface Observation { index: number; applied: Set<EffectKind>; trackApplied:Set<EffectKind>; }
 
 export function parseTimeline(input: unknown): TimelinePhase[] {
   if (!Array.isArray(input) || !input.length || input.length > 64)
     throw new Error("Invalid scenario: timeline requires 1 to 64 phases");
-  let previousEnd = 0;
+  let previousEnd = 0;const trackIds=new Set<string>();
   const object = (value, keys: string[]) => {
     if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(k => !keys.includes(k)))
       throw new Error("Invalid scenario: unsupported timeline phase fields");
   };
   const integer = (value, max) => Number.isInteger(value) && value >= 0 && value <= max;
   return input.map(phase => {
-    object(phase, ["afterMs", "beforeMs", "network", "manifestFreeze"]);
+    object(phase, ["afterMs", "beforeMs", "network", "manifestFreeze", "tracks"]);
     if (!integer(phase.afterMs, 86400000) || !integer(phase.beforeMs, 86400000) || phase.beforeMs <= phase.afterMs || phase.afterMs < previousEnd)
       throw new Error("Invalid scenario: timeline phases must be ordered, non-overlapping finite windows within one day");
     previousEnd = phase.beforeMs;
@@ -38,7 +41,16 @@ export function parseTimeline(input: unknown): TimelinePhase[] {
     const jitterMs = phase.network?.jitterMs === undefined ? 0 : phase.network.jitterMs;
     if (!integer(bandwidthKbps, 1000000) || !integer(jitterMs, 60000) || (phase.manifestFreeze !== undefined && typeof phase.manifestFreeze !== "boolean"))
       throw new Error("Invalid scenario: invalid timeline bandwidth, jitter or freeze setting");
-    return { afterMs: phase.afterMs, beforeMs: phase.beforeMs, network: { bandwidthKbps, jitterMs }, manifestFreeze: phase.manifestFreeze ?? false };
+    let tracks:Record<string,TrackNetwork>|undefined;
+    if(phase.tracks!==undefined){
+      if(!phase.tracks || typeof phase.tracks!=="object" || Array.isArray(phase.tracks) || !Object.keys(phase.tracks).length || Object.keys(phase.tracks).length>16)throw Error("Invalid scenario: per-track shaping requires 1..16 explicit aliases");
+      if(phase.manifestFreeze)throw Error("Invalid scenario: per-track shaping with manifest freeze is not verified");
+      tracks={};for(const [track,raw]of Object.entries(phase.tracks)){
+        if(!/^(video|audio|text):(?:0|[1-9]\d{0,2})$/.test(track))throw Error("Invalid scenario: unsupported shaping track");trackIds.add(track);if(trackIds.size>128)throw Error("Invalid scenario: at most 128 shaping aliases per run");object(raw,["bandwidthKbps","jitterMs"]);const value=raw as Partial<TrackNetwork>,bandwidthKbps=value.bandwidthKbps===undefined?0:value.bandwidthKbps,jitterMs=value.jitterMs===undefined?0:value.jitterMs;
+        if(!integer(bandwidthKbps,1000000)||!integer(jitterMs,60000))throw Error("Invalid scenario: invalid per-track network bounds");tracks[track]={bandwidthKbps,jitterMs};
+      }
+    }
+    return { ...(tracks?{tracks}:{}),afterMs: phase.afterMs, beforeMs: phase.beforeMs, network: { bandwidthKbps, jitterMs }, manifestFreeze: phase.manifestFreeze ?? false };
   });
 }
 
@@ -55,6 +67,7 @@ export class ScenarioTimeline {
   get failureReason(): "jitter_capacity_exceeded" | undefined {
     return this.invalid ? "jitter_capacity_exceeded" : undefined;
   }
+  private trackStates:Record<string,{completed:number;bandwidth:number;jitter:number}>[];
   private states: Array<{ selected: number; completed: number; cancelled: number; bandwidth: number; jitter: number; freeze: number }>;
   constructor(
     readonly phases: readonly TimelinePhase[],
@@ -63,6 +76,7 @@ export class ScenarioTimeline {
     private diagnostics: SessionDiagnostics,
     private elapsed: () => number,
   ) {
+    this.trackStates=phases.map(p=>Object.fromEntries(Object.keys(p.tracks??{}).map(track=>[track,{completed:0,bandwidth:0,jitter:0}])));
     this.states = phases.map(() => ({ selected: 0, completed: 0, cancelled: 0, bandwidth: 0, jitter: 0, freeze: 0 }));
     this.sync();
   }
@@ -70,7 +84,7 @@ export class ScenarioTimeline {
   profile(): TimelineProfile {
     this.sync();
     const p = this.phases[this.active];
-    return p ? { phaseId: `phase:${this.active}`, ...p.network, manifestFreeze: p.manifestFreeze } : { ...HEALTHY_PROFILE };
+    return p ? { phaseId: `phase:${this.active}`, ...p.network, ...(p.tracks?{tracks:p.tracks}:{}),manifestFreeze: p.manifestFreeze } : { ...HEALTHY_PROFILE };
   }
   subscribe(listener: (profile: TimelineProfile) => void): () => void {
     this.listeners.add(listener); listener(this.profile());
@@ -82,7 +96,7 @@ export class ScenarioTimeline {
     if (index !== this.active) {
       this.active = index;
       const p = this.phases[index];
-      const profile: TimelineProfile = p ? { phaseId: `phase:${index}`, ...p.network, manifestFreeze: p.manifestFreeze } : { ...HEALTHY_PROFILE };
+      const profile: TimelineProfile = p ? { phaseId: `phase:${index}`, ...p.network, ...(p.tracks?{tracks:p.tracks}:{}),manifestFreeze: p.manifestFreeze } : { ...HEALTHY_PROFILE };
       this.diagnostics.record("scenario.profile", { scenarioId: this.scenarioId, ...profile });
       for (const listener of this.listeners) listener(profile);
     }
@@ -102,7 +116,7 @@ export class ScenarioTimeline {
     const index = Number(profile.phaseId.slice(6));
     const entries = this.effects.get(trace) ?? new Map<number, Observation>();
     if (entries.has(index)) return index;
-    const state = this.states[index], applied = new Set<EffectKind>();
+    const state = this.states[index], applied = new Set<EffectKind>(),trackApplied=new Set<EffectKind>();
     // Multiple effects on one response count once per effect; cancellation stays visible.
     state.selected++;
     trace.onOutcome(outcome => {
@@ -110,14 +124,15 @@ export class ScenarioTimeline {
       if (![200, 206].includes(outcome.status) || !outcome.bodyBytes || this.at() >= this.phases[index].beforeMs) return;
       state.completed++;
       for (const kind of applied) state[kind]++;
+      const track=this.trackStates[index][trace.trackId];if(track && trace.targetKind === "media"){track.completed++;for(const kind of trackApplied)if(kind!=="freeze")track[kind]++;}
     });
     // Kept on the trace via closures rather than exporting request identities.
-    entries.set(index, { index, applied });
+    entries.set(index, { index, applied,trackApplied });
     this.effects.set(trace, entries);
     return index;
   }
   private effects = new WeakMap<RequestTrace, Map<number, Observation>>();
-  effect(kind: EffectKind, trace: RequestTrace | undefined, action: DiagnosticFields["action"], extra: Pick<DiagnosticFields, "bandwidthKbps" | "jitterMs" | "delayMs"> = {}, profile?: TimelineProfile): FaultEffect | undefined {
+  effect(kind: EffectKind, trace: RequestTrace | undefined, action: DiagnosticFields["action"], extra: Pick<DiagnosticFields, "bandwidthKbps" | "jitterMs" | "delayMs" | "networkScope"> = {}, profile?: TimelineProfile): FaultEffect | undefined {
     const index = this.phase(trace, profile);
     if (index < 0) return;
     const entry = this.effects.get(trace).get(index);
@@ -125,8 +140,9 @@ export class ScenarioTimeline {
     // A cold capture alone cannot prove a held snapshot. Completed successful
     // responses are counted by the outcome observer, not by fault selection.
     if (kind !== "freeze" || action === "hold_manifest") entry.applied.add(kind);
+    if(extra.networkScope === "track")entry.trackApplied.add(kind);
     return trace.select({ scenarioId: this.scenarioId, phaseId: `phase:${entry.index}`, fault,
-      faultId: "fault_" + digest(`${this.scenarioId}|phase:${entry.index}|${kind}`).slice(0,32), mode: "always", action, ...extra });
+      faultId: "fault_" + digest(`${this.scenarioId}|phase:${entry.index}|${kind}${extra.networkScope === "track" ? "|track:"+trace.trackId : ""}`).slice(0,32), mode: "always", action, ...extra });
   }
   observe(trace?: RequestTrace, profile?: TimelineProfile): void { this.phase(trace, profile); }
   jitter(lane: string, maximum: number, profile = this.profile()): number {
@@ -140,12 +156,13 @@ export class ScenarioTimeline {
     this.sync();
     return this.phases.map((p, index) => {
       const state = this.states[index];
-      const verified = state.completed > 0 && (!p.network.bandwidthKbps || state.bandwidth > 0) && (!p.network.jitterMs || state.jitter > 0) && (!p.manifestFreeze || state.freeze > 0);
+      const tracks=Object.entries(p.tracks??{}).map(([track,network])=>({track,...network,...this.trackStates[index][track]}));
+      const verified = tracks.every(t=>t.completed>0&&(!t.bandwidthKbps||t.bandwidth>0)&&(!t.jitterMs||t.jitter>0)) && state.completed > 0 && (!p.network.bandwidthKbps || state.bandwidth > 0) && (!p.network.jitterMs || state.jitter > 0) && (!p.manifestFreeze || state.freeze > 0);
       let result: "passed" | "failed" | "incomplete" | "pending";
       if (this.invalid) result = "failed";
       else if (this.at() >= p.beforeMs) result = verified ? "passed" : "incomplete";
       else result = this.closed ? "incomplete" : "pending";
-      return { phaseId: `phase:${index}`, ...p, ...state, failure: this.failureReason, result };
+      return { phaseId: `phase:${index}`, ...p, ...(p.tracks?{trackObservations:tracks}:{}),...state, failure: this.failureReason, result };
     });
   }
   close(): void {

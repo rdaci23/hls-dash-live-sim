@@ -71,6 +71,7 @@ export interface LivesimLogsOptions {
 }
 export interface DashSession {
   url: string;
+  networkOwnership?: Awaited<ReturnType<typeof startDashFaultProxy>>["networkOwnership"];
   diagnostics?: SessionDiagnostics;
   scenario?: ScenarioEngine;
   runs?: ScenarioRuns;
@@ -437,6 +438,7 @@ export async function startLivesim2(
     return {
       url,
       close,
+      networkOwnership:proxy?.networkOwnership,
       diagnostics: proxy?.diagnostics,
       get scenario() { return proxy?.scenario; },
       get runs() { return proxy?.runs; },

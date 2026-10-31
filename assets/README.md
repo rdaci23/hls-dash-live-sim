@@ -33,3 +33,12 @@ playlist records its actual measured ladder. Rebuild after regeneration. Stop li
 sessions before replacing their media. Project-owned generated fixtures are covered
 by the [MIT License](../LICENSE). External generation tools retain their own
 licenses; see [third-party notices](../THIRD_PARTY_NOTICES.md).
+
+Optional independent tracks: `npm run fixtures:tracks` creates `assets/track-sample`
+from procedural FFmpeg testsrc2 and 440/880 Hz tones, plus authored EN/RO captions
+using the owned fragmented-WebVTT builder. It includes genuine 180p/360p video and
+an optional 540p third rendition, two separate AAC signals, HLS WebVTT and DASH
+wvtt. The generator validates exact eight-second coded loops; no upstream media
+or caption content is copied. Input audio is trimmed to account for AAC encoder
+priming so the complete sample timeline aligns with video/text. Initial generation
+used FFmpeg 7.1.1. [Setup, scope and verification](../docs/track-fixtures.md).

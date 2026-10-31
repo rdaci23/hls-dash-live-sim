@@ -52,6 +52,7 @@ type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
+  networkScope?: "session" | "track";
   publicationAction?: "delay" | "lag";
   cacheDecision?: "origin" | "fill" | "hit" | "bypass" | "restore";
   originBodyIdentity?: string;
@@ -124,6 +125,7 @@ export interface DiagnosticsOptions {
 export const TRACE_HEADERS =
   "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids, X-Sim-Run-Id";
 const values = {
+  networkScope:["session","track"],
   publicationAction: ["delay","lag"],
   cacheDecision: ["origin","fill","hit","bypass","restore"],
   result: ["pending", "passed", "failed", "incomplete"],
@@ -315,6 +317,7 @@ export class SessionDiagnostics {
       "originBodyIdentity",
       "cacheDecision",
       "publicationAction",
+      "networkScope",
       "runId",
       "scenarioId",
       "ruleId",
@@ -484,6 +487,8 @@ export class RequestTrace {
     res.setHeader("X-Sim-Request-Id", this.requestId);
     this.record("request.started");
   }
+  get trackId(): string|undefined { return this.resourceFields.trackId; }
+  get targetKind(): string|undefined { return this.resourceFields.targetKind; }
   get runId(): string | undefined { return this.resourceFields.runId; }
   run(id: string): void { this.resourceFields.runId = id; if (!this.res.headersSent) this.res.setHeader("X-Sim-Run-Id", id); }
   private runAffected = false;

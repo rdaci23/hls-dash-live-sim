@@ -124,3 +124,6 @@ definitions and distinct origin/edge session configuration.
 
 [Publication scenarios](publication-scenarios.md) specify rendition-lag and
 segment-delay bounds, asset requirements and configuration examples.
+
+[Owned track fixtures](track-fixtures.md) document `--fixture tracks`, the optional
+third video rendition, alternate audio/captions and per-track timeline shaping.

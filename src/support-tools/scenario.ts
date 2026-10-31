@@ -96,6 +96,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
   const http = source.http === undefined ? undefined : parseHttpPolicy(source.http);
   if (http && (source.rules.length || source.timeline)) fail("HTTP policy cannot combine with rules or a timeline until that composition is verified");
   const timeline = source.timeline === undefined ? undefined : parseTimeline(source.timeline);
+  if (source.rules.length && timeline?.some(phase=>phase.tracks)) fail("Per-track shaping cannot combine with HTTP/payload/transport rules until verified");
   if (!source.rules.length && !timeline && !http && !cache && !publication) fail("provide HTTP rules or a timeline");
   const ids = new Set<string>();
   const rules = source.rules.map((rule, index) => {
@@ -228,7 +229,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         if (!["content-length", "chunked"].includes(value.framing)) fail(`${label} framing requires content-length or chunked`);
       } else if (value.framing !== undefined) fail(`${label} only framing accepts framing`);
       if (value.network !== undefined && value.network !== true) fail(`${label} network must be true when explicitly supplied`);
-      if (value.network && (!timeline || resource !== "media" || !["header-delay", "drip"].includes(value.kind) || timeline.some(phase => phase.manifestFreeze)))
+      if (value.network && (!timeline || resource !== "media" || !["header-delay", "drip"].includes(value.kind) || timeline.some(phase => phase.manifestFreeze || phase.tracks)))
         fail(`${label} combined network supports media header-delay or drip with a non-freezing timeline`);
       if (rule.status !== undefined || outage || (timeline && !value.network))
         fail(`${label} transport cannot combine with status, outage or a network timeline`);
@@ -495,6 +496,7 @@ export class ScenarioEngine {
   ): number {
     this.assertCompatible();
     if (this.closed) throw new HttpError(409, "Scenario is closed");
+    if (media) trace.logical({trackId:media.trackId,targetKind:media.kind});
     if (media) { this.publication?.bind(media,trace,method);const delayed=this.publication?.delay(trace,this.time());if(delayed)return delayed; }
     if (media && this.cache?.matches(media)) this.cache.bind(media,conditionalHeaders({ ...conditions, range }),conditions,trace,method);
     if (media && this.http?.matches(media) && ["GET", "HEAD"].includes(method)) {

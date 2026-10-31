@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "kind": "outage",
+      "target": {
+        "track": "audio:0",
+        "segment": "each"
+      },
+      "status": 503,
+      "afterMs": 30000,
+      "beforeMs": 45000
+    }
+  ]
+}

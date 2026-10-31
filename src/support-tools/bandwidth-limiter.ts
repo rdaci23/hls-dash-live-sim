@@ -28,6 +28,7 @@ export class SharedBandwidthLimiter {
     this.pump();
   }
 
+  snapshot(){return{pendingGrants:this.queue.length,pendingTimers:this.timer?1:0};}
   async take(maxBytes: number, signal: AbortSignal): Promise<number> {
     signal.throwIfAborted();
     if (!this.rate) return maxBytes;

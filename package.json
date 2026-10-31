@@ -58,7 +58,10 @@
     "http:verify": "npm run build && node scripts/verify-http-policy.cjs",
     "headers:verify": "npm run build && node scripts/verify-status-headers.cjs",
     "cache:verify": "npm run build && node scripts/verify-cache-scenarios.cjs",
-    "publication:verify": "npm run build && node scripts/verify-publication-scenarios.cjs"
+    "publication:verify": "npm run build && node scripts/verify-publication-scenarios.cjs",
+    "fixtures:tracks": "node scripts/generate-track-fixture.cjs",
+    "tracks:verify": "npm run build && node scripts/verify-track-scenarios.cjs",
+    "browser:tracks": "npm run build && node scripts/verify-track-browser.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { startTrackFixture } from "./support-tools/track-fixture-session.js";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { portNumber, bindHost } from "./support-tools/safe-http.js";
@@ -119,6 +120,7 @@ const startOptions = (builder) =>
       description: "Use 0.0.0.0 explicitly for LAN streaming",
     })
     .option("scenario", {
+      alias: "scenario-file",
       type: "string",
       description:
         "Run immutable resource fault rules and network timelines from a scenario JSON file",
@@ -239,6 +241,8 @@ const program = yargs(hideBin(process.argv))
           default: "start",
         })
         .option("sim-type", { choices: ["hls", "dash"] })
+        .option("fixture", { choices: ["tracks"], description: "Owned local fMP4, alternate audio and caption fixture; no DASH container" })
+        .option("video-renditions", { choices: [2,3], type: "number", description: "Video ladder size for --fixture tracks (default 2)" })
         .option("manifest-url", {
           alias: "manifestUrl",
           type: "string",
@@ -342,8 +346,10 @@ const program = yargs(hideBin(process.argv))
         verbose: args.verbose,
         ...auth(args),
       };
+      if (args.fixture && (args.asset || args.image || args.name || args["force-pull"] || args["periods-per-hour"] || args.periods || args["period-durations"] || args.utc === "external" || args["fault-proxy"] === false)) throw new Error("Owned tracks cannot combine with engine assets, image/Period options, external UTC or disabled fault proxy");
+      if (args["video-renditions"] && !args.fixture) throw new Error("video-renditions requires --fixture tracks");
       const session = await starting(async (signal) =>
-        type === "dash"
+        args.fixture ? await startTrackFixture({ ...common, signal, protocol: type, mode: args.mode, windowSegments: args["window-segments"], videoRenditions: args["video-renditions"], proxy: args.proxy }) : type === "dash"
           ? await startLivesim2({
               ...common,
               signal,

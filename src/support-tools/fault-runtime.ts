@@ -7,6 +7,7 @@ import {
   FaultCategory,
 } from "./live-stream-fault-config.js";
 import { setTimeout as delay } from "node:timers/promises";
+import { once } from "node:events";
 import { SharedBandwidthLimiter } from "./bandwidth-limiter.js";
 import { send, sendHeaders, HttpError } from "./safe-http.js";
 import type { ServerResponse } from "node:http";
@@ -36,8 +37,11 @@ export class FaultRuntime {
   private shapedBodies = 0;
   private shapedBytes = 0;
   private bandwidth = new SharedBandwidthLimiter(getFaultConfig().network?.bandwidthKbps);
+  private trackLimits = new Map<string,SharedBandwidthLimiter>();
+  private closed = false;
+  ownership(){const tracks=[...this.trackLimits.values()].map(l=>l.snapshot()),global=this.bandwidth.snapshot();return{activeBodies:this.shapedBodies,bufferedBytes:this.shapedBytes,pendingGrants:global.pendingGrants+tracks.reduce((n,v)=>n+v.pendingGrants,0),pendingTimers:global.pendingTimers+tracks.reduce((n,v)=>n+v.pendingTimers,0)};}
   constructor(private random: () => number = Math.random, private timeline?: ScenarioTimeline) {
-    this.unsubscribeTimeline = timeline?.subscribe(profile => this.bandwidth.setRate(profile.bandwidthKbps));
+    this.unsubscribeTimeline = timeline?.subscribe(profile => {this.bandwidth.setRate(profile.bandwidthKbps);for(const [track,limit]of this.trackLimits)limit.setRate(profile.tracks?.[track]?.bandwidthKbps??0);});
   }
   private unsubscribeTimeline?: () => void;
   private unsubscribe = onFaultConfigChange((config) => {
@@ -132,8 +136,10 @@ export class FaultRuntime {
     };
   }
   close(): void {
+    this.closed=true;
     this.unsubscribe();
     this.unsubscribeTimeline?.();
+    if(!this.shapedBodies){this.bandwidth.setRate(0);for(const limit of this.trackLimits.values())limit.setRate(0);this.trackLimits.clear();}
   }
   trigger(
     mode: FaultMode | undefined,
@@ -199,15 +205,18 @@ export class FaultRuntime {
     const ms = this.timeline ? 0 : config.segment?.latencyMs ?? 0;
     const jitterMs = method === "GET" && jitterEligible ? (profile ? profile.jitterMs : config.network?.jitterMs ?? 0) : 0;
     const track = /^(?:media|init):((?:video|audio|text):\d+)$/.exec(lane)?.[1];
+    const trackNetwork = lane.startsWith("media:") ? profile?.tracks?.[track] : undefined;
     if (this.timeline && track) trace?.logical({ trackId: track });
     if (this.timeline && method === "GET" && jitterEligible) this.timeline.observe(trace, profile);
     const extra = jitterMs ? this.timeline ? this.timeline.jitter(lane, jitterMs, profile) : Math.floor(this.random() * (jitterMs + 1)) : 0;
     const fixed = ms ? this.effect("latency", "always", trace, { delayMs: ms, action: "delay" }) : undefined;
     const jitter = jitterMs ? this.timeline ? this.timeline.effect("jitter", trace, "delay", { jitterMs, delayMs: extra }, profile) : this.effect("jitter", "always", trace, { jitterMs, delayMs: extra, action: "delay" }) : undefined;
-    if (ms + extra) await delay(ms + extra, undefined, { signal });
+    const trackExtra=trackNetwork?.jitterMs?this.timeline.jitter(lane+":track",trackNetwork.jitterMs,profile):0;
+    const trackJitter=trackNetwork?.jitterMs?this.timeline.effect("jitter",trace,"delay",{networkScope:"track",jitterMs:trackNetwork.jitterMs,delayMs:trackExtra},profile):undefined;
+    if (ms + extra + trackExtra) await delay(ms + extra + trackExtra, undefined, { signal });
     signal.throwIfAborted();
     fixed?.apply();
-    jitter?.apply();
+    jitter?.apply();trackJitter?.apply();
   }
 
   async sendMedia(
@@ -218,7 +227,9 @@ export class FaultRuntime {
     signal.throwIfAborted();
     const profile = this.timeline?.profile();
     const bandwidthKbps = enabled ? (profile ? profile.bandwidthKbps : getFaultConfig().network?.bandwidthKbps ?? 0) : 0;
-    if (!bandwidthKbps || method !== "GET" || ![200, 206].includes(status)) {
+    const shapingTrack=trace?.targetKind === "media"?trace.trackId:undefined;
+    const trackCap=enabled?profile?.tracks?.[shapingTrack]?.bandwidthKbps??0:0;
+    if ((!bandwidthKbps && !trackCap) || method !== "GET" || ![200, 206].includes(status)) {
       send(res, status, body, headers, method);
       return;
     }
@@ -229,14 +240,26 @@ export class FaultRuntime {
     this.shapedBodies++;
     this.shapedBytes += buffer.length;
     try {
-      const effect = this.timeline ? this.timeline.effect("bandwidth", trace, "throttle", { bandwidthKbps }, profile) : this.effect("bandwidth", "always", trace, { bandwidthKbps, action: "throttle" });
+      const effect = this.timeline ? bandwidthKbps ? this.timeline.effect("bandwidth", trace, "throttle", { bandwidthKbps }, profile) : undefined : this.effect("bandwidth", "always", trace, { bandwidthKbps, action: "throttle" });
       sendHeaders(res, status, buffer.length, headers);
-      await this.bandwidth.write(res, buffer, signal);
+      const trackEffects=new Map<string,FaultEffect>();
+      let offset=0;while(offset<buffer.length){
+        let maximum=Math.min(16384,buffer.length-offset);
+        const liveProfile=this.timeline?.profile(),current=liveProfile?.tracks?.[shapingTrack]?.bandwidthKbps??0;
+        if(current&&!trackEffects.has(liveProfile.phaseId))trackEffects.set(liveProfile.phaseId,this.timeline.effect("bandwidth",trace,"throttle",{networkScope:"track",bandwidthKbps:current},liveProfile));
+        let limiter=this.trackLimits.get(shapingTrack);
+        if(current && !limiter){if(this.trackLimits.size>=128)throw new HttpError(503,"Per-track limiter capacity reached");limiter=new SharedBandwidthLimiter(current);this.trackLimits.set(shapingTrack,limiter);}
+        if(limiter)maximum=await limiter.take(maximum,signal);
+        const bytes=await this.bandwidth.take(maximum,signal);signal.throwIfAborted();
+        if(!res.write(buffer.subarray(offset,offset+bytes)))await once(res,"drain",{signal});offset+=bytes;
+      }
+      for(const selected of trackEffects.values())selected?.prepare();
       effect?.prepare();
       res.end();
     } finally {
       this.shapedBodies--;
       this.shapedBytes -= buffer.length;
+      if(this.closed&&!this.shapedBodies){this.bandwidth.setRate(0);for(const limit of this.trackLimits.values())limit.setRate(0);this.trackLimits.clear();}
     }
   }
   /** Transport owns framing/buffers; grants share this session's media limiter. */

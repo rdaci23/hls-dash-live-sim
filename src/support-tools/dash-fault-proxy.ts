@@ -27,6 +27,7 @@ export interface DashFaultProxyOptions {
   videoTracks?: number;
 }
 export interface DashFaultProxy {
+  networkOwnership:()=>ReturnType<FaultRuntime["ownership"]>;
   diagnostics: SessionDiagnostics;
   scenario?: ScenarioEngine;
   runs?: ScenarioRuns;
@@ -93,6 +94,7 @@ export async function startDashFaultProxy(
             status: "ready",
             scenario: scenario?.report().result,
             scenarioRun: runs?.report(),
+            pendingNetwork:faults.ownership(),
             faults: scenario ? undefined : faults.snapshot(),
           }),
           { "Content-Type": "application/json" },
@@ -271,6 +273,7 @@ export async function startDashFaultProxy(
   }
   return {
     upstreamBase,
+    networkOwnership:()=>faults.ownership(),
     diagnostics,
     get scenario() { return scenario; },
     runs,

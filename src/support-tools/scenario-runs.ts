@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ScenarioEngine, ScenarioDefinition, parseScenario, manualFaultConflict } from "./scenario.js";
 import { HttpError, send } from "./safe-http.js";
 import type { SessionDiagnostics } from "./session-diagnostics.js";
-export interface ScenarioCapabilities { protocol: "hls" | "dash"; generated: boolean; initialization: boolean; videoTracks?: number; publicationAvailable?: (kind:string,track:string,segments?:number) => boolean; advancingManifest?: (track: string) => boolean; resourceAvailable?: (resource: string, track: string) => boolean; }
+export interface ScenarioCapabilities { protocol: "hls" | "dash"; generated: boolean; ownedTracks?: boolean; initialization: boolean; videoTracks?: number; publicationAvailable?: (kind:string,track:string,segments?:number) => boolean; advancingManifest?: (track: string) => boolean; resourceAvailable?: (resource: string, track: string) => boolean; }
 const presets = [
   ["next-video-retry", "One video 404 and retry", "both"],
   ["three-video-failures-retry", "Three video 503s and retry", "both"],
@@ -45,17 +45,21 @@ const presets = [
   ["next-video-init-cacheable-404", "Cacheable initialization origin control", "both"],
   ["low-rendition-publication-lag", "One rendition publishes one segment late", "both"],
   ["fresh-video-publication-delay", "Fresh video segment publication delay", "both"],
+  ["independent-audio-outage", "Selected independent audio outage", "both"],
+  ["independent-text-outage", "Selected text media outage", "both"],
+  ["late-caption-publication", "Captions arrive after normal publication", "both"],
+  ["asymmetric-track-network", "Independent audio/text shaping and restoration", "both"],
   ["network-cycle", "Bandwidth, jitter and manifest freeze", "both"],
 ] as const;
 export function checkScenarioCapabilities(def: ScenarioDefinition, cap: ScenarioCapabilities): void {
-  if (cap.protocol === "hls" && !cap.generated && ((def.http?.target.resource === "media" || def.cache?.target.resource === "media" || def.publication?.kind === "segment-delay") || def.timeline || def.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
+  if (cap.protocol === "hls" && !cap.generated && !cap.ownedTracks && ((def.http?.target.resource === "media" || def.cache?.target.resource === "media" || def.publication?.kind === "segment-delay") || def.timeline || def.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new HttpError(422, "HLS origin sessions support manifest/init rules only");
   if (def.rules.some(rule => rule.payload?.kind === "stale-init") && cap.generated) throw new HttpError(422, "Stale init requires an owned origin with changing matching initialization/media");
   if (def.cache?.kind === "manifest-rollback" && (cap.protocol === "hls" ? def.cache.target.track === "root" : def.cache.target.track !== "root")) throw new HttpError(422,"Rollback requires an HLS media playlist or the DASH root MPD");
   if (def.cache?.kind === "manifest-rollback" && cap.advancingManifest && !cap.advancingManifest(def.cache.target.track)) throw new HttpError(422,"Load a supported live/event target playlist or dynamic MPD before starting rollback");
   if (def.publication?.kind === "rendition-lag" && cap.advancingManifest && !cap.advancingManifest(cap.protocol === "dash" ? "root" : def.publication.track)) throw new HttpError(422,"Publication lag requires an observed live/event playlist or dynamic MPD");
   if (def.publication && cap.publicationAvailable && !cap.publicationAvailable(def.publication.kind,def.publication.track,def.publication.segments)) throw new HttpError(422,"Publication target needs supported advancing metadata and complete availability timing");
-  const targets = [...def.rules.map(rule => rule.target), ...(def.http ? [def.http.target] : []), ...(def.cache ? [def.cache.target] : []), ...(def.publication ? [{resource: def.publication.kind === "segment-delay" ? "media" : cap.protocol === "dash" ? "media" : "manifest",track:def.publication.track}] : [])];
+  const targets = [...def.rules.map(rule => rule.target), ...(def.http ? [def.http.target] : []), ...(def.cache ? [def.cache.target] : []), ...(def.timeline?.flatMap(p=>Object.keys(p.tracks??{}).map(track=>({resource:"media",track})))??[]), ...(def.publication ? [{resource: def.publication.kind === "segment-delay" ? "media" : cap.protocol === "dash" ? "media" : "manifest",track:def.publication.track}] : [])];
   for (const target of targets) {
     if (target.resource === "init" && !cap.initialization) throw new HttpError(422, "This stream has no initialization objects");
     if (cap.protocol === "dash" && target.resource === "manifest" && !["root", "any"].includes(target.track)) throw new HttpError(422, "DASH has one root manifest");
@@ -99,7 +103,7 @@ export class ScenarioRuns {
     const entries: Array<{ id: string; name: string; enabled: boolean; reason?: string; targets?: unknown; requires?: string; protocols?: string[]; expectedEffect?: string }> = presets.filter(p => p[2] === "both" || p[2] === this.capabilities.protocol).map(p => ({ id: p[0], name: p[1], enabled: true, protocols: p[2] === "both" ? ["hls", "dash"] : [p[2]] }));
     if (this.loaded) entries.unshift({ id: "loaded", name: "Definition loaded at startup", enabled: true, protocols: [this.capabilities.protocol] });
     for (const entry of entries) {
-      try { const def = this.load(entry.id); checkScenarioCapabilities(def, this.capabilities); entry.targets = [...def.rules.map(rule => rule.target), ...(def.http ? [def.http.target] : []), ...(def.cache ? [def.cache.target] : []), ...(def.publication ? [{resource:def.publication.kind === "segment-delay" ? "media" : "manifest",track:def.publication.track}] : [])]; entry.expectedEffect = def.publication ? "Bounded " + def.publication.kind + "; other tracks and stream/UTC clocks continue" : def.cache ? "Bounded " + def.cache.kind + "; recorded origin/edge/body evidence required" : def.http ? "Valid HTTP revalidation and optional single-range/resume responses" : def.timeline ? "Timed bandwidth/jitter/freeze profile, then healthy restoration" : def.rules.map(rule => rule.payload ? `Intentional ${rule.payload.kind}; init payloads require a captured advertised donor/old init` : rule.transport ? `Bounded ${rule.transport.kind} after ${rule.transport.afterBytes} bytes` : `HTTP ${rule.status} for matching resources`).join("; "); entry.requires = def.timeline ? "Generated sample / DASH engine; manual faults off" : "Matching advertised resource; manual faults off"; }
+      try { const def = this.load(entry.id); checkScenarioCapabilities(def, this.capabilities); entry.targets = [...def.rules.map(rule => rule.target), ...(def.http ? [def.http.target] : []), ...(def.cache ? [def.cache.target] : []), ...(def.timeline?.flatMap(p=>Object.keys(p.tracks??{}).map(track=>({resource:"media",track})))??[]), ...(def.publication ? [{resource:def.publication.kind === "segment-delay" ? "media" : "manifest",track:def.publication.track}] : [])]; entry.expectedEffect = def.publication ? "Bounded " + def.publication.kind + "; other tracks and stream/UTC clocks continue" : def.cache ? "Bounded " + def.cache.kind + "; recorded origin/edge/body evidence required" : def.http ? "Valid HTTP revalidation and optional single-range/resume responses" : def.timeline ? def.timeline.some(p=>p.tracks) ? "Shared bandwidth plus media-only per-track ceilings/jitter, then restoration" : "Timed bandwidth/jitter/freeze profile, then healthy restoration" : def.rules.map(rule => rule.payload ? `Intentional ${rule.payload.kind}; init payloads require a captured advertised donor/old init` : rule.transport ? `Bounded ${rule.transport.kind} after ${rule.transport.afterBytes} bytes` : `HTTP ${rule.status} for matching resources`).join("; "); entry.requires = def.timeline ? "Generated sample / DASH engine; manual faults off" : "Matching advertised resource; manual faults off"; }
       catch (error) { entry.enabled = false; entry.reason = error instanceof HttpError ? error.message : "Preset is unavailable"; }
     }
     return entries;

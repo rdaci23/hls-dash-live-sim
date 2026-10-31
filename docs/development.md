@@ -135,3 +135,7 @@ separate diagnostic files and full-body identities.
 
 `npm run publication:verify` checks [publication frontiers and availability](publication-scenarios.md)
 against generated HLS and the pinned DASH engine.
+
+`npm run tracks:verify` checks independent-track HTTP behavior;
+`npm run browser:tracks` checks decoded tones and scheduled captions.
+[Fixture development and limits](track-fixtures.md).

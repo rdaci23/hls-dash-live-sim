@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "timeline": [
+    {
+      "afterMs": 0,
+      "beforeMs": 30000
+    },
+    {
+      "afterMs": 30000,
+      "beforeMs": 45000,
+      "network": {
+        "bandwidthKbps": 1500
+      },
+      "tracks": {
+        "audio:0": {
+          "bandwidthKbps": 32,
+          "jitterMs": 80
+        },
+        "text:0": {
+          "bandwidthKbps": 8,
+          "jitterMs": 120
+        }
+      }
+    },
+    {
+      "afterMs": 45000,
+      "beforeMs": 60000,
+      "network": {
+        "bandwidthKbps": 1500
+      },
+      "tracks": {
+        "audio:0": {
+          "bandwidthKbps": 0,
+          "jitterMs": 0
+        },
+        "text:0": {
+          "bandwidthKbps": 0,
+          "jitterMs": 0
+        }
+      }
+    }
+  ]
+}

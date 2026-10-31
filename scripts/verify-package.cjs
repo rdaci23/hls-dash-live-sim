@@ -47,7 +47,9 @@ async function ready(url, child, logs) {
     assert.ok(files.includes('docs/core-browser-observations.md'));
     assert.ok(files.includes('docs/http-policy-scenarios.md'));
     assert.ok(files.includes('docs/http-policy-research.md'));
-    for (const name of ['low-rendition-publication-lag','fresh-video-publication-delay','hls-manifest-rollback','dash-manifest-rollback','negative-video-init-cache','next-video-init-cacheable-404','http-manifest-revalidation','http-video-range-resume','http-video-init-range-resume','next-video-429-retry-after','next-video-503-retry-after-date','next-video-401-challenge','next-video-cacheable-404']) assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));
+    for (const name of ['independent-audio-outage','independent-text-outage','late-caption-publication','asymmetric-track-network','low-rendition-publication-lag','fresh-video-publication-delay','hls-manifest-rollback','dash-manifest-rollback','negative-video-init-cache','next-video-init-cacheable-404','http-manifest-revalidation','http-video-range-resume','http-video-init-range-resume','next-video-429-retry-after','next-video-503-retry-after-date','next-video-401-challenge','next-video-cacheable-404']) assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));
+    assert.ok(files.includes('dist/support-tools/assets/track-sample/index.json'));
+    assert.ok(files.includes('docs/track-fixtures.md'));
     for (const name of ['next-malformed-manifest', 'next-damaged-media', 'next-wrong-track-init', 'next-stale-init', 'next-video-header-delay', 'next-video-drip', 'next-video-content-length', 'next-video-chunked']) {
       assert.ok(files.includes('examples/scenarios/' + name + '.json'));
       assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));
@@ -123,7 +125,13 @@ async function ready(url, child, logs) {
     assert.ok(catalog.presets.find(preset => preset.id === 'next-manifest-retry')?.enabled);
     const armed = await fetch(manualUrl + '/scenario/arm', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-Sim-Session-Id': catalog.sessionId }, body: JSON.stringify({ runId: catalog.runId, presetId: 'next-manifest-retry' }) });
     assert.equal(armed.status, 200); assert.equal((await armed.json()).state, 'armed');
-    console.log('Packed CLI installed with production dependencies; help, HLS media and control assets passed. Nothing was published.');
+    for (const protocol of ['hls','dash']) {
+      const trackPort=await port(),base=`http://127.0.0.1:${trackPort}`,trackStream=start(['livesim','--sim-type',protocol,'--fixture','tracks','--video-renditions','3','--port',String(trackPort),'--fault-config',path.join(directory,protocol+'-track-faults.json'),'--scenario-file',path.join(installed,'examples/scenarios/independent-audio-outage.json')]);
+      const url=base+(protocol==='hls'?'/proxy.m3u8':'/dash/manifest.mpd');await ready(url,trackStream.child,trackStream.logs);const content=await(await fetch(url)).text();
+      if(protocol==='hls'){assert.equal((content.match(/#EXT-X-STREAM-INF:/g)||[]).length,3);assert.equal((content.match(/TYPE=AUDIO/g)||[]).length,2);assert.equal((content.match(/TYPE=SUBTITLES/g)||[]).length,2);}else{assert.match(content,/codecs="wvtt"/);assert.match(content,/width="960" height="540"/);assert.equal((await fetch(base+'/utc',{method:'HEAD'})).status,200);}
+      const scenario=await(await fetch(base+'/scenario')).json();assert.equal(scenario.rules[0].target.track,'audio:0');
+    }
+    console.log('Packed CLI installed with production dependencies; baseline and owned HLS/DASH media, scenario alias and control assets passed. Nothing was published.');
   } finally {
     await Promise.all(children.map(child => new Promise(resolve => {
       if (child.exitCode !== null || child.signalCode !== null) return resolve();

@@ -1,0 +1,33 @@
+(async()=>{
+ 'use strict';const config=await(await fetch('/config')).json(),video=document.getElementById('video'),started=performance.now();let player,context,analyser;
+ const state={protocol:config.protocol,firstFrameMs:null,frames:0,mediaTime:0,heights:[],gaps:[],audio:[],captions:[],errors:[],events:[],dropped:0,audioSelection:null,textSelection:null};
+ const add=(key,value)=>{if(state[key].length<5000)state[key].push(value);else state.dropped++;};
+ const elapsed=()=>performance.now()-started;
+ window.trackSnapshot=()=>({...structuredClone(state),elapsedMs:elapsed(),currentTime:video.currentTime,contextState:context?.state,audioTracks:config.protocol==='hls'?(player?.audioTracks??[]).map(t=>({lang:t.lang,name:t.name})):player?.getTracksFor('audio').map(t=>({lang:t.lang,index:t.index})),textTracks:[...video.textTracks].map(t=>({lang:t.language,label:t.label,mode:t.mode,cues:t.cues?.length,activeCues:[...(t.activeCues??[])].map(c=>({text:c.text,start:c.startTime,end:c.endTime}))}))});
+ const frame=(_,m)=>{if(state.lastFrameMs!==undefined&&elapsed()-state.lastFrameMs>500)add("gaps",{from:state.lastFrameMs,to:elapsed(),mediaTime:m.mediaTime});state.firstFrameMs??=elapsed();state.frames++;state.mediaTime=m.mediaTime;if(state.heights.at(-1)?.height!==m.height)add('heights',{atMs:elapsed(),mediaTime:m.mediaTime,width:m.width,height:m.height});state.currentHeight=m.height;state.lastFrameMs=elapsed();video.requestVideoFrameCallback(frame);};video.requestVideoFrameCallback(frame);
+ for(const name of ["waiting","stalled","playing","seeking","seeked"])video.addEventListener(name,()=>add("events",{kind:name,atMs:elapsed(),mediaTime:video.currentTime}));
+ video.addEventListener('error',()=>add('errors',{kind:'video',atMs:elapsed(),code:video.error?.code,message:video.error?.message}));
+ document.getElementById('enable').onclick=async()=>{context??=new AudioContext();if(!analyser){const source=context.createMediaElementSource(video);analyser=context.createAnalyser();analyser.fftSize=4096;analyser.smoothingTimeConstant=0;const silence=context.createGain();silence.gain.value=0;source.connect(analyser);analyser.connect(silence);silence.connect(context.destination);}video.muted=false;await context.resume();await video.play();};
+ window.selectTracks=({audio,text,videoIndex}={})=>{
+  if(audio){const tracks=config.protocol==='hls'?player.audioTracks:player.getTracksFor('audio'),index=tracks.findIndex(t=>t.lang===audio);if(index<0)throw Error('Requested audio language unavailable');if(config.protocol==='hls')player.audioTrack=index;else player.setCurrentTrack(tracks[index]);state.audioSelection=audio;}
+  if(text){const tracks=config.protocol==='hls'?player.subtitleTracks:player.getTracksFor('text'),index=tracks.findIndex(t=>t.lang===text);if(index<0)throw Error('Requested text language unavailable');if(config.protocol==='hls'){player.subtitleTrack=index;player.subtitleDisplay=true;}else player.setTextTrack(index);state.textSelection=text;}
+  if(text===false){if(config.protocol==='hls'){player.subtitleTrack=-1;player.subtitleDisplay=false;}else player.setTextTrack(-1);state.textSelection=null;}
+  if(videoIndex!==undefined){if(config.protocol==='hls')player.currentLevel=videoIndex;else{player.updateSettings({streaming:{abr:{autoSwitchBitrate:{video:false}}}});player.setRepresentationForTypeByIndex('video',videoIndex,true);}}
+  add('events',{kind:'selection',atMs:elapsed(),mediaTime:video.currentTime,audio,text,videoIndex});
+ };
+ if(config.protocol==='hls'){
+  player=new Hls({lowLatencyMode:false,startLevel:1,maxBufferLength:12,maxMaxBufferLength:20,backBufferLength:10});player.on(Hls.Events.SUBTITLE_TRACK_SWITCH,(_,e)=>add('events',{kind:'subtitle-switch',atMs:elapsed(),id:e.id}));player.on(Hls.Events.ERROR,(_,e)=>add('errors',{kind:'hls',atMs:elapsed(),fatal:e.fatal,type:e.type,details:e.details,reason:e.reason,message:e.error?.message,mediaTime:video.currentTime,buffered:[...Array(video.buffered.length)].map((_,i)=>[video.buffered.start(i),video.buffered.end(i)]),frag:e.frag&&{sn:e.frag.sn,type:e.frag.type,level:e.frag.level}}));state.retrySettings=JSON.parse(JSON.stringify({manifestLoadPolicy:player.config.manifestLoadPolicy,playlistLoadPolicy:player.config.playlistLoadPolicy,fragLoadPolicy:player.config.fragLoadPolicy,maxBufferLength:player.config.maxBufferLength},(_,v)=>typeof v==='function'?'[function]':v));player.attachMedia(video);player.loadSource(config.url);
+ }else{
+  player=dashjs.MediaPlayer().create();player.updateSettings({debug:{logLevel:dashjs.Debug.LOG_LEVEL_WARNING}});player.on(dashjs.MediaPlayer.events.ERROR,e=>add('errors',{kind:'dash',atMs:elapsed(),code:e.error?.code,message:e.error?.message}));player.initialize(video,config.url,true);const settings=player.getSettings().streaming;state.retrySettings={retryAttempts:settings.retryAttempts,retryIntervals:settings.retryIntervals,utcSynchronization:settings.utcSynchronization};
+ }
+ const sample=()=>{
+  const atMs=elapsed(),mediaTime=video.currentTime;
+  if(analyser&&context.state==='running'){
+   const frequency=new Float32Array(analyser.frequencyBinCount),time=new Float32Array(analyser.fftSize);analyser.getFloatFrequencyData(frequency);analyser.getFloatTimeDomainData(time);
+   const energy=hz=>{const bin=Math.round(hz*analyser.fftSize/context.sampleRate);let sum=0;for(let i=Math.max(0,bin-2);i<=Math.min(frequency.length-1,bin+2);i++)sum+=10**(frequency[i]/10);return sum;};
+   const low=energy(440),high=energy(880),rms=Math.sqrt(time.reduce((sum,v)=>sum+v*v,0)/time.length);add('audio',{atMs,mediaTime,contextTime:context.currentTime,selected:state.audioSelection,rms,energy440:low,energy880:high,toneHz:rms<0.005?null:low>high*8?440:high>low*8?880:null,sampleRate:context.sampleRate});
+  }
+  const tracks=[...video.textTracks].filter(t=>t.mode==='showing');add('captions',{atMs,mediaTime,selected:state.textSelection,tracks:tracks.map(t=>({language:t.language,label:t.label,mode:t.mode,loadedCues:t.cues?.length??0,cues:[...(t.activeCues??[])].map(c=>({text:c.text,start:c.startTime,end:c.endTime}))}))});
+  document.getElementById('status').textContent=JSON.stringify({frames:state.frames,mediaTime,audio:state.audio.at(-1),captions:state.captions.at(-1)},null,2);
+ };setInterval(sample,100);
+})().catch(error=>{document.getElementById('status').textContent=error.message;throw error;});

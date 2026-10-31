@@ -35,6 +35,8 @@ import { loadScenario, ScenarioEngine } from "./scenario.js";
 import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 
 export interface HLSStartOptions {
+  ownedFixture?: boolean;
+  ownedVideoTracks?: number;
   rendition?: "all" | "low" | "main";
   proxy?: boolean;
   host?: string;
@@ -72,6 +74,7 @@ export interface HLSLogsOptions {
   name?: string;
 }
 export interface HlsSession {
+  networkOwnership?: () => ReturnType<FaultRuntime["ownership"]>;
   url: string;
   diagnostics?: SessionDiagnostics;
   scenario?: ScenarioEngine;
@@ -162,7 +165,7 @@ export async function startHlsim(
   if (options.proxy === false) return startVod(options, host, port);
   if (definition?.cache?.kind === "manifest-rollback" && definition.cache.target.track === "root") throw new Error("HLS rollback requires a media-playlist track rather than the master");
   const dummy = options.dummyContent ?? !options.manifestUrl;
-  if (definition && !dummy && ((definition.http?.target.resource === "media" || definition.cache?.target.resource === "media" || definition.publication?.kind === "segment-delay") || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
+  if (definition && !dummy && !options.ownedFixture && ((definition.http?.target.resource === "media" || definition.cache?.target.resource === "media" || definition.publication?.kind === "segment-delay") || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new Error(
       "HLS media/timeline scenarios require generated sample media; origin scenarios support only manifest and init targets",
     );
@@ -255,11 +258,11 @@ export async function startHlsim(
   }
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const scenarioIndex = (scenario || manual) && !dummy ? new HlsScenarioIndex(options.manifestUrl,
-    manual || (definition?.http?.target.resource === "init" || definition?.cache?.target.resource === "init") || !!definition?.rules.some(rule => rule.target.resource === "init")) : undefined;
+    manual || (definition?.http?.target.resource === "init" || definition?.cache?.target.resource === "init") || !!definition?.rules.some(rule => rule.target.resource === "init"),10000,options.ownedFixture) : undefined;
   if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();throw new Error("Publication actors require a live/event sample"); }
   const snapshots = new ManifestSnapshots<string>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "hls", generated: dummy, initialization: !dummy, videoTracks: dummy ? variants.length : undefined,
+  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "hls", generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
     publicationAvailable: (kind,track,count) => dummy ? mode !== "vod" && (kind !== "rendition-lag" || (options.windowSegments ?? 6) > (count ?? 1)) : scenarioIndex?.publicationAvailable(kind,track,count) ?? false,
     advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
@@ -297,6 +300,7 @@ export async function startHlsim(
             status: "ready",
             scenario: scenario?.report().result,
             scenarioRun: runs?.report(),
+            pendingNetwork:faults.ownership(),
             faults: scenario ? undefined : faults.snapshot(),
           }),
           { "Content-Type": "application/json" },
@@ -351,7 +355,8 @@ export async function startHlsim(
       if (scenario) scenario.assertCompatible();
       if (!scenario || scenario.timeline) {
         const requestVariant = url.pathname.match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
-        const lane = requestVariant
+        const sourceLogical=options.ownedFixture?scenarioIndex?.resolve(lookupResource(url)?.url??options.manifestUrl):undefined;
+        const lane = sourceLogical?.kind === "media" ? "media:"+sourceLogical.trackId : requestVariant
           ? `media:video:${variants.findIndex(variant => variant.uri.startsWith(requestVariant + "/"))}`
           : `manifest:${url.pathname}`;
         await faults.delay(signal, trace, req.method,
@@ -477,7 +482,7 @@ export async function startHlsim(
       // EXT-X-MAP and media can share a file through different byte ranges.
       // The advertised route kind, not just its origin URI, must agree.
       const logical = (resource.kind === "playlist" && identified?.kind === "manifest") ||
-        (resource.kind === "init" && identified?.kind === "init") ? identified : undefined;
+        (resource.kind === "init" && identified?.kind === "init") || (options.ownedFixture && resource.kind === "segment" && identified?.kind === "media") ? identified : undefined;
       const scenarioFailure = scenario?.decide(logical, req.headers.range, trace, req.method, req.headers);
       if (scenarioFailure) { send(res, scenarioFailure, "Injected HLS resource failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
       if (scenario?.serveCache(res,trace)) return;
@@ -564,7 +569,7 @@ export async function startHlsim(
       )
         body = Buffer.alloc(16, 0xff);
       if (["segment", "init"].includes(resource.kind))
-        await sendMedia(res, remote.status, body, headers, req.method, signal, trace, !scenario);
+        await sendMedia(res, remote.status, body, headers, req.method, signal, trace, !scenario || !!scenario.timeline);
       else await reply(remote.status, body, headers);
     } catch (error) {
       if (!signal.aborted)
@@ -615,6 +620,7 @@ export async function startHlsim(
     }).on("error", () => {});
   return {
     url,
+    networkOwnership:()=>faults.ownership(),
     diagnostics,
     get scenario() { return scenario; },
     runs,

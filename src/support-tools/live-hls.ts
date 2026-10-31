@@ -14,6 +14,7 @@ export class LiveHlsTimeline {
     private clock = () => performance.now(),
     startedAt?: number,
     private wallStartedAt = Date.now(),
+    initialOffsetSeconds?: number,
   ) {
     if (!segments.length) throw new Error("Sample contains no segments");
     if (!Number.isInteger(window) || window < 3 || window > 120)
@@ -23,7 +24,7 @@ export class LiveHlsTimeline {
       (sum, segment) => sum + segment.duration,
       0,
     );
-    this.initialOffset = this.timeAt(window);
+    this.initialOffset = initialOffsetSeconds ?? this.timeAt(window);
     this.retention = Math.max(
       ...segments.map((_, start) =>
         Array.from(

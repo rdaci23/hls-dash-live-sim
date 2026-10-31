@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Added optional owned HLS fMP4/DASH tracks, distinguishable alternate AAC tones,
+  authored HLS WebVTT/DASH wvtt, a third video rung, independent-track failure
+  presets, media-only per-track shaping and decoded audio/cue verification.
+
 - Added bounded manifest rollback and actual negative-cache actors with origin/edge
   decisions, byte identity, HEAD/no-cache bypass, expiry and restoration evidence.
 

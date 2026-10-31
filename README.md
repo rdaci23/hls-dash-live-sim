@@ -242,3 +242,7 @@ manifests, real negative caching, setup and isolated verification.
 
 [Publication scenarios](docs/publication-scenarios.md) cover one-rendition lag
 and fresh-segment delay with independent HTTP evidence.
+
+Use the [owned fMP4 audio/caption fixture](docs/track-fixtures.md) for local
+alternate-track, WebVTT/wvtt and asymmetric-network tests. Existing sample defaults
+remain available.
