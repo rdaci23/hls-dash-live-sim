@@ -64,7 +64,7 @@ async function main() {
         assert.equal(capture('git', ['rev-parse', 'HEAD'], checkout), commit);
         assert.equal(capture('git', ['status', '--porcelain'], checkout), '');
         await step('history-secrets', scanner, ['git', checkout, '--log-opts=--all --full-history', '--redact=100', '--ignore-gitleaks-allow', '--no-banner', '--no-color', '--report-format=json', '--report-path=' + path.join(directory, 'history-secrets.json')]);
-        report.history = { commits: Number(capture('git', ['rev-list', '--count', '--all'], checkout)), findings: JSON.parse(await fs.readFile(path.join(directory, 'history-secrets.json'), 'utf8')).length };
+        report.history = { commits: Number(capture('git', ['rev-list', '--count', '--all'], checkout)), findings: JSON.parse(await fs.readFile(path.join(directory, 'history-secrets.json'), 'utf8')).length, reviewedFalsePositiveFingerprints:(await fs.readFile(path.join(checkout,'.gitleaksignore'),'utf8')).split(/\r?\n/).filter(line=>line&&!line.startsWith('#')) };
         assert.equal(report.history.findings, 0);
         await step('install', npm, ['ci', '--ignore-scripts']);
         await step('build', npm, ['run', 'build']);

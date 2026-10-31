@@ -169,3 +169,10 @@ The [release checklist](release-checklist.md) retains those support limits.
 
 [Publication preparation](publication-preparation.md) documents branch protection,
 private vulnerability reporting and the separate approval and npm decisions.
+
+The historical coverage-matrix sentence in `ace62a4` triggered the scanner's generic
+API-key heuristic on ordinary English text about byte/decryption checks. The
+reviewed `.gitleaksignore` fingerprint in the source checkout excludes only that immutable commit,
+file, line and rule. The current sentence is reworded; the file and future commits
+remain scanned. Review reports list this historical false positive separately
+from additional findings. Inline allow-comment bypass remains disabled.

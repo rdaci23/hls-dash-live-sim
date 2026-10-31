@@ -1,0 +1,4 @@
+# Reviewed false positive: ordinary documentation phrase about byte/decryption
+# controls. This fingerprint applies only to the immutable historical commit,
+# file, line and rule below; it does not exempt this file or future commits.
+ace62a483b510b09788a482bf4c9aa196d05f9c6:docs/coverage-matrix.md:generic-api-key:22
