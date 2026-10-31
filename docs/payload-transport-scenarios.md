@@ -12,7 +12,7 @@ below makes no browser recovery claim.
 | [next-malformed-manifest.json](../examples/scenarios/next-malformed-manifest.json) | Root manifest GET: invalid HLS duration syntax or unclosed DASH XML. Change the manifest target to an advertised HLS video/audio alias to test a child playlist. | The next response is the original valid manifest. HEAD is excluded. |
 | [next-damaged-media.json](../examples/scenarios/next-damaged-media.json) | `video:0` media: replace the first up-to-4,096 bytes with `0xff`, preserving length and the remaining bytes. | The next download of that resource returns genuine unchanged media. |
 | [next-wrong-track-init.json](../examples/scenarios/next-wrong-track-init.json) | `video:0` init receives captured `audio:0` init bytes. | After starting the run, first fetch the advertised audio init donor. The normal video init is the valid control. |
-| [next-stale-init.json](../examples/scenarios/next-stale-init.json) | The second GET for a video init returns its first captured generation. | An owned origin must change matching video init **and media** before the second GET. The third GET returns the fresh init. |
+| [next-stale-init.json](../examples/scenarios/next-stale-init.json) | The second GET for a new-generation video init returns the first captured generation. | Capture the old init once, then advance an owned origin with new init/media URLs and an aligned generation boundary. Fetch the new init once as the valid control; its second GET is stale and its third GET restores it. |
 
 Payload actions require a complete nonempty 200 response. Ranges are rejected
 with 422 rather than pretending that a partial object is a valid initialization
@@ -29,8 +29,9 @@ The manual catalog disables stale-init for the built-in immutable-init samples.
 HLS TS defaults support manifest and damaged-media cases. Init cases use a
 faithful fMP4 origin. DASH uses advertised MPD track identities. The verifier owns
 a procedural fMP4 source for init epoch changes, since the upstream loop engine
-does not expose an encoder-generation lifecycle. The owned source changes both
-init and matching media; returning arbitrary damaged bytes is not a stale-init
+does not expose an encoder-generation lifecycle. The owned source retains old URLs/bytes, advertises new init/media URLs, updates
+resolution/bitrate metadata and appends aligned HLS discontinuities / a new DASH
+Period. The fresh init dimensions are checked against that metadata; returning arbitrary damaged bytes is not a stale-init
 verification. This does not add a public caption/audio support claim.
 
 ## Transport controls

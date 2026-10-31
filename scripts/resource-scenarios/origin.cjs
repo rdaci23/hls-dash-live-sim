@@ -33,6 +33,39 @@ async function createOrigin(port = 0) {
     return `<SegmentTemplate timescale="${track.timescale}" startNumber="1" initialization="init-$RepresentationID$.m4s" media="chunk-$RepresentationID$-$Number$.m4s"><SegmentTimeline>${track.chunks.map(chunk => `<S t="${chunk.timing.baseTime}" d="${chunk.timing.duration}"/>`).join('')}</SegmentTimeline></SegmentTemplate>`;
   });
   files.set('/manifest.mpd', Buffer.from(mpd));
+  let generationsPrepared = false, generationAdvanced = false;
+  function beginVideoGenerations() {
+    if (generationsPrepared) throw Error('Fixture generations already prepared');
+    generationsPrepared = true;
+    for (const id of [0, 1, 2]) files.set(`/track-${id}.m3u8`, Buffer.from(files.get(`/track-${id}.m3u8`).toString().replace('PLAYLIST-TYPE:VOD', 'PLAYLIST-TYPE:EVENT').replace('#EXT-X-ENDLIST\n', '')));
+  }
+  function advanceVideoGeneration() {
+    if (!generationsPrepared || generationAdvanced) throw Error('Prepare one owned fixture generation before advancing it');
+    generationAdvanced = true;
+    // Retain generation-one URLs/bytes. Generation two has distinct resources,
+    // aligned HLS discontinuities and a new DASH Period at presentation time 12.
+    for (const id of [0, 1, 2]) {
+      const source = id === 0 ? 1 : id;
+      files.set(`/init-generation-2-${id}.m4s`, files.get(`/init-${source}.m4s`));
+      const media = [];
+      for (let n = 1; n <= 6; n++) {
+        const name = `chunk-generation-2-${id}-${n}.m4s`;
+        files.set('/' + name, files.get(`/chunk-${source}-${n}.m4s`));
+        media.push(`#EXTINF:${tracks[source].chunks[n - 1].duration.toFixed(6)},`, name);
+      }
+      const old = files.get(`/track-${id}.m3u8`).toString().trimEnd();
+      files.set(`/track-${id}.m3u8`, Buffer.from(old + `\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI="init-generation-2-${id}.m4s"\n` + media.join('\n') + '\n'));
+    }
+    const master = files.get('/master.m3u8').toString(), high = master.split('\n').filter(line => line.startsWith('#EXT-X-STREAM-INF:'))[1];
+    files.set('/master.m3u8', Buffer.from(master.replace(/#EXT-X-STREAM-INF:[^\r\n]+/, high)));
+    const current = files.get('/manifest.mpd').toString(), period = current.match(/<Period\b[\s\S]*?<\/Period>/)[0];
+    const highRepresentation = period.match(/<Representation\b[^>]*id="1"[^>]*>/)[0];
+    const next = period.replace(/<Period\b[^>]*>/, '<Period id="generation-2" start="PT12.0S">')
+      .replace(/<Representation\b[^>]*id="0"[^>]*>/, highRepresentation.replace('id="1"', 'id="0"'))
+      .replaceAll('initialization="init-$RepresentationID$.m4s"', 'initialization="init-generation-2-$RepresentationID$.m4s"')
+      .replaceAll('media="chunk-$RepresentationID$-$Number$.m4s"', 'media="chunk-generation-2-$RepresentationID$-$Number$.m4s"');
+    files.set('/manifest.mpd', Buffer.from(current.replace('mediaPresentationDuration="PT12.0S"', 'mediaPresentationDuration="PT24.0S"').replace(period, period + '\n' + next)));
+  }
   const server = http.createServer((req, res) => {
     const pathname = new URL(req.url, 'http://localhost').pathname, bytes = files.get(pathname);
     if (!bytes) { res.writeHead(404); res.end(); return; }
@@ -50,7 +83,7 @@ async function createOrigin(port = 0) {
     res.end(req.method === 'HEAD' ? undefined : body);
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
-  return { url: `http://127.0.0.1:${server.address().port}`, files,
+  return { url: `http://127.0.0.1:${server.address().port}`, files, beginVideoGenerations, advanceVideoGeneration,
     close: () => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }) };
 }
 module.exports = { createOrigin };

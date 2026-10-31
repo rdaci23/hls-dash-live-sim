@@ -6,7 +6,7 @@
       "target": {
         "resource": "init",
         "track": "video:0",
-        "segment": "next"
+        "segment": "each"
       },
       "payload": {
         "kind": "stale-init"

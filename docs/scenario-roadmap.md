@@ -64,3 +64,9 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
   high/low/high adaptation and continuation. Full committed matrix remains a
   separate evidence run. CI run `41196562047` at `f67c35e` was also prevented
   from starting by GitHub account payment/spending-limit restrictions.
+
+- Stale-init fixture correction: the earlier `f67c35e` stale-init control lacked
+  a complete advertised generation transition. Its stale-init evidence is
+  superseded. The corrected owned source retains old bytes/URLs, advertises
+  new init/media resources with matching dimensions, and adds aligned HLS
+  discontinuities / a new DASH Period before injecting old initialization.

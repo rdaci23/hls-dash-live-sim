@@ -64,3 +64,22 @@ test('snapshot store rejects resource overflow explicitly and releases ownership
   assert.throws(() => snapshots.remember({ kind: 'init', trackId: 'video:128' }, Buffer.from('init')), /capacity/);
   snapshots.close(); assert.equal(snapshots.snapshot().bufferedBytes, 0);
 });
+
+test('owned generation transition retains all old bytes and advertises aligned new resources', async t => {
+  const origin = await createOrigin(); t.after(() => origin.close());
+  const previous = new Map([...origin.files].filter(([name]) => /\.(m4s)$/.test(name)).map(([name, body]) => [name, Buffer.from(body)]));
+  origin.beginVideoGenerations(); origin.advanceVideoGeneration();
+  for (const [name, body] of previous) assert.deepEqual(origin.files.get(name), body);
+  for (const track of [0, 1, 2]) {
+    const text = origin.files.get(`/track-${track}.m3u8`).toString();
+    assert.match(text, /PLAYLIST-TYPE:EVENT/); assert.equal((text.match(/#EXT-X-DISCONTINUITY\n/g) || []).length, 1);
+    assert.equal((text.match(/#EXTINF:/g) || []).length, 12); assert.ok(!text.includes('#EXT-X-ENDLIST'));
+    assert.match(text, new RegExp(`URI="init-generation-2-${track}.m4s"`));
+  }
+  const { XMLParser, XMLValidator } = require('fast-xml-parser'), mpd = origin.files.get('/manifest.mpd').toString();
+  assert.equal(XMLValidator.validate(mpd), true);
+  const parsed = new XMLParser({ ignoreAttributes: false }).parse(mpd).MPD;
+  assert.equal(parsed.Period.length, 2); assert.equal(parsed.Period[1]['@_start'], 'PT12.0S');
+  assert.equal(parsed['@_mediaPresentationDuration'], 'PT24.0S');
+  assert.throws(() => origin.advanceVideoGeneration(), /Prepare/);
+});

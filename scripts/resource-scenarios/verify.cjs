@@ -3,7 +3,7 @@ const { createHash } = require('node:crypto');
 const { XMLParser } = require('fast-xml-parser');
 const { variantEntries, attributes } = require('../../dist/support-tools/hls-playlist.js');
 const list = value => value === undefined ? [] : Array.isArray(value) ? value : [value];
-async function catalog(text, base, protocol) {
+async function catalog(text, base, protocol, { latestGeneration = false } = {}) {
   const resources = [];
   if (protocol === 'hls') {
     const children = variantEntries(text).map((entry, index) => ({ uri: entry.uri, track: 'video:' + index }));
@@ -16,9 +16,15 @@ async function catalog(text, base, protocol) {
       const url = new URL(child.uri, base), response = await fetch(url);
       assert.equal(response.status, 200, 'child manifest stays healthy');
       const playlist = await response.text();
-      const map = playlist.split(/\r?\n/).find(line => line.startsWith('#EXT-X-MAP:'));
+      let map = playlist.split(/\r?\n/).find(line => line.startsWith('#EXT-X-MAP:'));
       if (!map) continue;
-      const media = playlist.split(/\r?\n/).find(line => line && !line.startsWith('#'));
+      let media = playlist.split(/\r?\n/).find(line => line && !line.startsWith('#'));
+      if (latestGeneration) {
+        for (const line of playlist.split(/\r?\n/)) {
+          if (line.startsWith('#EXT-X-MAP:')) { map = line; media = undefined; }
+          else if (line && !line.startsWith('#') && !media) media = line;
+        }
+      }
       resources.push({ track: child.track, init: new URL(attributes(map).URI, url), media: new URL(media, url) });
     }
   } else {
