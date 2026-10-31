@@ -102,3 +102,7 @@ means false. Phase windows must be ordered and non-overlapping. HTTP rule tracks
 use observed aliases such as `video:0`; inspect the actual fixture before targeting
 one rendition. [Rule schema](scenarios.md), [configuration](configuration.md) and
 [diagnostics](diagnostics.md) cover the detailed semantics.
+
+For independent-track isolation, use the [DASH audio-only outage](dash-audio-outage.md)
+preset and HTTP verifier. It keeps both video renditions, initialization, MPD and
+UTC healthy and separately proves audio service restoration.

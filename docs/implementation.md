@@ -121,7 +121,10 @@ resource selection, finite deadlines and separate intentional-abort outcomes.
 schedule complete session profiles for bandwidth, seeded jitter and manifest
 freeze/resume, with finite windows and served-effect evidence. Timed outage rules reject all attempts until their
 window ends; the separate [browser outage check](sustained-outages.md) measures
-rendered recovery with an explicit retry profile. [Rules](scenarios.md).
+rendered recovery with an explicit retry profile. A separate [audio-only DASH
+preset and HTTP verifier](dash-audio-outage.md) prove audio isolation and
+restoration while video/init/MPD/UTC stay healthy, without a player-recovery claim.
+[Rules](scenarios.md).
 
 Session/request/fault IDs correlate response headers and redacted events for
 selection, consumption, application and cancellation. No raw source URLs,

@@ -126,6 +126,8 @@ injections cannot pass. Ordinary rules retain their quota/retry semantics.
 The server outcome proves injection only, not player recovery. Generated HLS
 muxes audio/video, so its preset targets `video`; the DASH preset has separate
 `video` and `audio` rules. Manifests, init, HEAD and UTC requests remain available.
+An [audio-only DASH preset and HTTP verifier](dash-audio-outage.md) separately
+check independent audio delivery, healthy controls and restoration.
 See [sustained outage recovery](sustained-outages.md) for the two presets, the
 explicit player retry profile and rendered browser acceptance checks.
 

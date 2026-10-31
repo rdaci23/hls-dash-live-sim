@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- DASH audio-only timed outage preset and simulator HTTP verification in both
+  Time/Number modes, with healthy video/init/MPD/UTC controls, continued live
+  publication and same-download audio restoration. [Scope](docs/dash-audio-outage.md).
+
 - Multi-attempt HTTP retry assertions for consecutive deterministic failures,
   with a three-failure/success preset, stable resource/range binding and an
   eight-case HLS/DASH HTTP verifier. [Scope](docs/multi-attempt-retry.md).

@@ -90,6 +90,15 @@ jobs:
           path: output/ci-multi-retry/
           if-no-files-found: warn
           retention-days: 7
+      - run: npm run audio:verify -- --output output/ci-audio-outage
+      - name: Retain DASH audio-only outage evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: audio-outage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ci-audio-outage/
+          if-no-files-found: warn
+          retention-days: 7
       - run: npm run resource:verify -- --output output/ci-resource-targets
       - name: Retain manifest and initialization targeting evidence
         if: always()
