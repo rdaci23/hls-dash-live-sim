@@ -246,3 +246,6 @@ and fresh-segment delay with independent HTTP evidence.
 Use the [owned fMP4 audio/caption fixture](docs/track-fixtures.md) for local
 alternate-track, WebVTT/wvtt and asymmetric-network tests. Existing sample defaults
 remain available.
+
+[Owned lifecycle scenarios](docs/lifecycle-scenarios.md) add aligned encoder
+restarts and growing event completion to the optional local tracks fixture.

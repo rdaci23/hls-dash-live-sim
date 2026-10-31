@@ -50,19 +50,19 @@
           "file": "chunk-0-2.m4s",
           "baseTime": "24576",
           "duration": 24576,
-          "bytes": 48212
+          "bytes": 48612
         },
         {
           "file": "chunk-0-3.m4s",
           "baseTime": "49152",
           "duration": 24576,
-          "bytes": 48906
+          "bytes": 48912
         },
         {
           "file": "chunk-0-4.m4s",
           "baseTime": "73728",
           "duration": 24576,
-          "bytes": 46302
+          "bytes": 46018
         }
       ]
     },
@@ -81,25 +81,25 @@
           "file": "chunk-1-1.m4s",
           "baseTime": "0",
           "duration": 24576,
-          "bytes": 138373
+          "bytes": 138447
         },
         {
           "file": "chunk-1-2.m4s",
           "baseTime": "24576",
           "duration": 24576,
-          "bytes": 165526
+          "bytes": 165885
         },
         {
           "file": "chunk-1-3.m4s",
           "baseTime": "49152",
           "duration": 24576,
-          "bytes": 153796
+          "bytes": 153989
         },
         {
           "file": "chunk-1-4.m4s",
           "baseTime": "73728",
           "duration": 24576,
-          "bytes": 151961
+          "bytes": 151186
         }
       ]
     },
@@ -118,25 +118,25 @@
           "file": "chunk-2-1.m4s",
           "baseTime": "0",
           "duration": 24576,
-          "bytes": 300712
+          "bytes": 298443
         },
         {
           "file": "chunk-2-2.m4s",
           "baseTime": "24576",
           "duration": 24576,
-          "bytes": 314425
+          "bytes": 321142
         },
         {
           "file": "chunk-2-3.m4s",
           "baseTime": "49152",
           "duration": 24576,
-          "bytes": 289714
+          "bytes": 289665
         },
         {
           "file": "chunk-2-4.m4s",
           "baseTime": "73728",
           "duration": 24576,
-          "bytes": 304749
+          "bytes": 303263
         }
       ]
     },

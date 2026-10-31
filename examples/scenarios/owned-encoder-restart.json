@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "lifecycle": {
+    "kind": "encoder-restart",
+    "afterMs": 30000
+  }
+}

@@ -10,7 +10,7 @@ beforeEach(()=>config.applyConfigOverride({segment:{malformed:'off',forbidden:'o
 async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 test('owned optional fixture has exact common loops, genuine three-rung video, distinguishable audio and bounded caption samples',async()=>{
  const root=path.resolve(__dirname,'../assets/track-sample'),index=JSON.parse(await fs.readFile(path.join(root,'index.json'),'utf8'));assert.equal(index.tracks.length,7);
- for(const t of index.tracks){const init=initialization(await fs.readFile(path.join(root,t.init)));assert.equal(init.timescale,t.timescale);if(t.type==='video')assert.deepEqual([init.width,init.height],[[320,180],[640,360],[960,540]][Number(t.id.split(':')[1])]);let end=0n;
+ for(const t of index.tracks){const initBytes=await fs.readFile(path.join(root,t.init)),init=initialization(initBytes);assert.equal(init.timescale,t.timescale);if(t.type==='audio')assert.equal(initBytes.includes(Buffer.from('edts')),false,'coded audio loop must not be shortened by a priming edit');if(t.type==='video')assert.deepEqual([init.width,init.height],[[320,180],[640,360],[960,540]][Number(t.id.split(':')[1])]);let end=0n;
   for(const [i,s]of t.segments.entries()){const bytes=await fs.readFile(path.join(root,s.file)),actual=fragment(bytes);assert.equal(actual.baseTime,end);assert.equal(actual.duration,s.duration);end+=BigInt(actual.duration);assert.equal(bytes.length,s.bytes);const live=fragment(retimeFragment(bytes,t,i+8));assert.equal(live.baseTime,actual.baseTime+BigInt(t.cycleTicks)*2n);assert.equal(live.duration,actual.duration);}
   assert.equal(Number(end)/t.timescale,8);
  }

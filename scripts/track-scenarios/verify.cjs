@@ -8,7 +8,7 @@ async function tracks(session,protocol){
  const root=await read(session.url);assert.equal(root.status,200);if(protocol==='dash')return catalog(root.body.toString(),session.url,protocol);
  const children=variantEntries(root.body.toString()).map((v,i)=>({uri:v.uri,track:'video:'+i}));let audio=0,text=0;
  for(const line of root.body.toString().split('\n'))if(line.startsWith('#EXT-X-MEDIA:')){const a=attributes(line);children.push({uri:a.URI,track:a.TYPE==='AUDIO'?'audio:'+audio++:'text:'+text++});}
- const result=[];for(const child of children){const manifest=new URL(child.uri,session.url),playlist=await read(manifest);assert.equal(playlist.status,200);const content=playlist.body.toString(),map=content.split('\n').find(l=>l.startsWith('#EXT-X-MAP:'));result.push({track:child.track,manifest,init:map?new URL(attributes(map).URI,manifest):undefined,media:new URL(mediaSegments(content).at(-1).uri,manifest)});}return result;
+ const result=[];for(const child of children){const manifest=new URL(child.uri,session.url),playlist=await read(manifest);assert.equal(playlist.status,200);const content=playlist.body.toString(),map=content.split('\n').filter(l=>l.startsWith('#EXT-X-MAP:')).at(-1);result.push({track:child.track,manifest,init:map?new URL(attributes(map).URI,manifest):undefined,media:new URL(mediaSegments(content).at(-1).uri,manifest)});}return result;
 }
 async function verifyOutage(session,protocol,kind,afterMs=1500,beforeMs=6000,signal){
  const targetTrack=kind==='audio-outage'?'audio:0':'text:0',resources=await tracks(session,protocol),beforeTarget=resources.find(r=>r.track===targetTrack),control=await read(beforeTarget.media);assert.equal(control.status,200);

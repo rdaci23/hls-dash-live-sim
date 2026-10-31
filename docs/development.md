@@ -30,6 +30,8 @@ use your existing Chrome installation.
 
 | Command | Coverage | Requirements |
 | --- | --- | --- |
+| `npm run lifecycle:verify` | Owned aligned restart and finite event HTTP authoring, retained bytes and cleanup, both protocols. | Node; no Docker. |
+| `npm run browser:lifecycle` | Rendered restart, decoded audio/captions and actual native event completion. | Chrome; no Docker; no restart/seek after initial configuration. |
 | `npm run docs:check` | Local documentation link targets exist. Does not verify remote URLs or heading fragments. | Node; no network. |
 | `npm run notices:check` | Lockfile inventory, preserved license/NOTICE hashes and scope match. | Node; no network or installed optional platform packages needed. |
 | `npm run typecheck` | TypeScript checking. | Development dependencies. |

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "lifecycle": {
+    "kind": "event-completion",
+    "afterMs": 30000
+  }
+}

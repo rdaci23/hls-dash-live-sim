@@ -5,6 +5,13 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## 0.2.0 — Unreleased
 
+- Owned local encoder restarts with aligned HLS discontinuities/new initialization
+  URLs and DASH Period/PTO transitions; growing event ENDLIST/static completion,
+  isolated HTTP verification and rendered lifecycle checks.
+- Preserve HLS captions across restart timestamp maps and retain complete AAC
+  loop presentation instead of trimming priming samples in every loop.
+
+
 First public beta, prepared on 30 October 2026. The version is finalized; the
 `v0.2.0` tag, GitHub release and public announcement are pending. Install from a
 [source checkout](docs/getting-started.md); no npm release is published.

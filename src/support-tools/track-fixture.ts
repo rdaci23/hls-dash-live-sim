@@ -1,3 +1,4 @@
+import { FixtureLifecycle, type FixtureGeneration } from "./fixture-lifecycle.js";
 import fs from "node:fs";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -74,8 +75,8 @@ export function retimeFragment(input: Buffer, track: FixtureTrack, sequence: num
   return bytes;
 }
 function vttTime(seconds: number): string { const ms = Math.round(seconds * 1000); return String(Math.floor(ms / 3600000)).padStart(2, '0') + ':' + String(Math.floor(ms / 60000) % 60).padStart(2, '0') + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0') + '.' + String(ms % 1000).padStart(3, '0'); }
-export function webVttSegment(track: FixtureTrack, sequence: number): string {
-  const index = sequence % 4, start = sequence * 2, header = 'WEBVTT\nX-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:0\n\n';
+export function webVttSegment(track: FixtureTrack, sequence: number, generationStart = 0): string {
+  const index = sequence % 4, start = sequence * 2, header = 'WEBVTT\nX-TIMESTAMP-MAP=LOCAL:'+vttTime(generationStart)+',MPEGTS:'+Math.round(generationStart*90000)+'\n\n';
   return index === 1 ? header : header + vttTime(start + 0.25) + ' --> ' + vttTime(start + 1.5) + '\n' + track.language.toUpperCase() + ' cue ' + (index + 1) + '\n\n';
 }
 /** Owned local origin. All resources come from bundled advertised metadata. */
@@ -85,7 +86,8 @@ export class TrackFixturePublisher {
   private files = new Map<string, Buffer>();
   private timelines = new Map<string, LiveHlsTimeline>();
   private origin?: Awaited<ReturnType<typeof sessionServer>>;
-  private frozen = false;
+  readonly lifecycle:FixtureLifecycle;
+  private started:number;
   constructor(readonly mode: StreamMode = 'live', videoRenditions = 2, private clock = () => performance.now(), private wallStarted = Date.now(), private windowSegments = 6) {
     if (!['live', 'event', 'vod'].includes(mode) || ![2, 3].includes(videoRenditions))
       throw Error('Fixture requires live/event/vod and two or three video renditions');
@@ -93,7 +95,8 @@ export class TrackFixturePublisher {
     if (index.schemaVersion !== 1 || index.cycleSeconds !== 8 || !Array.isArray(index.tracks) || index.tracks.length !== 7 || ['video:0', 'video:1', 'video:2', 'audio:0', 'audio:1', 'text:0', 'text:1'].some(id => index.tracks.filter(t => t.id === id).length !== 1))
       throw Error('Unsupported owned fixture metadata');
     this.tracks = index.tracks.filter((t: FixtureTrack) => t.type !== 'video' || Number(t.id.split(':')[1]) < videoRenditions);
-    const started = clock();
+    const started = this.started = clock();
+    this.lifecycle=new FixtureLifecycle(mode,()=>this.positionSeconds());
     this.ast = wallStarted - windowSegments * 2000;
     for (const t of this.tracks) {
       if (!/^(video|audio|text):\d$/.test(t.id) || t.segments.length !== 4 || t.cycleTicks / t.timescale !== 8 || !Number.isSafeInteger(t.timescale) || t.timescale <= 0 || !Number.isSafeInteger(t.cycleTicks) || t.type !== t.id.split(":")[0])
@@ -118,10 +121,11 @@ export class TrackFixturePublisher {
       this.timelines.set(t.id, timeline);
     }
   }
-  private prefix(t: FixtureTrack): string { return '/track/' + t.id.replace(':', '/'); }
-  private initUri(t: FixtureTrack): string { return this.prefix(t) + '/init.m4s'; }
-  private mediaUri(t: FixtureTrack, n: number, hls = false): string { return this.prefix(t) + '/segment-' + n + (hls && t.type === 'text' ? '.vtt' : '.m4s'); }
-  private bound(t: FixtureTrack) { return this.timelines.get(t.id).bounds(); }
+  private positionSeconds():number{return this.windowSegments*2+Math.max(0,this.clock()-this.started)/1000;}
+  private prefix(t: FixtureTrack,generation=0): string { return (generation?'/generation-'+generation:'')+'/track/'+t.id.replace(':','/'); }
+  private initUri(t: FixtureTrack,generation=0): string { return this.prefix(t,generation)+'/init.m4s'; }
+  private mediaUri(t:FixtureTrack,n:number,hls=false):string{const generation=this.lifecycle.generationAt(n).id;return this.prefix(t,generation)+'/segment-'+n+(hls&&t.type==='text'?'.vtt':'.m4s');}
+  private bound(t:FixtureTrack){const bounds=this.timelines.get(t.id).bounds(),endSeconds=this.lifecycle.endSeconds;if(this.lifecycle.ended&&endSeconds!==undefined)bounds.end=Math.min(bounds.end,endSeconds/8*4);return bounds;}
   hlsMaster(): string {
     const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
     for (const t of this.tracks.filter(t => t.type !== 'video'))
@@ -133,47 +137,44 @@ export class TrackFixturePublisher {
     }
     return lines.join('\n') + '\n';
   }
-  hlsPlaylist(t: FixtureTrack): string {
-    const { first, end } = this.bound(t), lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-TARGETDURATION:' + Math.ceil(Math.max(...t.segments.map(s => s.duration / t.timescale))), '#EXT-X-MEDIA-SEQUENCE:' + first];
-    if (this.mode !== 'live')
-      lines.push('#EXT-X-PLAYLIST-TYPE:' + this.mode.toUpperCase());
-    if (t.type !== 'text')
-      lines.push('#EXT-X-MAP:URI="' + this.initUri(t) + '"');
-    for (let n = first; n < end; n++) {
-      const s = t.segments[n % 4], at = Number(s.baseTime) / t.timescale + Math.floor(n / 4) * 8;
-      lines.push('#EXT-X-PROGRAM-DATE-TIME:' + new Date(this.ast + at * 1000).toISOString(), '#EXTINF:' + (s.duration / t.timescale).toFixed(9) + ',', this.mediaUri(t, n, true));
+  hlsPlaylist(t:FixtureTrack):string{
+    const {first,end}=this.bound(t),generations=this.lifecycle.allGenerations,discontinuities=generations.filter(g=>g.id&&g.startSeconds/2<first).length;
+    const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+Math.ceil(Math.max(...t.segments.map(s=>s.duration/t.timescale))),'#EXT-X-MEDIA-SEQUENCE:'+first,'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
+    if(this.mode!=='live')lines.push('#EXT-X-PLAYLIST-TYPE:'+this.mode.toUpperCase());
+    if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,this.lifecycle.generationAt(first).id)+'"');
+    for(let n=first;n<end;n++){
+      const g=generations.find(g=>g.id&&g.startSeconds/2===n);if(g){lines.push('#EXT-X-DISCONTINUITY');if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,g.id)+'"');}
+      const s=t.segments[n%4],at=Number(s.baseTime)/t.timescale+Math.floor(n/4)*8;
+      lines.push('#EXT-X-PROGRAM-DATE-TIME:'+new Date(this.ast+at*1000).toISOString(),'#EXTINF:'+(s.duration/t.timescale).toFixed(9)+',',this.mediaUri(t,n,true));
     }
-    if (this.mode === 'vod')
-      lines.push('#EXT-X-ENDLIST');
-    return lines.join('\n') + '\n';
+    if(this.mode==='vod'||this.lifecycle.ended)lines.push('#EXT-X-ENDLIST');return lines.join('\n')+'\n';
   }
-  mpd(): string {
-    const dynamic = this.mode !== 'vod', lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="' + (dynamic ? 'dynamic' : 'static') + '" minBufferTime="PT2S"' + (dynamic ? ' availabilityStartTime="' + new Date(this.ast).toISOString() + '" publishTime="' + new Date().toISOString() + '" minimumUpdatePeriod="PT1S" timeShiftBufferDepth="PT' + (this.windowSegments * 2) + 'S" suggestedPresentationDelay="PT' + Math.min(6, this.windowSegments * 2 - 2) + 'S"' : ' mediaPresentationDuration="PT8S"') + '>'];
-    if (dynamic)
-      lines.push('<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-head:2014" value="/utc"/>');
-    lines.push('<Period id="owned" start="PT0S">');
-    let adaptation = 0;
-    for (const group of [this.tracks.filter(t => t.type === 'video'), ...this.tracks.filter(t => t.type !== 'video').map(t => [t])]) {
-      const first = group[0];
-      lines.push('<AdaptationSet id="' + adaptation++ + '" contentType="' + first.type + '" segmentAlignment="true"' + (first.language ? ' lang="' + first.language + '"' : '') + '>');
-      if (first.type === 'text')
-        lines.push('<Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>');
-      for (const t of group) {
-        const { first: start, end } = this.bound(t);
-        lines.push('<Representation id="' + t.id.replace(':', '-') + '" mimeType="' + (t.type === 'text' ? 'application' : t.type) + '/mp4" codecs="' + t.codec + '" bandwidth="' + t.bandwidth + '"' + (t.type === 'video' ? ' width="' + t.width + '" height="' + t.height + '"' : t.type === 'audio' ? ' audioSamplingRate="48000"' : '') + '>');
-        if (t.type === 'audio')
-          lines.push('<AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>');
-        lines.push('<SegmentTemplate timescale="' + t.timescale + '" startNumber="' + (start + 1) + '" initialization="' + this.initUri(t) + '" media="' + this.prefix(t) + '/number-$Number$.m4s"><SegmentTimeline>');
-        for (let n = start; n < end; n++) {
-          const s = t.segments[n % 4], time = BigInt(s.baseTime) + BigInt(Math.floor(n / 4)) * BigInt(t.cycleTicks);
-          lines.push('<S t="' + time + '" d="' + s.duration + '"/>');
-        }
-        lines.push('</SegmentTimeline></SegmentTemplate></Representation>');
-      }
-      lines.push('</AdaptationSet>');
+  mpd():string{
+    const dynamic=this.mode!=='vod'&&!this.lifecycle.ended,duration=this.mode==='vod'?8:this.lifecycle.endSeconds;
+    const lines=['<?xml version="1.0" encoding="UTF-8"?>','<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="'+(dynamic?'dynamic':'static')+'" minBufferTime="PT2S"'+(dynamic?' availabilityStartTime="'+new Date(this.ast).toISOString()+'" publishTime="'+new Date().toISOString()+'" minimumUpdatePeriod="PT1S" timeShiftBufferDepth="PT'+(this.windowSegments*2)+'S" suggestedPresentationDelay="PT'+Math.min(6,this.windowSegments*2-2)+'S"':' mediaPresentationDuration="PT'+duration+'S"')+'>'];
+    if(dynamic)lines.push('<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-head:2014" value="/utc"/>');
+    const generations=this.lifecycle.allGenerations.filter(g=>g.startSeconds<=this.positionSeconds());
+    for(const [index,g]of generations.entries()){
+      const startSequence=g.startSeconds/2,next=generations[index+1],endSequence=next?next.startSeconds/2:Infinity;
+      if(!this.tracks.every(t=>{const b=this.bound(t);return Math.max(b.first,startSequence)<Math.min(b.end,endSequence);}))continue;
+      lines.push('<Period id="'+(g.id?'owned-'+g.id:'owned')+'" start="PT'+g.startSeconds+'S"'+(next?' duration="PT'+(next.startSeconds-g.startSeconds)+'S"':'')+'>');
+      this.periodTracks(lines,g,startSequence,endSequence);lines.push('</Period>');
     }
-    lines.push('</Period></MPD>');
-    return lines.join('\n') + '\n';
+    lines.push('</MPD>');return lines.join('\n')+'\n';
+  }
+  private periodTracks(lines:string[],g:FixtureGeneration,startSequence:number,endSequence:number):void{
+    let adaptation=0;
+    for(const group of [this.tracks.filter(t=>t.type==='video'),...this.tracks.filter(t=>t.type!=='video').map(t=>[t])]){
+      const first=group[0];lines.push('<AdaptationSet id="'+adaptation+++'" contentType="'+first.type+'" segmentAlignment="true"'+(first.language?' lang="'+first.language+'"':'')+'>');
+      if(first.type==='text')lines.push('<Role schemeIdUri="urn:mpeg:dash:role:2011" value="subtitle"/>');
+      for(const t of group){const b=this.bound(t),start=Math.max(b.first,startSequence),end=Math.min(b.end,endSequence);if(start>=end)continue;
+        lines.push('<Representation id="'+t.id.replace(':','-')+'" mimeType="'+(t.type==='text'?'application':t.type)+'/mp4" codecs="'+t.codec+'" bandwidth="'+t.bandwidth+'"'+(t.type==='video'?' width="'+t.width+'" height="'+t.height+'"':t.type==='audio'?' audioSamplingRate="48000"':'')+'>');
+        if(t.type==='audio')lines.push('<AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="2"/>');
+        lines.push('<SegmentTemplate timescale="'+t.timescale+'" presentationTimeOffset="'+(g.startSeconds*t.timescale)+'" startNumber="'+(start+1)+'" initialization="'+this.initUri(t,g.id)+'" media="'+this.prefix(t,g.id)+'/number-$Number$.m4s"><SegmentTimeline>');
+        for(let n=start;n<end;n++){const s=t.segments[n%4],time=BigInt(s.baseTime)+BigInt(Math.floor(n/4))*BigInt(t.cycleTicks);lines.push('<S t="'+time+'" d="'+s.duration+'"/>');}
+        lines.push('</SegmentTimeline></SegmentTemplate></Representation>');
+      }lines.push('</AdaptationSet>');
+    }
   }
   private response(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -189,7 +190,9 @@ export class TrackFixturePublisher {
       send(res, 200, new Date().toISOString(), { 'Content-Type': 'text/plain', Date: new Date().toUTCString() }, req.method);
       return;
     }
-    const match = /^\/track\/(video|audio|text)\/(\d)\/(init\.m4s|stream\.m3u8|(?:segment|number)-(\d+)\.(m4s|vtt))$/.exec(url.pathname), track = match ? this.tracks.find(t => t.id === match[1] + ':' + match[2]) : undefined;
+    const generationMatch=/^\/generation-(\d{1,2})(\/.*)$/.exec(url.pathname),generation=generationMatch?Number(generationMatch[1]):0,pathname=generationMatch?generationMatch[2]:url.pathname;
+    if(!this.lifecycle.allGenerations.some(g=>g.id===generation))throw new HttpError(404,'Unknown fixture generation');
+    const match = /^\/track\/(video|audio|text)\/(\d)\/(init\.m4s|stream\.m3u8|(?:segment|number)-(\d+)\.(m4s|vtt))$/.exec(pathname), track = match ? this.tracks.find(t => t.id === match[1] + ':' + match[2]) : undefined;
     if (!track)
       throw new HttpError(404, 'Unknown owned fixture resource');
     if (match[3] === 'stream.m3u8') {
@@ -200,15 +203,16 @@ export class TrackFixturePublisher {
     if (match[3] === 'init.m4s')
       body = this.files.get(track.init);
     else {
-      const sequence = Number(match[4]) - (match[3].startsWith('number-') ? 1 : 0), timeline = this.timelines.get(track.id), { end } = timeline.bounds();
+      const sequence = Number(match[4]) - (match[3].startsWith('number-') ? 1 : 0), timeline = this.timelines.get(track.id), { end } = this.bound(track);
       if (!Number.isSafeInteger(sequence) || sequence < 0 || sequence >= end)
         throw new HttpError(404, 'Fixture segment is not available yet');
+      if(this.lifecycle.generationAt(sequence).id!==generation)throw new HttpError(404,'Resource is not advertised in this generation');
       if (!timeline.retained(sequence))
         throw new HttpError(410, 'Fixture retention expired');
       if (match[5] === 'vtt') {
         if (track.type !== 'text')
           throw new HttpError(404, 'This track has no WebVTT resource');
-        body = Buffer.from(webVttSegment(track, sequence));
+        body = Buffer.from(webVttSegment(track, sequence, this.lifecycle.generationAt(sequence).startSeconds));
         contentType = 'text/vtt';
       }
       else
@@ -254,6 +258,6 @@ export class TrackFixturePublisher {
     const port = (transport.server.address() as {
       port: number;
     }).port;
-    return { port, url: 'http://127.0.0.1:' + port, close: () => transport.close() };
+    return { port,url:'http://127.0.0.1:'+port,close:async()=>{this.lifecycle.close();await transport.close();} };
   }
 }

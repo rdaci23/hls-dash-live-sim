@@ -1,3 +1,4 @@
+import { ScenarioLifecycle, LifecycleDefinition, LifecycleHooks, parseLifecycle } from "./scenario-lifecycle.js";
 import { ScenarioPublication, PublicationDefinition, parsePublication } from "./scenario-publication.js";
 import { ScenarioCache, CacheDefinition, parseCache } from "./scenario-cache.js";
 import fs from "node:fs";
@@ -25,6 +26,8 @@ export interface LogicalMedia {
   trackType: TrackType | "root";
   /** Internal identity only; may contain source paths. Never export it. */
   key: string;
+  /** Source-owned address for lifecycle matching; never export it. */
+  sourceUrl?: string;
   availableAtMs?: number;
   locator?: { kind: "number" | "time"; value: string };
 }
@@ -57,6 +60,7 @@ export interface ScenarioDefinition {
   http?: HttpResponsePolicyDefinition;
   cache?: CacheDefinition;
   publication?: PublicationDefinition;
+  lifecycle?: LifecycleDefinition;
 }
 const statuses = [401, 403, 404, 408, 429, 500, 502, 503, 504];
 const fail = (message: string): never => {
@@ -79,7 +83,7 @@ function immutable<T>(value: T): T {
   return value;
 }
 export function parseScenario(input: unknown): ScenarioDefinition {
-  object(input, ["version", "seed", "rules", "timeline", "http", "cache", "publication"], "scenario");
+  object(input, ["version", "seed", "rules", "timeline", "http", "cache", "publication", "lifecycle"], "scenario");
   const source = input as ScenarioDefinition;
   if (source.version !== 1) fail("version must be 1");
   if (!integer(source.seed ?? 0, 0, 0xffffffff))
@@ -89,6 +93,8 @@ export function parseScenario(input: unknown): ScenarioDefinition {
     source.rules.length > 64
   )
     fail("rules must be an array of up to 64 HTTP rules; use [] with a timeline");
+  const lifecycle=source.lifecycle===undefined?undefined:parseLifecycle(source.lifecycle);
+  if(lifecycle&&(source.rules.length||source.timeline||source.http||source.cache||source.publication))fail("Lifecycle cannot combine with other actions until verified");
   const publication = source.publication === undefined ? undefined : parsePublication(source.publication);
   if (publication && (source.rules.length || source.timeline || source.http || source.cache)) fail("Publication actors cannot combine with other actions until verified");
   const cache = source.cache === undefined ? undefined : parseCache(source.cache);
@@ -97,7 +103,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
   if (http && (source.rules.length || source.timeline)) fail("HTTP policy cannot combine with rules or a timeline until that composition is verified");
   const timeline = source.timeline === undefined ? undefined : parseTimeline(source.timeline);
   if (source.rules.length && timeline?.some(phase=>phase.tracks)) fail("Per-track shaping cannot combine with HTTP/payload/transport rules until verified");
-  if (!source.rules.length && !timeline && !http && !cache && !publication) fail("provide HTTP rules or a timeline");
+  if (!source.rules.length && !timeline && !http && !cache && !publication && !lifecycle) fail("provide HTTP rules or a timeline");
   const ids = new Set<string>();
   const rules = source.rules.map((rule, index) => {
     const label = `rule ${index}`;
@@ -284,7 +290,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       expectRetry: rule.expectRetry ?? false,
     };
   });
-  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}), ...(http ? { http } : {}), ...(cache ? { cache } : {}), ...(publication ? { publication } : {}) };
+  return { version: 1, seed: source.seed ?? 0, rules, ...(timeline ? { timeline } : {}), ...(http ? { http } : {}), ...(cache ? { cache } : {}), ...(publication ? { publication } : {}), ...(lifecycle?{lifecycle}:{}) };
 }
 export function loadScenario(file?: string): ScenarioDefinition | undefined {
   if (!file) return undefined;
@@ -341,6 +347,7 @@ export class ScenarioEngine {
   readonly http?: HttpResponsePolicy;
   readonly cache?: ScenarioCache;
   readonly publication?: ScenarioPublication;
+  readonly lifecycle?: ScenarioLifecycle;
   manifestBindings(trace:RequestTrace, bindings:ReadonlyMap<string,string>):void { this.publication?.bindings(trace,bindings); }
   serveCache(res: ServerResponse, trace: RequestTrace): boolean { const response=this.cache?.lookup(trace,this.time());if(!response)return false;send(res,response.status,response.body,response.headers,"GET");return true; }
   private httpRequests = new WeakMap<RequestTrace, { resource: LogicalMedia; conditions: ConditionalHeaders }>();
@@ -371,6 +378,7 @@ export class ScenarioEngine {
     signal: AbortSignal, trace: RequestTrace,
     grantFactory?: () => (maximum: number, signal: AbortSignal) => Promise<number>,
   ): Promise<boolean> {
+    this.lifecycle?.observe(trace,method,status,body);
     const publication = this.publication?.transform(trace,this.time(),status,body,headers);
     if (publication) { send(res,status,publication.body,publication.headers,method);return true; }
     this.cache?.observe(trace,this.time(),status,body,headers);
@@ -406,6 +414,7 @@ export class ScenarioEngine {
     private diagnostics: SessionDiagnostics,
     private clock = () => performance.now(),
     private capacity = 10000,
+    lifecycleHooks?: LifecycleHooks,
   ) {
     this.definition = immutable(parseScenario(definition));
     // Human labels are intentionally omitted from fingerprints and diagnostics.
@@ -428,11 +437,12 @@ export class ScenarioEngine {
     }));
     this.assertCompatible();
     diagnostics.record("scenario.started", { scenarioId: this.scenarioId });
+    if(this.definition.lifecycle)this.lifecycle=new ScenarioLifecycle(this.definition.lifecycle,lifecycleHooks,diagnostics,()=>this.time());
     if (this.definition.timeline)
       this.timeline = new ScenarioTimeline(this.definition.timeline, this.definition.seed, this.scenarioId, diagnostics, () => this.time());
   }
   assertCompatible(): void {
-    if (this.settled && !this.invalid && !this.definition.timeline && !this.definition.http && !this.definition.cache && !this.definition.publication) return;
+    if (this.settled && !this.invalid && !this.definition.timeline && !this.definition.http && !this.definition.cache && !this.definition.publication && !this.definition.lifecycle) return;
     if (manualFaultConflict())
       this.invalid = "manual_fault_conflict";
     if (this.invalid)
@@ -457,7 +467,7 @@ export class ScenarioEngine {
       : (this.elapsed = Math.max(this.elapsed, this.clock() - this.started, 0));
   }
   get settled(): boolean {
-    return (!this.publication || this.publication.report().result !== "pending") && (!this.cache || this.cache.report().result !== "pending") && (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
+    return (!this.lifecycle || this.lifecycle.report().result !== "pending") && (!this.publication || this.publication.report().result !== "pending") && (!this.cache || this.cache.report().result !== "pending") && (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
       (_, index) => this.stateStatus(index) !== "pending",
     );
   }
@@ -496,6 +506,7 @@ export class ScenarioEngine {
   ): number {
     this.assertCompatible();
     if (this.closed) throw new HttpError(409, "Scenario is closed");
+    if(media)this.lifecycle?.bind(media,trace,method);
     if (media) trace.logical({trackId:media.trackId,targetKind:media.kind});
     if (media) { this.publication?.bind(media,trace,method);const delayed=this.publication?.delay(trace,this.time());if(delayed)return delayed; }
     if (media && this.cache?.matches(media)) this.cache.bind(media,conditionalHeaders({ ...conditions, range }),conditions,trace,method);
@@ -742,7 +753,8 @@ export class ScenarioEngine {
     const http = this.http?.report();
     const cache = this.cache?.report();
     const publication = this.publication?.report();
-    const outcomes = [...rules, ...(timeline ?? []), ...(http ? [http] : []), ...(cache ? [cache] : []), ...(publication ? [publication] : [])];
+    const lifecycle=this.lifecycle?.report();
+    const outcomes = [...rules, ...(timeline ?? []), ...(http ? [http] : []), ...(cache ? [cache] : []), ...(publication ? [publication] : []), ...(lifecycle?[lifecycle]:[])];
     return structuredClone({
       version: 1,
       scenarioId: this.scenarioId,
@@ -769,6 +781,7 @@ export class ScenarioEngine {
       ...(http ? { http } : {}),
       ...(cache ? { cache } : {}),
       ...(publication ? { publication } : {}),
+      ...(lifecycle?{lifecycle}:{}),
     });
   }
   close(): void {
@@ -779,6 +792,7 @@ export class ScenarioEngine {
       this.http?.close();
       this.cache?.close();
       this.publication?.close();
+      this.lifecycle?.close();
       this.closed = true;
       this.diagnostics.record("scenario.closed", {
         scenarioId: this.scenarioId,

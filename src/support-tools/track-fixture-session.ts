@@ -33,19 +33,19 @@ export async function startTrackFixture(options: TrackFixtureOptions): Promise<H
     origin = await publisher.start();
     options.signal?.throwIfAborted();
     if (options.protocol === 'hls')
-      session = await startHlsim({ ...options, port, host, ownedFixture: true, ownedVideoTracks: options.videoRenditions ?? 2, manifestUrl: origin.url + '/hls/master.m3u8', dummyContent: false });
+      session = await startHlsim({ ...options, port, host, lifecycleHooks:publisher.lifecycle.hooks(options.protocol),ownedFixture: true, ownedVideoTracks: options.videoRenditions ?? 2, manifestUrl: origin.url + '/hls/master.m3u8', dummyContent: false });
     else {
       setFaultConfigPath(options.faultConfigPath ?? process.env.HLS_FAULT_CONFIG ?? path.resolve(process.cwd(), '.hls-dash-faults.json'));
       if (options.faultProfile)
         applyConfigOverride({ profile: options.faultProfile });
       if (options.verbose !== undefined)
         applyConfigOverride({ logging: { verbose: options.verbose } });
-      const proxy = await startDashFaultProxy({ listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
+      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol), listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
       session = { url: `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(':') ? '[' + host + ']' : host}:${port}/dash/manifest.mpd`, diagnostics: proxy.diagnostics, networkOwnership: proxy.networkOwnership, get scenario() { return proxy.scenario; }, runs: proxy.runs, close: () => proxy.close() };
       console.info('Owned DASH track fixture ready: ' + session.url);
     }
     options.signal?.throwIfAborted();
-    return { url: session.url, networkOwnership: session.networkOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
+    return { url: session.url,sourceOwnership:()=>({lifecycleActions:publisher.lifecycle.pendingActions}), networkOwnership: session.networkOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
   }
   catch (error) {
     await close();

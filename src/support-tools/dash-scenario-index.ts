@@ -37,6 +37,7 @@ export class DashScenarioIndex {
     private clock = () => performance.now(),
     private capacity = 10000,
     private strictInitialization = false,
+    private sourceAddresses = false,
   ) {}
   private canonical(value: string): string {
     const url = new URL(value);
@@ -89,7 +90,7 @@ export class DashScenarioIndex {
           (this.strictInitialization && previous.trackId !== media.trackId))
       )
         problem(); // Ambiguous media must never be targeted by guessing.
-      next.set(key, media);
+      next.set(key, {...media,...(this.sourceAddresses?{sourceUrl:local(value).href}:{})});
       if (next.size > this.capacity)
         throw new HttpError(
           503,

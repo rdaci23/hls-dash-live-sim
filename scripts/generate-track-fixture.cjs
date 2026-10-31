@@ -13,8 +13,14 @@ args.push('-c:a','aac','-b:a','64k','-ar','48000','-ac','2','-metadata:s:a:0','l
 execFileSync('ffmpeg',args,{stdio:'inherit'});
 const list=v=>Array.isArray(v)?v:[v],doc=new XMLParser({ignoreAttributes:false,parseAttributeValue:false}).parse(fs.readFileSync(path.join(root,'manifest.mpd'),'utf8'));
 const tracks=[];
+// Fragment timestamps already describe an exact eight-second coded loop. FFmpeg's
+// AAC priming edit shifts every loop's presented end by 1024 samples in HLS/MSE.
+// Keep those coded samples (including initial silence), with no edit-list trim.
+function withoutAudioEdits(buffer){
+ const rewrite=(bytes,container)=>{const parts=[];for(let at=0;at<bytes.length;){const size=bytes.readUInt32BE(at),type=bytes.toString('ascii',at+4,at+8);if(size<8||at+size>bytes.length)throw Error('Invalid owned initialization box');let box=bytes.subarray(at,at+size);if(type==='edts'&&container==='trak'){at+=size;continue;}if(type==='moov'||type==='trak'){const body=rewrite(box.subarray(8),type);box=Buffer.alloc(8+body.length);box.writeUInt32BE(box.length);box.write(type,4);body.copy(box,8);}parts.push(box);at+=size;}return Buffer.concat(parts);};return rewrite(buffer,'root');
+}
 for(const a of list(doc.MPD.Period.AdaptationSet))for(const r of list(a.Representation)){
- const id=String(r['@_id']),init='init-'+id+'.m4s',timing=initialization(fs.readFileSync(path.join(root,init))),type=a['@_contentType'],alias=type+':'+tracks.filter(t=>t.type===type).length;
+ const id=String(r['@_id']),init='init-'+id+'.m4s',type=a['@_contentType'];if(type==='audio')fs.writeFileSync(path.join(root,init),withoutAudioEdits(fs.readFileSync(path.join(root,init))));const timing=initialization(fs.readFileSync(path.join(root,init))),alias=type+':'+tracks.filter(t=>t.type===type).length;
  const files=fs.readdirSync(root).filter(name=>new RegExp('^chunk-'+id+'-\\d+\\.m4s$').test(name)).sort((a,b)=>Number(a.match(/-(\d+)\.m4s$/)[1])-Number(b.match(/-(\d+)\.m4s$/)[1]));
  const segments=files.map(file=>{const bytes=fs.readFileSync(path.join(root,file)),f=fragment(bytes);return{file,baseTime:String(f.baseTime),duration:f.duration,bytes:bytes.length};});
  const total=segments.reduce((n,s)=>n+s.duration,0);if(segments.length!==4||Math.abs(total/timing.timescale-8)>1e-6)throw Error(alias+' is not an exact eight-second loop: '+total/timing.timescale+'s');

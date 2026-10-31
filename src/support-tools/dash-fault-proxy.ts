@@ -1,3 +1,4 @@
+import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
 import {
   OriginPolicy,
@@ -16,6 +17,7 @@ import { DashScenarioIndex } from "./dash-scenario-index.js";
 import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
 export interface DashFaultProxyOptions {
+  lifecycleHooks?:LifecycleHooks;
   listenPort: number;
   upstreamPort: number;
   host?: string;
@@ -54,21 +56,21 @@ export async function startDashFaultProxy(
   let scenario: ScenarioEngine | undefined;
   try {
     if (definition && !manual)
-      scenario = new ScenarioEngine(definition, diagnostics);
+      scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks);
   } catch (error) {
     diagnostics.close();
     throw error;
   }
-  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
   const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.publication?.kind === "rendition-lag" || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
-    manual || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
+    manual || !!scenario?.definition.lifecycle || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init"),!!options.lifecycleHooks) : undefined;
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks,
+  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks, generated: true, initialization: true, videoTracks: options.videoTracks,
     publicationAvailable: (kind,track) => scenarioIndex?.publicationAvailable(kind,track) ?? false,
     advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
@@ -156,8 +158,8 @@ export async function startDashFaultProxy(
       }
       const profile = scenario?.timeline?.profile();
       if (
-        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
-        (scenario.http || scenario.cache || scenario.publication || !scenario.settled) &&
+        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
+        (scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || !scenario.settled) &&
         segment &&
         !logical &&
         req.method === "GET"
@@ -216,7 +218,7 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || !scenario.settled))
+          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
           if (scenarioIndex) scenario?.manifestBindings(trace,scenarioIndex.manifestBindings());
           const choice = snapshots.observe(manifestKey, remote);

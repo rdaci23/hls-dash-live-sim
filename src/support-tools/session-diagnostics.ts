@@ -47,11 +47,17 @@ type EventType =
   | "scenario.run"
   | "http.response"
   | "edge.decision"
-  | "publication.decision";
+  | "publication.decision"
+  | "lifecycle.transition"
+  | "lifecycle.response";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
+  lifecycleKind?: "encoder-restart" | "event-completion";
+  lifecycleState?: "scheduled" | "active" | "completed";
+  generation?: number;
+  sourceMediaTimeMs?: number;
   networkScope?: "session" | "track";
   publicationAction?: "delay" | "lag";
   cacheDecision?: "origin" | "fill" | "hit" | "bypass" | "restore";
@@ -125,6 +131,8 @@ export interface DiagnosticsOptions {
 export const TRACE_HEADERS =
   "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids, X-Sim-Run-Id";
 const values = {
+  lifecycleKind:["encoder-restart","event-completion"],
+  lifecycleState:["scheduled","active","completed"],
   networkScope:["session","track"],
   publicationAction: ["delay","lag"],
   cacheDecision: ["origin","fill","hit","bypass","restore"],
@@ -195,6 +203,8 @@ function allowedField(key: string, value: unknown): boolean {
     return typeof value === "string" && /^rule:\d{1,2}$/.test(value);
   if (key === "phaseId")
     return typeof value === "string" && /^phase:\d{1,2}$/.test(value);
+  if(key === "generation")return Number.isSafeInteger(value)&&Number(value)>=0&&Number(value)<64;
+  if(key === "sourceMediaTimeMs")return typeof value === "number"&&Number.isFinite(value)&&value>=0&&value<=Number.MAX_SAFE_INTEGER;
   if (key === "manifestFreeze") return typeof value === "boolean";
   if (key === "trackId")
     return (
@@ -318,6 +328,10 @@ export class SessionDiagnostics {
       "cacheDecision",
       "publicationAction",
       "networkScope",
+      "lifecycleKind",
+      "lifecycleState",
+      "generation",
+      "sourceMediaTimeMs",
       "runId",
       "scenarioId",
       "ruleId",

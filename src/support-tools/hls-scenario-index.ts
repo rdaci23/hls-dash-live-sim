@@ -43,7 +43,7 @@ export class HlsScenarioIndex {
       const key = this.canonical(value), previous = entries.get(key);
       if (previous && (previous.kind !== resource.kind || previous.trackId !== resource.trackId))
         throw new HttpError(422, "HLS scenario resource has ambiguous track or initialization ownership");
-      entries.set(key, resource);
+      entries.set(key, {...resource,...(this.mediaIndex?{sourceUrl:value}:{})});
       if (entries.size > this.capacity) throw new HttpError(503, "HLS scenario resource capacity reached");
     };
     for (const variant of variantEntries(text)) {

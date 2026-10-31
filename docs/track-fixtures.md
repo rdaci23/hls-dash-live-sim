@@ -31,6 +31,8 @@ or a disabled proxy. Stop its foreground session with Ctrl+C.
 | text:0 / text:1 | Authored `EN cue …` / `RO cue …`, HLS WebVTT and DASH MP4 WebVTT (`wvtt`). |
 
 All tracks have exactly eight seconds of coded sample duration per source loop.
+AAC initialization omits the priming edit list: coded priming samples remain as
+initial silence, so the presented loop is not shortened by 1,024 samples.
 The live publisher advances fragment decode times, sequence numbers and SIDX
 presentation times rather than reusing a URL with incompatible bytes. The same
 published URI has stable bytes within retention. HLS PROGRAM-DATE-TIME, DASH AST/
@@ -43,7 +45,7 @@ Removed media remains available for the existing retention grace. Initialization
 stays compatible. HLS uses separate EXT-X-MAP, AUDIO and SUBTITLES renditions.
 DASH uses separate audio/text AdaptationSets and explicit finite timelines.
 `--mode vod` serves the finite eight-second fixture; event completion and encoder
-restart controls are separate lifecycle work.
+restart controls are described in [owned lifecycle scenarios](lifecycle-scenarios.md).
 
 The authored caption schedule repeats in media time:
 
