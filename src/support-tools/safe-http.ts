@@ -247,19 +247,22 @@ export function sessionServer(
     trace?: RequestTrace,
   ) => Promise<void>,
   diagnostics?: SessionDiagnostics,
-): { server: http.Server; close(): Promise<void> } {
+): { server: http.Server; close(): Promise<void>; cancelRun(runId: string): Promise<void> } {
   const controllers = new Set<AbortController>();
+  const records = new Map<AbortController, { res: http.ServerResponse; trace?: RequestTrace; work?: Promise<void> }>();
   const pending = new Set<Promise<void>>();
   let closing: Promise<void> | undefined;
   const server = http.createServer((req, res) => {
     const controller = new AbortController();
     controllers.add(controller);
     const trace = diagnostics?.request(req, res);
+    const record = { res, trace, work: undefined as Promise<void> | undefined };
+    records.set(controller, record);
     const abort = () =>
       trace?.cancel(
         controller.signal.reason === "session_shutdown"
           ? "session_shutdown"
-          : "client_disconnect",
+          : controller.signal.reason === "scenario_reset" ? "scenario_reset" : "client_disconnect",
       );
     controller.signal.addEventListener("abort", abort, { once: true });
     const cleanup = () => {
@@ -267,6 +270,7 @@ export function sessionServer(
       res.removeListener("close", disconnect);
       controller.signal.removeEventListener("abort", abort);
       controllers.delete(controller);
+      records.delete(controller);
     };
     const finish = () => {
       trace?.finish();
@@ -291,10 +295,16 @@ export function sessionServer(
       .finally(() => {
         pending.delete(work);
       });
+    record.work = work;
     pending.add(work);
   });
   return {
     server,
+    async cancelRun(runId) {
+      const affected = [...records].filter(([, value]) => value.trace?.runId === runId && value.trace.hasFault());
+      for (const [controller, value] of affected) { controller.abort("scenario_reset"); value.res.destroy(); }
+      await Promise.allSettled(affected.map(([, value]) => value.work));
+    },
     close() {
       if (!closing)
         closing = (async () => {
@@ -340,6 +350,7 @@ export function preflight(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   host = "127.0.0.1",
+  scenarioControls = false,
 ): boolean {
   const localHosts = new Set([
     "localhost",
@@ -365,17 +376,18 @@ export function preflight(
     send(res, 403, "Only local player origins may access this session");
     return true;
   }
+  const controls = scenarioControls && /^\/scenario\/(arm|start|reset)$/.test(new URL(req.url ?? "/", "http://localhost").pathname);
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": "Range",
+      "Access-Control-Allow-Methods": controls ? "GET, HEAD, POST, OPTIONS" : "GET, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": controls ? "Range, Content-Type, Authorization, X-Sim-Session-Id" : "Range",
       "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ${TRACE_HEADERS}`,
     });
     res.end();
     return true;
   }
-  if (!["GET", "HEAD"].includes(req.method ?? "")) {
+  if (!(controls ? ["GET", "HEAD", "POST"] : ["GET", "HEAD"]).includes(req.method ?? "")) {
     send(res, 405, "Method not allowed", { Allow: "GET, HEAD, OPTIONS" });
     return true;
   }

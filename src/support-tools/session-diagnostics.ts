@@ -40,11 +40,13 @@ type EventType =
   | "scenario.matched"
   | "scenario.result"
   | "scenario.profile"
-  | "scenario.closed";
+  | "scenario.closed"
+  | "scenario.run";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
-type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline";
+type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
+  runId?: string;
   scenarioId?: string;
   ruleId?: string;
   phaseId?: string;
@@ -106,7 +108,7 @@ export interface DiagnosticsOptions {
   verbose?: () => boolean;
 }
 export const TRACE_HEADERS =
-  "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids";
+  "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids, X-Sim-Run-Id";
 const values = {
   result: ["pending", "passed", "failed", "incomplete"],
   method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
@@ -131,6 +133,7 @@ const values = {
     "client_disconnect",
     "session_shutdown",
     "transport_deadline",
+    "scenario_reset",
     "handler_error",
     "resource_rejected",
     "origin_failure",
@@ -149,7 +152,7 @@ const values = {
 };
 function allowedField(key: string, value: unknown): boolean {
   if (values[key]) return values[key].includes(value);
-  if (key === "requestId")
+  if (key === "requestId" || key === "runId")
     return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
   if (key === "faultId")
     return (
@@ -284,6 +287,7 @@ export class SessionDiagnostics {
     };
     // Copy a fixed set of fields even when called from plain JS with extra data.
     for (const key of [
+      "runId",
       "scenarioId",
       "ruleId",
       "phaseId",
@@ -452,8 +456,12 @@ export class RequestTrace {
     res.setHeader("X-Sim-Request-Id", this.requestId);
     this.record("request.started");
   }
+  get runId(): string | undefined { return this.resourceFields.runId; }
+  run(id: string): void { this.resourceFields.runId = id; if (!this.res.headersSent) this.res.setHeader("X-Sim-Run-Id", id); }
+  hasFault(): boolean { return this.effects.length > 0; }
   resource(value: string, kind: ResourceKind, source: ResourceSource): void {
     this.resourceFields = {
+      ...(this.resourceFields.runId ? { runId: this.resourceFields.runId } : {}),
       resourceId: this.diagnostics.resourceId(value),
       resourceKind: kind,
       resourceSource: source,

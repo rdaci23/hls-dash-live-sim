@@ -21,6 +21,7 @@ import {
   applyConfigOverride,
 } from "./live-stream-fault-config.js";
 import { startDashFaultProxy } from "./dash-fault-proxy.js";
+import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 import { parseMPD, MPDInfo } from "./mpd.js";
 export { parseMPD, MPDInfo } from "./mpd.js";
 const exec = promisify(execFile);
@@ -58,6 +59,8 @@ export interface LivesimStartOptions {
   signal?: AbortSignal;
   diagnosticsFile?: string;
   scenarioFile?: string;
+  scenarioStart?: "auto" | "manual";
+  controlToken?: string;
   verbose?: boolean;
 }
 export interface LivesimStopOptions {
@@ -70,6 +73,7 @@ export interface DashSession {
   url: string;
   diagnostics?: SessionDiagnostics;
   scenario?: ScenarioEngine;
+  runs?: ScenarioRuns;
   close(): Promise<void>;
 }
 export async function fetchMPD(
@@ -190,8 +194,9 @@ export async function startLivesim2(
 ): Promise<DashSession> {
   const signal = options.signal;
   signal?.throwIfAborted();
+  validateScenarioStart(options.scenarioStart, options.controlToken);
   const definition = loadScenario(options.scenarioFile);
-  if (definition && options.faultProxy === false)
+  if ((definition || options.scenarioStart === "manual") && options.faultProxy === false)
     throw new Error("Scenarios require the DASH fault proxy");
   if (
     options.faultProxy === false &&
@@ -402,6 +407,9 @@ export async function startLivesim2(
         manifestPath,
         diagnosticsFile: options.diagnosticsFile,
         scenario: definition,
+        scenarioStart: options.scenarioStart,
+        controlToken: options.controlToken,
+        videoTracks: asset === "abr" ? 2 : asset === "sample" ? 1 : undefined,
       });
     signal?.throwIfAborted();
     const displayHost =
@@ -430,7 +438,8 @@ export async function startLivesim2(
       url,
       close,
       diagnostics: proxy?.diagnostics,
-      scenario: proxy?.scenario,
+      get scenario() { return proxy?.scenario; },
+      get runs() { return proxy?.runs; },
     };
   } catch (error) {
     await close();

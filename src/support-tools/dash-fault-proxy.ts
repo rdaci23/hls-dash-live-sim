@@ -12,6 +12,7 @@ import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ScenarioEngine, ScenarioDefinition, parseScenario } from "./scenario.js";
 import { DashScenarioIndex } from "./dash-scenario-index.js";
+import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
 export interface DashFaultProxyOptions {
   listenPort: number;
@@ -20,16 +21,22 @@ export interface DashFaultProxyOptions {
   manifestPath?: string;
   diagnosticsFile?: string;
   scenario?: ScenarioDefinition;
+  scenarioStart?: "auto" | "manual";
+  controlToken?: string;
+  videoTracks?: number;
 }
 export interface DashFaultProxy {
   diagnostics: SessionDiagnostics;
   scenario?: ScenarioEngine;
+  runs?: ScenarioRuns;
   close(): Promise<void>;
   upstreamBase: string;
 }
 export async function startDashFaultProxy(
   options: DashFaultProxyOptions,
 ): Promise<DashFaultProxy> {
+  validateScenarioStart(options.scenarioStart, options.controlToken);
+  const manual = options.scenarioStart === "manual";
   const definition = options.scenario ? parseScenario(options.scenario) : undefined;
   if (definition?.rules.some(rule => rule.target.resource === "manifest" && !["root", "any"].includes(rule.target.track)))
     throw new Error("DASH has one root MPD; manifest targets must use track root or any");
@@ -43,24 +50,34 @@ export async function startDashFaultProxy(
   });
   let scenario: ScenarioEngine | undefined;
   try {
-    if (definition)
+    if (definition && !manual)
       scenario = new ScenarioEngine(definition, diagnostics);
   } catch (error) {
     diagnostics.close();
     throw error;
   }
-  const needsMediaIdentity = scenario && (scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
-  const needsIndex = scenario && (needsMediaIdentity || scenario.definition.rules.some(rule => rule.target.resource === "init"));
+  const needsMediaIdentity = manual || scenario && (scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
-    scenario.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
-  const faults = new FaultRuntime(Math.random, scenario?.timeline);
+    manual || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
+  let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
-  }>(128, !scenario);
-  const unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+  }>(128, !scenario && !manual);
+  let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks }, async (next, previousRunId) => {
+    scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
+    if (previousRunId) await transport.cancelRun(previousRunId);
+    faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline);
+    unsubscribeTimeline = next?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+  }, options.controlToken, definition) : undefined;
+  const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
+    const { scenario, faults } = context();
     try {
-      if (preflight(req, res, options.host)) return;
+      if (preflight(req, res, options.host, !!runs)) return;
+      if (runs && await runs.handle(req, res)) return;
+      if (scenario && runs) trace.run(runs.runId);
       const request = new URL(req.url ?? "/", "http://localhost");
       if (request.pathname === "/health") {
         send(
@@ -70,6 +87,7 @@ export async function startDashFaultProxy(
             protocol: "dash",
             status: "ready",
             scenario: scenario?.report().result,
+            scenarioRun: runs?.report(),
             faults: scenario ? undefined : faults.snapshot(),
           }),
           { "Content-Type": "application/json" },
@@ -122,6 +140,7 @@ export async function startDashFaultProxy(
         manifest ? "manifest" : logical?.kind === "init" ? "init" : segment ? "segment" : "other",
         "livesim2",
       );
+      if (runs) runs.assertHealthy();
       if (scenario) scenario.assertCompatible();
       // Media/manifest latency faults must not skew the UTC reference itself.
       if ((!scenario || scenario.timeline) && (manifest || segment)) {
@@ -129,7 +148,7 @@ export async function startDashFaultProxy(
       }
       const profile = scenario?.timeline?.profile();
       if (
-        needsMediaIdentity &&
+        scenario && (scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
         !scenario.settled &&
         segment &&
         !logical &&
@@ -183,7 +202,7 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && !scenario.settled)
+          if (scenarioIndex && (!scenario || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
           const choice = snapshots.observe(manifestKey, remote);
           if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);
@@ -240,7 +259,8 @@ export async function startDashFaultProxy(
   return {
     upstreamBase,
     diagnostics,
-    scenario,
+    get scenario() { return scenario; },
+    runs,
     close: async () => {
       faults.close();
       snapshots.close();

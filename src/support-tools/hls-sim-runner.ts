@@ -31,6 +31,7 @@ import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
 import { loadScenario, ScenarioEngine } from "./scenario.js";
+import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 
 export interface HLSStartOptions {
   rendition?: "all" | "low" | "main";
@@ -59,6 +60,8 @@ export interface HLSStartOptions {
   signal?: AbortSignal;
   diagnosticsFile?: string;
   scenarioFile?: string;
+  scenarioStart?: "auto" | "manual";
+  controlToken?: string;
   verbose?: boolean;
 }
 export interface HLSStopOptions {
@@ -71,6 +74,7 @@ export interface HlsSession {
   url: string;
   diagnostics?: SessionDiagnostics;
   scenario?: ScenarioEngine;
+  runs?: ScenarioRuns;
   close(): Promise<void>;
 }
 
@@ -131,8 +135,10 @@ export async function startHlsim(
   options: HLSStartOptions = {},
 ): Promise<HlsSession> {
   options.signal?.throwIfAborted();
+  validateScenarioStart(options.scenarioStart, options.controlToken);
+  const manual = options.scenarioStart === "manual";
   const definition = loadScenario(options.scenarioFile);
-  if (definition && options.proxy === false)
+  if ((definition || manual) && options.proxy === false)
     throw new Error("Scenarios require the HLS Node proxy");
   if (options.proxy === false && (options.diagnosticsFile || options.verbose))
     throw new Error(
@@ -240,23 +246,33 @@ export async function startHlsim(
   });
   let scenario: ScenarioEngine | undefined;
   try {
-    if (definition) scenario = new ScenarioEngine(definition, diagnostics);
+    if (definition && !manual) scenario = new ScenarioEngine(definition, diagnostics);
   } catch (error) {
     diagnostics.close();
     throw error;
   }
-  const faults = new FaultRuntime(Math.random, scenario?.timeline);
-  const sendMedia: FaultRuntime["sendMedia"] = async (res, status, body, headers, method, signal, trace, enabled) => {
-    if (await scenario?.deliver(res, status, body, headers, method, signal, trace)) return;
-    await faults.sendMedia(res, status, body, headers, method, signal, trace, enabled);
-  };
-  const scenarioIndex = scenario && !dummy ? new HlsScenarioIndex(options.manifestUrl,
-    definition.rules.some(rule => rule.target.resource === "init")) : undefined;
-  const snapshots = new ManifestSnapshots<string>(128, !scenario);
-  const unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+  let faults = new FaultRuntime(Math.random, scenario?.timeline);
+  const scenarioIndex = (scenario || manual) && !dummy ? new HlsScenarioIndex(options.manifestUrl,
+    manual || !!definition?.rules.some(rule => rule.target.resource === "init")) : undefined;
+  const snapshots = new ManifestSnapshots<string>(128, !scenario && !manual);
+  let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "hls", generated: dummy, initialization: !dummy, videoTracks: dummy ? variants.length : undefined }, async (next, previousRunId) => {
+    scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
+    if (previousRunId) await transport.cancelRun(previousRunId);
+    faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline);
+    unsubscribeTimeline = next?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+  }, options.controlToken, definition) : undefined;
+  const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
+    const { scenario, faults } = context();
+    const sendMedia: FaultRuntime["sendMedia"] = async (response, status, body, headers, method, signal, trace, enabled) => {
+      if (await scenario?.deliver(response, status, body, headers, method, signal, trace)) return;
+      await faults.sendMedia(response, status, body, headers, method, signal, trace, enabled);
+    };
     try {
-      if (preflight(req, res, host)) return;
+      if (preflight(req, res, host, !!runs)) return;
+      if (runs && await runs.handle(req, res)) return;
+      if (scenario && runs) trace.run(runs.runId);
       const url = new URL(req.url ?? "/", "http://localhost");
       if (url.pathname === "/health") {
         send(
@@ -267,6 +283,7 @@ export async function startHlsim(
             mode: dummy ? mode : "proxy",
             status: "ready",
             scenario: scenario?.report().result,
+            scenarioRun: runs?.report(),
             faults: scenario ? undefined : faults.snapshot(),
           }),
           { "Content-Type": "application/json" },
@@ -317,6 +334,7 @@ export async function startHlsim(
             "origin",
           );
       }
+      if (runs) runs.assertHealthy();
       if (scenario) scenario.assertCompatible();
       if (!scenario || scenario.timeline) {
         const requestVariant = url.pathname.match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
@@ -495,7 +513,7 @@ export async function startHlsim(
           resource.url,
           policy,
         );
-        if (scenarioIndex && !scenario.settled) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
+        if (scenarioIndex && (!scenario || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
         const choice = snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");
@@ -574,7 +592,8 @@ export async function startHlsim(
   return {
     url,
     diagnostics,
-    scenario,
+    get scenario() { return scenario; },
+    runs,
     close: async () => {
       faults.close();
       snapshots.close();

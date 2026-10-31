@@ -9,7 +9,7 @@ limitation must never be hidden or presented as a simulator pass.
 | --- | --- | --- |
 | 1. Selective rendition outages | HTTP implementation verified; browser observations pending | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
 | 2. Realistic network presets | HTTP implementation verified; browser observations pending | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
-| 3. Scenario controls | Planned | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
+| 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | Planned | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Planned | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
 | 6. Fixtures and independent tracks | Planned | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
@@ -44,3 +44,7 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
   cases passed, including paced bytes, cancellation and active-transfer
   restoration. Regular suite: 285 passes, six optional skips. Browser observations
   remain separate and pending.
+
+- Manual controls: both real adapters passed token/session/run rejection, inert
+  reads, scoped cancellation and retained-result/export checks. Eight browser UI
+  tests pass, including HLS/DASH manual-run interactions and narrow viewports.

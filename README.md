@@ -220,3 +220,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 Quick checks: `npm run docs:check`, `npm run typecheck`, `npm test`.
 For the control-page browser checks, run `npm run test:ui` with Google Chrome
 installed. These checks do not replace the full playback and device gates.
+
+Opt-in [manual scenario runs](docs/scenario-controls.md) provide a preset catalog,
+session-scoped arm/start/reset and evidence downloads. Existing automatic startup
+remains the default. [Core coverage roadmap](docs/scenario-roadmap.md).

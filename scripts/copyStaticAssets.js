@@ -27,6 +27,7 @@ function copyAssets() {
     });
   }
 
+  fs.cpSync(path.join(ROOT, "examples/scenarios"), path.join(DEST_DIR, "scenarios"), { recursive: true });
   return copiedAny;
 }
 

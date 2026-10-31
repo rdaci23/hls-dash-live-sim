@@ -5,6 +5,10 @@ should share controls, pass the same **absolute** `--fault-config` path to both.
 Relative paths resolve from each command's working directory. Inspecting a stream
 in the UI does not retarget the control server's file.
 
+Opt-in [manual scenario runs](scenario-controls.md) add authenticated per-stream
+arm/start/reset and replay with retained outcomes. Automatic startup remains the
+default; it is separate from the watched manual fault file.
+
 ## Manual configuration versus scenario files
 
 | File | Purpose | Editing during a session |

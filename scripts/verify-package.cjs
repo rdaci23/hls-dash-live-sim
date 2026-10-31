@@ -41,6 +41,8 @@ async function ready(url, child, logs) {
     const changelog = await fs.readFile(path.join(root, 'CHANGELOG.md'), 'utf8');
     assert.ok(changelog.split(/\r?\n/).some(line => line.startsWith('## ' + version + ' —')), 'Changelog must cover the package version');
     assert.ok(files.includes('dist/cli.js'));
+    assert.ok(files.includes('dist/support-tools/assets/scenarios/next-manifest-retry.json'));
+    assert.ok(files.includes('docs/scenario-controls.md'));
     assert.ok(files.includes('dist/support-tools/assets/fault-control/control.js'));
     assert.ok(files.some(file => file.startsWith('dist/support-tools/assets/hls-sample/') && file.endsWith('.ts')));
     assert.ok(files.includes('docs/release-checklist.md'));
@@ -74,8 +76,8 @@ async function ready(url, child, logs) {
     assert.equal(execFileSync(cli, ['--version'], { cwd: directory, encoding: 'utf8' }).trim(), version);
     assert.equal(await fs.readFile(path.join(installed, 'CHANGELOG.md'), 'utf8'), changelog);
     assert.match(execFileSync(cli, ['--help'], { cwd: directory, encoding: 'utf8' }), /fault-control/);
-    const start = args => {
-      const child = spawn(cli, args, { cwd: directory, env: { ...process.env, HLS_DASH_CONTROL_TOKEN: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const start = (args, token = '') => {
+      const child = spawn(cli, args, { cwd: directory, env: { ...process.env, HLS_DASH_CONTROL_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
       let logs = '';
       child.stdout.on('data', data => logs += data);
       child.stderr.on('data', data => logs += data);
@@ -104,6 +106,14 @@ async function ready(url, child, logs) {
     assert.equal(script.status, 200);
     assert.match(await script.text(), /nativeFetch/);
     assert.equal((await fetch(uiUrl + '/config')).status, 200);
+    const manualPort = await port(), token = require('node:crypto').randomUUID();
+    const manual = start(['livesim', '--sim-type', 'hls', '--scenario-start', 'manual', '--port', String(manualPort), '--fault-config', config], token);
+    const manualUrl = `http://127.0.0.1:${manualPort}`;
+    await ready(manualUrl + '/health', manual.child, manual.logs);
+    const catalog = await (await fetch(manualUrl + '/scenario/catalog')).json();
+    assert.ok(catalog.presets.find(preset => preset.id === 'next-manifest-retry')?.enabled);
+    const armed = await fetch(manualUrl + '/scenario/arm', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-Sim-Session-Id': catalog.sessionId }, body: JSON.stringify({ runId: catalog.runId, presetId: 'next-manifest-retry' }) });
+    assert.equal(armed.status, 200); assert.equal((await armed.json()).state, 'armed');
     console.log('Packed CLI installed with production dependencies; help, HLS media and control assets passed. Nothing was published.');
   } finally {
     await Promise.all(children.map(child => new Promise(resolve => {

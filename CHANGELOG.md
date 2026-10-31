@@ -11,6 +11,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Add opt-in authenticated manual scenario runs, catalog, session/run isolation,
+  affected-transfer reset, retained results and UI evidence export.
+
 - Nonzero bandwidth-starvation and four-cycle oscillation presets with HTTP
   pacing, byte preservation, cancellation and in-flight restoration verification.
 

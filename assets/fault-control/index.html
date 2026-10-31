@@ -14,7 +14,7 @@
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
     .card { border: 1px solid #d9dee7; border-radius: 10px; padding: 16px; background: #fafbff; }
     label { display: flex; align-items: center; justify-content: space-between; font-size: 0.95rem; margin-bottom: 10px; }
-    select, input[type="number"] { width: 120px; padding: 6px 8px; border-radius: 6px; border: 1px solid #c5c9d6; font-size: 0.9rem; }
+    select, input[type="number"] { box-sizing: border-box; max-width: 100%; width: 120px; padding: 6px 8px; border-radius: 6px; border: 1px solid #c5c9d6; font-size: 0.9rem; }
     button { background: #2563eb; color: #fff; border: none; padding: 10px 18px; border-radius: 8px; font-size: 0.95rem; cursor: pointer; }
     button.secondary { background: #475569; }
     button.warning { background: #f97316; }
@@ -26,7 +26,7 @@
     fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
     button:disabled { opacity: .5; cursor: not-allowed; }
     input[type="url"] { box-sizing: border-box; width: 100%; padding: 8px; margin: 8px 0; }
-    .help { color: #475569; font-size: .9rem; line-height: 1.5; }
+    .help { overflow-wrap: anywhere; color: #475569; font-size: .9rem; line-height: 1.5; }
     .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
     #manifest-output { max-height: 420px; white-space: pre; }
     #manifest-url-label { display: block; }
@@ -78,6 +78,30 @@
           <p id="playback-copy-status" class="status" role="status" aria-live="polite"></p>
         </div>
       </div>
+    </section>
+
+    <section aria-labelledby="scenario-heading">
+      <h2 id="scenario-heading">Scenario runs</h2>
+      <p class="help">Arm a preset, then start it when your player is ready. Reset ends this run and prepares a new run ID. Publication and the UTC clock continue. These controls affect only the connected stream; keep saved manual faults off.</p>
+      <p id="scenario-status" class="status" role="status" aria-live="polite">Connect a stream started with --scenario-start manual.</p>
+      <fieldset id="scenario-fields" disabled>
+        <label for="scenario-preset">Scenario preset</label>
+        <select id="scenario-preset" style="width:100%"></select>
+        <p id="scenario-description" class="help"></p>
+        <dl class="stream-details">
+          <dt>Run ID</dt><dd id="scenario-run-id">—</dd>
+          <dt>Phase / outcome</dt><dd id="scenario-phase">—</dd>
+          <dt>Next trigger</dt><dd id="scenario-trigger">—</dd>
+          <dt>Previous runs</dt><dd id="scenario-history">0</dd>
+        </dl>
+        <div class="actions">
+          <button id="scenario-arm">Arm Preset</button>
+          <button id="scenario-start" class="warning">Start Scenario</button>
+          <button id="scenario-reset" class="secondary">Reset Run</button>
+          <button id="scenario-refresh" class="secondary">Refresh Run</button>
+          <button id="scenario-export" class="secondary">Download Run Evidence</button>
+        </div>
+      </fieldset>
     </section>
 
     <section aria-labelledby="fault-heading">

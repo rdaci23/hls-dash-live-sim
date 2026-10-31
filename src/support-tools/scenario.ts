@@ -275,6 +275,11 @@ interface Attempts {
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
+export function manualFaultConflict(): boolean {
+  const config = getFaultConfig();
+  return Object.entries(config.segment ?? {}).some(([key, value]) => key === "latencyMs" ? Number(value) > 0 : value !== "off") || Object.values(config.drm ?? {}).some(value => value !== "off") || config.manifest?.freeze !== "off" || Object.values(config.network ?? {}).some(value => Number(value) > 0);
+}
+
 /** Immutable per-session rules. Choices depend on logical identity, never global RNG order. */
 export class ScenarioEngine {
   readonly definition: ScenarioDefinition;
@@ -338,15 +343,7 @@ export class ScenarioEngine {
   }
   assertCompatible(): void {
     if (this.settled && !this.invalid && !this.definition.timeline) return;
-    const config = getFaultConfig();
-    if (
-      Object.entries(config.segment ?? {}).some(([key, value]) =>
-        key === "latencyMs" ? Number(value) > 0 : value !== "off",
-      ) ||
-      Object.values(config.drm ?? {}).some((value) => value !== "off") ||
-      config.manifest?.freeze !== "off" ||
-      Object.values(config.network ?? {}).some(value => Number(value) > 0)
-    )
+    if (manualFaultConflict())
       this.invalid = "manual_fault_conflict";
     if (this.invalid)
       throw new HttpError(

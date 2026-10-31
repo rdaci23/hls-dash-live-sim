@@ -11,6 +11,9 @@
   let savedConfig;
   let streamSnapshot;
   let manifestSnapshot;
+  let scenarioSnapshot;
+  let scenarioCatalog = [];
+  let scenarioBusy = false;
 
 
   function status(message, error = false) {
@@ -28,6 +31,7 @@
     for (const id of ['copy-manifest', 'download-manifest', 'copy-selected']) $(id).disabled = !connected || !manifestSnapshot || !!pending;
     $('refresh-manifest').disabled = !connected || !currentUrl || !!pending;
     $('playlist-select').disabled = !connected || !!pending;
+    enableScenarios();
   }
   async function apiRequest(url, body) {
     const token = $('control-token').value;
@@ -201,6 +205,8 @@
     pending?.abort(); pending = undefined; generation++;
     rootUrl = undefined; currentUrl = undefined; sessionId = undefined;
     streamSnapshot = undefined;
+    scenarioSnapshot = undefined; scenarioCatalog = [];
+    $('scenario-status').textContent = 'Connect a stream started with --scenario-start manual.';
     clearManifest();
     $('stream-details').hidden = true;
     $('stream-fault-panel').hidden = true;
@@ -234,7 +240,85 @@
       if (!lines.length) lines.push('No manual faults enabled in this simulator.');
     }
     listItems('stream-faults', lines);
+    scenarioSnapshot = health.scenarioRun;
+    renderScenario();
+    if (scenarioSnapshot && !scenarioCatalog.length) refreshScenario().catch(error => { $('scenario-status').textContent = error.message; });
   }
+  function enableScenarios() {
+    const enabled = connected && streamSnapshot && scenarioSnapshot && !pending && !scenarioBusy;
+    $('scenario-fields').disabled = !enabled;
+    const armed = scenarioSnapshot?.state === 'armed';
+    $('scenario-arm').disabled = !enabled || !['idle', 'armed'].includes(scenarioSnapshot?.state) || !scenarioCatalog.find(p => p.id === $('scenario-preset').value)?.enabled;
+    $('scenario-start').disabled = !enabled || !armed;
+  }
+  function renderScenario() {
+    const run = scenarioSnapshot;
+    $('scenario-status').textContent = !run ? 'Manual runs unavailable. Restart this simulator with --scenario-start manual and a control token.' : 'Run ' + run.state + '. Refresh to observe progress; reads never consume faults.';
+    $('scenario-run-id').textContent = run?.runId || '—';
+    const timeline = run?.scenario?.timeline;
+    $('scenario-phase').textContent = run ? run.state + (timeline ? ' · ' + JSON.stringify(timeline.map(p => ({ id: p.phaseId, result: p.result }))) : '') : '—';
+    $('scenario-trigger').textContent = run?.scenario ? JSON.stringify(run.nextTrigger) : run ? 'Arm, then Start; elapsed time begins at Start.' : '—';
+    $('scenario-history').textContent = String(run?.previousRuns?.length || 0) + (run?.droppedPreviousRuns ? ' · ' + run.droppedPreviousRuns + ' older results dropped' : '');
+    const preset = scenarioCatalog.find(p => p.id === $('scenario-preset').value);
+    $('scenario-description').textContent = preset ? (preset.enabled ? preset.requires + '. ' + preset.expectedEffect + '. Targets: ' + JSON.stringify(preset.targets) : preset.reason) : '';
+    enableScenarios();
+  }
+  async function scenarioRequest(path, body) {
+    const target = streamSnapshot;
+    if (!connected || !target || !scenarioSnapshot) throw new Error('Connect a manual-start stream first.');
+    const requestGeneration = generation;
+    const response = await nativeFetch(new URL('/scenario/' + path, target.url), {
+      method: body === undefined ? 'GET' : 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15000),
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json', Authorization: 'Bearer ' + $('control-token').value, 'X-Sim-Session-Id': target.id },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const data = JSON.parse(await readText(response));
+    if (requestGeneration !== generation || target !== streamSnapshot) throw new Error('Stream changed while controlling the run. Refresh the connected stream.');
+    if (response.headers.get('X-Sim-Session-Id') !== target.id) { disconnectStream(); throw new Error('Simulator session changed. Reconnect its manifest.'); }
+    if (!response.ok) throw new Error(data.error || 'Scenario request failed (' + response.status + ')');
+    return data;
+  }
+  async function refreshScenario() {
+    if (scenarioBusy || !scenarioSnapshot) return;
+    scenarioBusy = true; enableScenarios();
+    try {
+      const data = await scenarioRequest('catalog');
+      scenarioSnapshot = data;
+      const selected = $('scenario-preset').value;
+      scenarioCatalog = data.presets;
+      $('scenario-preset').replaceChildren(...scenarioCatalog.map(preset => {
+        const option = document.createElement('option'); option.value = preset.id;
+        option.textContent = preset.name + (preset.enabled ? '' : ' (unavailable)');
+        return option;
+      }));
+      $('scenario-preset').value = selected && scenarioCatalog.some(p => p.id === selected) ? selected : data.presetId || scenarioCatalog[0]?.id || '';
+      renderScenario();
+    } finally { scenarioBusy = false; enableScenarios(); }
+  }
+  async function scenarioAction(name) {
+    if (scenarioBusy || !scenarioSnapshot) return;
+    scenarioBusy = true; enableScenarios();
+    try {
+      scenarioSnapshot = await scenarioRequest(name, { runId: scenarioSnapshot.runId, ...(name === 'arm' ? { presetId: $('scenario-preset').value } : {}) });
+      renderScenario();
+    } catch (error) { $('scenario-status').textContent = error.message + ' Refresh Run before retrying.'; }
+    finally { scenarioBusy = false; enableScenarios(); }
+  }
+  $('scenario-preset').addEventListener('change', renderScenario);
+  for (const name of ['arm', 'start', 'reset']) $('scenario-' + name).addEventListener('click', () => scenarioAction(name));
+  $('scenario-refresh').addEventListener('click', () => refreshScenario().catch(error => { $('scenario-status').textContent = error.message; }));
+  $('scenario-export').addEventListener('click', async () => {
+    if (scenarioBusy) return;
+    scenarioBusy = true; enableScenarios();
+    try {
+      const data = await scenarioRequest('evidence');
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'scenario-evidence.json'; anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      $('scenario-status').textContent = 'Run evidence download requested. Simulator delivery and player recovery are separate results.';
+    } catch (error) { $('scenario-status').textContent = error.message; }
+    finally { scenarioBusy = false; enableScenarios(); }
+  });
   async function healthAt(target, signal, reset) {
     const response = await simulatorRequest(new URL('/health', target), signal);
     const health = JSON.parse(await readText(response));

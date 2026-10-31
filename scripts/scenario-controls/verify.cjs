@@ -1,0 +1,57 @@
+const assert = require('node:assert/strict');
+const { read } = require('../transport-scenarios/verify.cjs');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function verify(session, token) {
+  const base = new URL(session.url).origin;
+  const get = async path => { const response = await fetch(base + path); assert.equal(response.status, 200); return response.json(); };
+  const initial = await get('/scenario/catalog');
+  const sessionId = initial.sessionId;
+  async function post(action, body, headers = {}) {
+    return fetch(base + '/scenario/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-Sim-Session-Id': sessionId, ...headers }, body: JSON.stringify(body) });
+  }
+  const body = { runId: initial.runId, presetId: 'next-manifest-retry' };
+  assert.equal((await post('arm', body, { Authorization: '' })).status, 401);
+  assert.equal((await post('arm', body, { 'X-Sim-Session-Id': 'wrong' })).status, 409);
+  assert.equal((await post('arm', { ...body, runId: 'old' })).status, 409);
+  assert.equal((await post('arm', { ...body, presetId: '../../some-file' })).status, 422);
+  assert.equal((await post('arm', { ...body, url: 'http://example.com' })).status, 400);
+  assert.equal((await post('arm', body, { 'Content-Type': 'text/plain' })).status, 415);
+  assert.equal((await post('arm', body, { Origin: 'https://example.com' })).status, 403);
+  assert.equal((await post('arm', { ...body, extra: 'x'.repeat(66000) })).status, 413);
+  assert.equal((await fetch(base + '/scenario/start')).status, 405);
+  assert.equal((await post('start', { runId: initial.runId })).status, 409);
+  assert.equal((await post('arm', body)).status, 200);
+  assert.equal((await get('/scenario')).state, 'armed');
+  assert.equal((await fetch(session.url)).status, 200, 'armed does not inject');
+  assert.equal((await post('start', { runId: initial.runId })).status, 200);
+  for (let n = 0; n < 3; n++) { await get('/scenario/catalog'); await get('/scenario/evidence'); await get('/health'); }
+  assert.equal(session.scenario.report().rules[0].selected, 0, 'reads do not consume faults');
+  const failure = await fetch(session.url); assert.equal(failure.status, 503); await failure.arrayBuffer();
+  assert.equal(failure.headers.get('X-Sim-Run-Id'), initial.runId);
+  const retry = await fetch(session.url); assert.equal(retry.status, 200); await retry.arrayBuffer();
+  for (let n = 0; n < 100 && (await get('/scenario')).state === 'running'; n++) await sleep(5);
+  assert.equal((await get('/scenario')).state, 'passed');
+  const reset = await (await post('reset', { runId: initial.runId })).json();
+  assert.notEqual(reset.runId, initial.runId); assert.equal(reset.previousRuns[0].scenario.result, 'passed');
+  assert.equal((await post('start', { runId: initial.runId })).status, 409);
+  assert.equal((await post('arm', { runId: reset.runId, presetId: 'next-manifest-body-stall' })).status, 200);
+  assert.equal((await post('start', { runId: reset.runId })).status, 200);
+  const stalled = read(session.url);
+  for (let n = 0; n < 100 && !session.scenario.transportStatus().activeBodies; n++) await sleep(5);
+  assert.equal(session.scenario.transportStatus().activeBodies, 1);
+  const previousEngine = session.scenario;
+  const healthy = read(session.url);
+  const began = performance.now();
+  const next = await (await post('reset', { runId: reset.runId })).json();
+  assert.ok(performance.now() - began < 1000, 'reset promptly cancels affected transfer');
+  assert.equal((await stalled).complete, false);
+  assert.equal((await healthy).complete, true, 'unaffected request survives reset');
+  assert.deepEqual(previousEngine.transportStatus(), { activeBodies: 0, bufferedBytes: 0 });
+  assert.equal(next.previousRuns.length, 2); assert.equal(next.state, 'armed');
+  assert.equal((await fetch(session.url)).status, 200, 'publication remains reachable');
+  const evidence = await get('/scenario/evidence');
+  assert.ok(evidence.diagnosticsJsonl.includes('scenario_reset'));
+  assert.ok(!JSON.stringify(evidence).includes(token));
+  return { protocol: session.diagnostics.protocol, sessionId, runIds: [initial.runId, reset.runId, next.runId], authenticatedIsolation: true, inertReads: true, resetCancelsAffectedOnly: true, retainedResults: true, simulatorVerified: true };
+}
+module.exports = { verify };

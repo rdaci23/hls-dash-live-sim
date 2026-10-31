@@ -123,6 +123,7 @@ const startOptions = (builder) =>
       description:
         "Run immutable resource fault rules and network timelines from a scenario JSON file",
     })
+    .option("scenario-start", { choices: ["auto", "manual"], default: "auto", description: "Auto-start a definition, or expose authenticated manual scenario controls" })
     .option("diagnostics-file", {
       type: "string",
       description:
@@ -160,6 +161,7 @@ async function runTemplate(name: string, args) {
           signal,
           diagnosticsFile: args["diagnostics-file"],
           scenarioFile: args.scenario,
+        scenarioStart: args["scenario-start"],
           verbose: args.verbose,
           port: args.port,
           host: args.host,
@@ -177,6 +179,7 @@ async function runTemplate(name: string, args) {
           signal,
           diagnosticsFile: args["diagnostics-file"],
           scenarioFile: args.scenario,
+        scenarioStart: args["scenario-start"],
           verbose: args.verbose,
           port: args.port,
           host: args.host,
@@ -335,6 +338,7 @@ const program = yargs(hideBin(process.argv))
         faultProfile: args["fault-profile"],
         diagnosticsFile: args["diagnostics-file"],
         scenarioFile: args.scenario,
+        scenarioStart: args["scenario-start"],
         verbose: args.verbose,
         ...auth(args),
       };

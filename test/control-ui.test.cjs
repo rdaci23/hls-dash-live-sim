@@ -306,5 +306,49 @@ test('network controls save independent values, report saved/runtime settings an
   assert.equal(await bandwidth.inputValue(), '0');
   assert.equal(await jitter.inputValue(), '0');
   await page.setViewportSize({ width: 360, height: 780 });
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, JSON.stringify(await page.evaluate(() => [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > innerWidth).map(element => ({ id: element.id, tag: element.tagName, right: element.getBoundingClientRect().right })))));
+});
+
+for (const protocol of ['hls', 'dash']) test(`${protocol}: manual scenario UI arms, starts, resets and exports exact connected-session evidence`, uiOptions, async t => {
+  const token = randomUUID();
+  const url = await control(t, token);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'scenario-ui-'));
+  let session, origin;
+  t.after(async () => { await session?.close(); await origin?.close(); await fs.rm(dir, { recursive: true, force: true }); });
+  const p = await port();
+  if (protocol === 'hls') session = await require('../dist/support-tools/hls-sim-runner.js').startHlsim({ port: p, faultConfigPath: path.join(dir, 'faults.json'), scenarioStart: 'manual', controlToken: token });
+  else {
+    require('../dist/support-tools/live-stream-fault-config.js').setFaultConfigPath(path.join(dir, 'faults.json'));
+    origin = await require('../scripts/resource-scenarios/origin.cjs').createOrigin();
+    session = await require('../dist/support-tools/dash-fault-proxy.js').startDashFaultProxy({ listenPort: p, upstreamPort: Number(new URL(origin.url).port), manifestPath: '/manifest.mpd', scenarioStart: 'manual', controlToken: token, videoTracks: 2 });
+    session.url = `http://127.0.0.1:${p}/manifest.mpd`;
+  }
+  const page = await browserPage(t), errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(url); await status(page, 'Control token required');
+  await page.locator('#control-token').fill(token); await page.locator('#connect-control').click(); await status(page, 'Connected');
+  await page.locator('#manifest-url').fill(session.url); await page.locator('#load-manifest').click();
+  await page.waitForFunction(() => document.getElementById('scenario-preset').options.length > 0);
+  await page.locator('#scenario-preset').selectOption('next-manifest-retry');
+  await page.locator('#scenario-arm').click(); await status(page, 'Run armed', 'scenario-status');
+  const oldId = await page.locator('#scenario-run-id').innerText();
+  assert.equal((await fetch(session.url)).status, 200);
+  await page.locator('#scenario-start').click(); await status(page, 'Run running', 'scenario-status');
+  await page.locator('#scenario-refresh').click(); await status(page, 'Run running', 'scenario-status');
+  assert.equal(session.scenario.report().rules[0].selected, 0);
+  assert.equal((await fetch(session.url)).status, 503);
+  await (await fetch(session.url)).arrayBuffer();
+  await page.locator('#scenario-refresh').click(); await status(page, 'Run passed', 'scenario-status');
+  await page.locator('#scenario-reset').click(); await status(page, 'Run armed', 'scenario-status');
+  assert.notEqual(await page.locator('#scenario-run-id').innerText(), oldId);
+  assert.equal(await page.locator('#scenario-history').innerText(), '1');
+  const downloading = page.waitForEvent('download'); await page.locator('#scenario-export').click();
+  const download = await downloading; assert.equal(download.suggestedFilename(), 'scenario-evidence.json');
+  const chunks = []; for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+  const text = Buffer.concat(chunks).toString(), evidence = JSON.parse(text);
+  assert.equal(evidence.previousRuns[0].runId, oldId); assert.equal(evidence.previousRuns[0].scenario.result, 'passed');
+  assert.ok(!text.includes(token)); assert.ok(!text.includes('fixture-token'));
+  await page.setViewportSize({ width: 360, height: 780 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, JSON.stringify(await page.evaluate(() => [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > innerWidth).map(element => ({ id: element.id, tag: element.tagName, right: element.getBoundingClientRect().right })))));
+  assert.deepEqual(errors, []);
 });
