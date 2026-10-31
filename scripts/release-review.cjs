@@ -105,6 +105,7 @@ async function main() {
             ['renditions', 'verify-rendition-outages.cjs'],
             ['network-presets', 'verify-network-presets.cjs'],
             ['controls', 'verify-scenario-controls.cjs'],
+            ['manifest-preview', 'verify-manifest-preview.cjs'],
             ['payload-transport', 'verify-core-faults.cjs'],
             ['http', 'verify-http-policy.cjs'],
             ['headers', 'verify-status-headers.cjs'],

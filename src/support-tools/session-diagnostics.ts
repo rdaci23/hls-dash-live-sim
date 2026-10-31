@@ -23,6 +23,7 @@ type EventType =
   | "session.started"
   | "session.closed"
   | "request.started"
+  | "manifest.preview"
   | "request.resource"
   | "request.completed"
   | "request.cancelled"

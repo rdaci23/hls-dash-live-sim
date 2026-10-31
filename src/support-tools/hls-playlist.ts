@@ -97,7 +97,7 @@ export function rewritePlaylist(
       }
       const url = new URL(line, base);
       const kind =
-        variant || url.pathname.toLowerCase().endsWith(".m3u8")
+        variant
           ? "playlist"
           : "segment";
       variant = false;

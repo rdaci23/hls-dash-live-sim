@@ -140,11 +140,14 @@ Latency accepts 0–60,000 ms. An omitted injection API value retains its 3,000 
 default; explicit zero clears it and invalid explicit values return 400 without
 changing configuration. Delay is persistent response latency, not a bandwidth cap.
 
-The viewer reads the actual HLS playlist or DASH MPD directly from a local
+The viewer reads a baseline HLS playlist or DASH MPD directly from a local
 simulator with its default proxy enabled. It requires ready health/session headers,
 omits cookies and control authorization, rejects redirects and limits responses
 to 4 MiB. HLS child choices come from same-origin variant/rendition declarations;
-segments and keys are not fetched. Refresh is manual and respects manifest freeze.
+segments and keys are not fetched. Refresh is manual and uses the versioned
+[baseline preview](manifest-preview.md): it bypasses local faults without consuming
+them or seeding/replacing freeze/cache snapshots. Unsupported peers receive no
+manifest request. The ordinary playback URL retains all configured faults.
 The control server does not expose an arbitrary-URL fetching endpoint.
 
 Connected details retain a root playback URL separately from the displayed HLS

@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Inert versioned HLS/DASH baseline manifest previews, including layered simulator
+  origins; inspection cannot consume faults or establish freeze/cache snapshots.
+  Unsupported peers are rejected before a manifest request. Advertised HLS/DASH media
+  and initialization identity takes precedence over misleading URL extensions.
+
 - Exact-candidate expanded core release review, separate browser fault/restoration
   observations, decoded fixture and endurance gates, and publication preparation.
 - Streaming validation of long rotated traces, native test-viewer origin isolation,

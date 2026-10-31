@@ -44,8 +44,8 @@ npm run fault-control
 Open `http://127.0.0.1:19090` to change faults. Under **Generated manifest**, paste
 the stream URL and select **Load Manifest**. HLS offers master/child selection;
 DASH displays its MPD. The stream card shows protocol, mode, session ID and a
-copyable root playback URL. **Refresh Manifest** reads the current response manually,
-including an intentional freeze. The viewer supports simulators on this computer
+copyable root playback URL. **Refresh Manifest** reads a fresh generated baseline preview; it bypasses local
+faults and does not consume an armed fault or seed freeze/cache snapshots. The viewer supports simulators on this computer
 with the default proxy enabled; it does not fetch media or keys. **Copy Manifest**
 and **Download Manifest** export the displayed snapshot without another request.
 HLS downloads use `.m3u8`; DASH uses `.mpd`. These are raw manifests, not media
@@ -80,7 +80,7 @@ files for independent sessions. Stop sessions before regenerating sample assets.
 | Manual faults | Segment 403/404, malformed media, fixed response delay, manifest freeze, and limited encrypted-origin HLS key faults. |
 | Network conditions | Shared per-session media bandwidth ceiling and additional random media/manifest response jitter. |
 | Scenarios | Seeded media, manifest and init HTTP status or bounded body-stall/abort rules with same-resource retry assertions; timed bandwidth, seeded jitter and manifest freeze/resume profiles. |
-| Inspection | Actual HLS/DASH manifests in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
+| Inspection | Generated HLS/DASH baseline previews in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
 | Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS/DASH bandwidth-adaptation and timed HLS/DASH media-outage checks. |
 
 **Limits:** no LL-HLS/LL-DASH, commercial DRM, ads or shared
@@ -207,6 +207,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Multi-attempt retries](docs/multi-attempt-retry.md) | Three failures, then same-resource/range HTTP success, with sequential completion evidence. |
 | [Bounded transport faults](docs/transport-scenarios.md) | Headers-only/body stalls, incomplete connection aborts, timing/byte evidence and cleanup bounds. |
 | [Manifest/init targeting](docs/resource-scenarios.md) | Resource selectors, local fMP4 HLS origin, HTTP isolation and retry evidence. |
+| [Inert manifest previews](docs/manifest-preview.md) | Inspection semantics, source failures and isolated verification. |
 | [Manifest freeze/resume](docs/manifest-freeze.md) | Simulator snapshot stability, live media availability, local clock and current-timeline resume. |
 | [Sustained media outages](docs/sustained-outages.md) | Timed HLS/DASH 503 outages, measured stall/resume and explicit retry settings. |
 | [HLS automatic ABR](docs/hls-abr.md) | Reproducible bandwidth drop/restoration with rendered downshift/upshift evidence. |

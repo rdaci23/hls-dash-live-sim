@@ -33,9 +33,10 @@ targets require loading the advertised manifest/child playlist first. Refresh Ru
 after inspecting a new child playlist. Start validates that inventory again,
 without fetching a target or consuming a fault; HLS TS has no separate
 initialization object. Select **Arm Preset**, prepare your player, then **Start
-Scenario**. **Refresh Run** updates progress without consuming a fault. Manifest
-inspection can consume a manifest fault, so refresh run status when observing
-without sending a matching GET.
+Scenario**. **Refresh Run** and **Load/Refresh Manifest** do not consume faults. The manifest
+viewer displays a fresh [baseline preview](manifest-preview.md), bypassing local
+faults without changing freeze/cache snapshots. Playback URLs still exercise the
+real scenario, including frozen or malformed responses.
 
 **Reset Run** cancels only this run's affected in-flight responses, removes its
 timers and freeze snapshots, archives its result and creates a new run ID. It

@@ -1,3 +1,4 @@
+import { manifestPreview, MANIFEST_PREVIEW } from "./manifest-preview.js";
 import type { ServiceHooks } from "./scenario-services.js";
 import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import path from "node:path";
@@ -289,7 +290,7 @@ export async function startHlsim(
   } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();throw error; } })();
   const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
-    const { scenario, faults } = context();
+    let { scenario, faults } = context();
     const sendMedia: FaultRuntime["sendMedia"] = async (response, status, body, headers, method, signal, trace, enabled) => {
       if (await scenario?.deliver(response, status, body, headers, method, signal, trace, () => faults.transportGrant(trace))) return;
       const ordinary = trace?.hasBodyFault() ? {status,body,headers} : conditionalResponse(status,body,headers,method,conditionalHeaders(req.headers));
@@ -297,6 +298,9 @@ export async function startHlsim(
     };
     try {
       if (preflight(req, res, host, !!runs)) return;
+      const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      const observing = manifestPreview(req,res,dummy ? requestUrl.pathname === "/proxy.m3u8" || variants.some(v=>requestUrl.pathname === "/live/"+v.uri) : lookupResource(requestUrl)?.kind === "playlist",trace);
+      if (observing) scenario = undefined;
       if (runs && await runs.handle(req, res)) return;
       if (scenario && runs) trace.run(runs.runId);
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -308,6 +312,7 @@ export async function startHlsim(
             protocol: "hls",
             mode: dummy ? mode : "proxy",
             status: "ready",
+            manifestPreview: MANIFEST_PREVIEW,
             scenario: scenario?.report().result,
             scenarioRun: runs?.report(),
             pendingNetwork:faults.ownership(),
@@ -363,7 +368,7 @@ export async function startHlsim(
       }
       if (runs) runs.assertHealthy();
       if (scenario) scenario.assertCompatible();
-      if (!scenario || scenario.timeline) {
+      if (!observing && (!scenario || scenario.timeline)) {
         const requestVariant = url.pathname.match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
         const sourceLogical=options.ownedFixture?scenarioIndex?.resolve(lookupResource(url)?.url??options.manifestUrl):undefined;
         const lane = sourceLogical?.kind === "media" ? "media:"+sourceLogical.trackId : requestVariant
@@ -404,7 +409,7 @@ export async function startHlsim(
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
           if (scenario?.serveCache(res,trace)) return;
           const profile = scenario?.timeline?.profile();
-          const choice = snapshots.observe(url.pathname, timeline.playlist(match[1]));
+          const choice = observing ? {value:timeline.playlist(match[1]),action:undefined} : snapshots.observe(url.pathname, timeline.playlist(match[1]));
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
           await reply(200, choice.value, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
@@ -497,14 +502,14 @@ export async function startHlsim(
       if (scenarioFailure) { send(res, scenarioFailure, "Injected HLS resource failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
       if (scenario?.serveCache(res,trace)) return;
       if (
-        resource.kind === "playlist" &&
+        resource.kind === "playlist" && !observing &&
         snapshots.held(resource.url) !== undefined
       ) {
         faults.frozen(trace);
         await reply(200, snapshots.held(resource.url), { "Content-Type": "application/vnd.apple.mpegurl" });
         return;
       }
-      if (resource.kind === "playlist") snapshots.assertCapacity(resource.url);
+      if (resource.kind === "playlist" && !observing) snapshots.assertCapacity(resource.url);
       const config = getFaultConfig();
       const failure =
         scenario || req.method === "HEAD"
@@ -527,6 +532,7 @@ export async function startHlsim(
       const remote = await fetchRemote(resource.url, policy, {
         method: req.method === "HEAD" && !scenario?.handlesHttp(trace) ? "HEAD" : "GET",
         range: scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range,
+        manifestPreview: observing,
         maxBytes:
           resource.kind === "playlist" ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
         signal,
@@ -538,7 +544,7 @@ export async function startHlsim(
       if (resource.kind === "playlist" && req.method === "HEAD") { removeOriginValidators(remote.headers);delete remote.headers["content-length"]; }
       let body: Buffer | string = remote.body;
       const headers = remote.headers;
-      const held = resource.kind === "playlist" ? snapshots.held(resource.url) : undefined;
+      const held = resource.kind === "playlist" && !observing ? snapshots.held(resource.url) : undefined;
       if (held !== undefined) {
         faults.frozen(trace);
         await reply(200, held, { "Content-Type": "application/vnd.apple.mpegurl" });
@@ -552,7 +558,7 @@ export async function startHlsim(
           policy,
         );
         if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
-        const choice = snapshots.observe(resource.url, body as string);
+        const choice = observing ? {value:body as string,action:undefined} : snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");
         removeOriginValidators(headers);

@@ -402,10 +402,10 @@
       return text + decoder.decode();
     } finally { await reader.cancel().catch(() => {}); }
   }
-  async function simulatorRequest(url, signal) {
+  async function simulatorRequest(url, signal, preview = false) {
     // This request intentionally has no control Authorization header or cookies.
-    const response = await nativeFetch(url, { credentials: 'omit', redirect: 'error', cache: 'no-store', signal });
-    if (!response.ok) throw new Error('Simulator returned HTTP ' + response.status + '. Check the URL and active faults.');
+    const response = await nativeFetch(url, { credentials: 'omit', redirect: 'error', cache: 'no-store', signal, ...(preview ? {headers:{'X-Sim-Manifest-Preview':'baseline-v1'}} : {}) });
+    if (!response.ok) throw new Error('Simulator returned HTTP ' + response.status + (preview ? '. Check the source; preview bypasses faults on this simulator.' : '. Check the URL and active faults.'));
     return response;
   }
   function addChildren(text, base) {
@@ -435,22 +435,24 @@
     pending = controller;
     const request = ++generation;
     if (reset) { currentUrl = undefined; rootUrl = undefined; streamSnapshot = undefined; $('stream-details').hidden = true; $('stream-fault-panel').hidden = true; $('playlist-label').hidden = true; }
-    const timer = setTimeout(() => controller.abort(), 135000);
+    const timer = setTimeout(() => controller.abort(), 15000);
     clearManifest();
     scenarioCatalog = [];
     enableControls();
-    manifestStatus('Reading simulator… Intentional latency can delay this request.');
+    manifestStatus('Reading generated baseline… Preview does not exercise faults.');
     $('stream-status').textContent = 'Loading stream and manifest…';
     try {
       if (!connected) throw new Error('Connect to fault control first.');
       const target = localUrl(reset ? $('manifest-url').value.trim() : currentUrl.href);
       if (reset && !/\.(m3u8|mpd)$/i.test(target.pathname)) throw new Error('Paste the simulator’s .m3u8 or .mpd manifest URL.');
       const { health, id } = await healthAt(target, controller.signal, reset);
-      const response = await simulatorRequest(target, controller.signal);
+      if (health.manifestPreview !== 'baseline-v1') throw new Error('This simulator does not support inert manifest previews. Upgrade it before inspecting; no manifest request was made.');
+      const response = await simulatorRequest(target, controller.signal, true);
+      if (response.headers.get('X-Sim-Manifest-Preview') !== 'baseline-v1') throw new Error('The simulator did not acknowledge an inert manifest preview.');
       if (response.headers.get('X-Sim-Session-Id') !== id) throw Object.assign(new Error('Manifest and simulator session do not match. Load the manifest URL again.'), { sessionChanged: true });
       const text = await readText(response);
       if (health.protocol === 'hls' ? !/^\s*#EXTM3U(?:\s|$)/.test(text) : !/<(?:\w+:)?MPD(?:\s|>)/.test(text)) {
-        throw new Error('The response is not an HLS playlist or DASH MPD. An intentional manifest fault may be active.');
+        throw new Error('The response is not an HLS playlist or DASH MPD. The source manifest may be invalid; previews bypass simulator faults.');
       }
       if (request !== generation) return;
       if (reset) { rootUrl = target; playlists.clear(); playlists.set(target.href, 'Root manifest — ' + target.pathname); }
@@ -463,7 +465,7 @@
       $('selected-url-row').hidden = false;
       $('manifest-output').textContent = text;
       $('manifest-output').hidden = false;
-      manifestStatus(protocol.toUpperCase() + ' · fetched ' + new Date().toLocaleTimeString() + ' · ' + target.href);
+      manifestStatus(protocol.toUpperCase() + ' · fetched ' + new Date().toLocaleTimeString() + ' · baseline preview · ' + target.href);
     } catch (error) {
       if (request !== generation) return;
       if (error.sessionChanged) disconnectStream();

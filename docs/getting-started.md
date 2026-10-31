@@ -36,7 +36,7 @@ npm run fault-control -- --fault-config output/demo-faults.json
 
 Open `http://127.0.0.1:19090`, paste the playback URL into **Simulator manifest
 URL**, then select **Load Manifest**. The UI shows stream details, a copyable root
-playback URL, active faults and the actual manifest. Pick an HLS child playlist to
+playback URL, active faults and a fresh baseline manifest preview. Pick an HLS child playlist to
 see its live sequence. Copy/download exports the displayed text snapshot.
 
 The control UI inspects streams; it does not contain a video player. Give the

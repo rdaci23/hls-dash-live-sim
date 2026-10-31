@@ -69,13 +69,17 @@ async function simulator(t) {
   let version = 1;
   let protocol = 'hls';
   let ready = true;
+  let previewSupported = true;
   let faults = { rules: [], latencyMs: 0, manifestFreeze: false };
   const server = http.createServer((req, res) => {
     requests.push({ path: req.url, auth: req.headers.authorization, cookie: req.headers.cookie });
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Expose-Headers', 'X-Sim-Session-Id');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Sim-Session-Id, X-Sim-Manifest-Preview');
+    res.setHeader('Access-Control-Allow-Headers', 'X-Sim-Manifest-Preview');
+    if(req.method==='OPTIONS'){res.writeHead(204);return res.end();}
+    if(req.headers['x-sim-manifest-preview']==='baseline-v1')res.setHeader('X-Sim-Manifest-Preview','baseline-v1');
     res.setHeader('X-Sim-Session-Id', id);
-    if (req.url === '/health') return res.end(JSON.stringify({ status: ready ? 'ready' : 'stopped', protocol, mode: 'live', faults }));
+    if (req.url === '/health') return res.end(JSON.stringify({ status: ready ? 'ready' : 'stopped', protocol, mode: 'live', faults, manifestPreview:previewSupported?'baseline-v1':undefined }));
     if (req.url === '/manifest.mpd') return res.end('<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic"><Period id="' + version + '"/></MPD>');
     if (req.url === '/proxy.m3u8') return res.end('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",URI="/audio.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\n/r/video\n#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=100000,URI="/iframe.m3u8"\n#EXT-X-MEDIA:TYPE=AUDIO,URI="https://example.com/external.m3u8"\n');
     if (req.url === '/redirect.m3u8') { res.writeHead(302, { Location: '/unexpected' }); return res.end(); }
@@ -84,7 +88,7 @@ async function simulator(t) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }));
-  return { url: `http://127.0.0.1:${server.address().port}`, requests, update: () => version++, restart: () => id = randomUUID(), dash: () => protocol = 'dash', ready: value => ready = value, faults: value => faults = value };
+  return { url: `http://127.0.0.1:${server.address().port}`, requests, update: () => version++, restart: () => id = randomUUID(), dash: () => protocol = 'dash', ready: value => ready = value, previewSupported:value=>previewSupported=value, faults: value => faults = value };
 }
 const uiOptions = { skip: !process.env.RUN_UI_TESTS, timeout: 30000 };
 
@@ -351,4 +355,24 @@ for (const protocol of ['hls', 'dash']) test(`${protocol}: manual scenario UI ar
   await page.setViewportSize({ width: 360, height: 780 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, JSON.stringify(await page.evaluate(() => [...document.querySelectorAll("body *")].filter(element => element.getBoundingClientRect().right > innerWidth).map(element => ({ id: element.id, tag: element.tagName, right: element.getBoundingClientRect().right })))));
   assert.deepEqual(errors, []);
+});
+
+for(const protocol of ['hls','dash']) test(protocol+': manifest refresh observes without consuming the next manifest fault',uiOptions,async t=>{
+ const token=randomUUID(),url=await control(t,token),dir=await fs.mkdtemp(path.join(os.tmpdir(),'inert-manifest-ui-'));let session;
+ t.after(async()=>{await session?.close();await fs.rm(dir,{recursive:true,force:true});});
+ const scenarioFile=path.join(dir,'scenario.json');await fs.writeFile(scenarioFile,JSON.stringify({version:1,rules:[{target:{resource:'manifest',track:'root',segment:'next'},status:503}]}));
+ session=await require('../dist/support-tools/track-fixture-session.js').startTrackFixture({protocol,port:await port(),faultConfigPath:path.join(dir,'faults.json'),scenarioFile,scenarioStart:'manual',controlToken:token});
+ const page=await browserPage(t);await page.goto(url);await page.getByLabel('Control token (only for protected sessions)',{exact:true}).fill(token);await page.getByRole('button',{name:'Connect',exact:true}).click();await status(page,'Connected');
+ await page.getByLabel('Simulator manifest URL',{exact:true}).fill(session.url);await page.getByRole('button',{name:'Load Manifest',exact:true}).click();await status(page,protocol.toUpperCase()+' · fetched','manifest-status');
+ await session.runs.action('start',{runId:session.runs.runId});
+ await page.getByRole('button',{name:'Refresh Manifest',exact:true}).click();
+ await page.waitForFunction(()=>!document.getElementById('refresh-manifest').disabled);
+ assert.equal(session.scenario.report().rules[0].selected,0,'UI refresh must not consume the next manifest fault');
+ assert.equal(session.scenario.report().rules[0].applied,0);
+ const actual=await fetch(session.url);assert.equal(actual.status,503);await actual.arrayBuffer();assert.equal(session.scenario.report().rules[0].applied,1);
+});
+
+
+test('inspector rejects an older simulator before requesting a manifest',uiOptions,async t=>{
+ const url=await control(t),sim=await simulator(t);sim.previewSupported(false);const page=await browserPage(t);await page.goto(url);await status(page,'Connected');await page.getByLabel('Simulator manifest URL',{exact:true}).fill(sim.url+'/proxy.m3u8');await page.getByRole('button',{name:'Load Manifest',exact:true}).click();await status(page,'does not support inert manifest previews','manifest-status');assert.ok(!sim.requests.some(r=>r.path==='/proxy.m3u8'),'unsupported peer must not receive a raw manifest request');
 });

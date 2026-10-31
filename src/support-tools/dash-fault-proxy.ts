@@ -1,3 +1,4 @@
+import { manifestPreview, MANIFEST_PREVIEW } from "./manifest-preview.js";
 import type { ServiceHooks } from "./scenario-services.js";
 import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
@@ -87,9 +88,12 @@ export async function startDashFaultProxy(
   } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();throw error; } })();
   const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
-    const { scenario, faults } = context();
+    let { scenario, faults } = context();
     try {
       if (preflight(req, res, options.host, !!runs)) return;
+      const requestUrl = new URL(req.url ?? "/", "http://localhost");
+      const observing = manifestPreview(req,res,requestUrl.pathname === new URL(options.manifestPath ?? "/manifest.mpd",upstreamBase).pathname,trace);
+      if (observing) scenario = undefined;
       if (runs && await runs.handle(req, res)) return;
       if (scenario && runs) trace.run(runs.runId);
       const request = new URL(req.url ?? "/", "http://localhost");
@@ -100,6 +104,7 @@ export async function startDashFaultProxy(
           JSON.stringify({
             protocol: "dash",
             status: "ready",
+            manifestPreview: MANIFEST_PREVIEW,
             scenario: scenario?.report().result,
             scenarioRun: runs?.report(),
             pendingNetwork:faults.ownership(),
@@ -140,16 +145,17 @@ export async function startDashFaultProxy(
       }
       if (/^\/\//.test(req.url ?? ""))
         throw new HttpError(400, "Invalid proxy path");
-      const manifest = request.pathname.toLowerCase().endsWith(".mpd");
+      const advertised = options.serviceHooks?.classify(upstreamBase+request.pathname+request.search)??scenarioIndex?.resolve(upstreamBase+request.pathname+request.search);
+      const manifest = advertised ? advertised.kind === "manifest" : request.pathname.toLowerCase().endsWith(".mpd");
       // livesim2 puts stream options in the path. Query time/cache selectors must
       // not let a client escape an active freeze or grow its snapshot cache.
       const manifestKey = request.pathname;
-      const segment = /\.(m4s|mp4|cmfv|cmfa|m4v|m4a|m4i)$/i.test(
+      const segment = advertised ? ["media","init"].includes(advertised.kind) : /\.(m4s|mp4|cmfv|cmfa|m4v|m4a|m4i)$/i.test(
         request.pathname,
       );
       const logical = manifest
         ? { kind: "manifest" as const, trackId: "root", trackType: "root" as const, key: `dash:manifest:${request.pathname}` }
-        : options.serviceHooks?.classify(upstreamBase+request.pathname+request.search)??scenarioIndex?.resolve(upstreamBase + request.pathname + request.search);
+        : advertised;
       trace.resource(
         upstreamBase + request.pathname + request.search,
         manifest ? "manifest" : logical?.kind === "init" ? "init" : segment ? "segment" : "other",
@@ -158,7 +164,7 @@ export async function startDashFaultProxy(
       if (runs) runs.assertHealthy();
       if (scenario) scenario.assertCompatible();
       // Media/manifest latency faults must not skew the UTC reference itself.
-      if ((!scenario || scenario.timeline) && (manifest || segment)) {
+      if (!observing && (!scenario || scenario.timeline) && (manifest || segment)) {
         await faults.delay(signal, trace, req.method, true, manifest ? `manifest:${request.pathname}` : `${logical?.kind ?? "media"}:${logical?.trackId ?? "unknown"}`);
       }
       const profile = scenario?.timeline?.profile();
@@ -186,13 +192,13 @@ export async function startDashFaultProxy(
           send(res,ordinary.status,ordinary.body,ordinary.headers,req.method);
         }
       };
-      const cached = manifest ? snapshots.held(manifestKey) : undefined;
+      const cached = manifest && !observing ? snapshots.held(manifestKey) : undefined;
       if (cached) {
         faults.frozen(trace, false, profile);
         await reply(cached.status, cached.body, cached.headers);
         return;
       }
-      if (manifest) snapshots.assertCapacity(manifestKey);
+      if (manifest && !observing) snapshots.assertCapacity(manifestKey);
       const remote = await fetchRemote(
         upstreamBase + request.pathname + request.search,
         policy,
@@ -200,6 +206,7 @@ export async function startDashFaultProxy(
           method: req.method === "HEAD" && !scenario?.handlesHttp(trace) ? "HEAD" : "GET",
           range: scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range,
           signal,
+          manifestPreview: observing,
           maxBytes: manifest ? 4 * 1024 * 1024 : 64 * 1024 * 1024,
         },
       );
@@ -209,7 +216,7 @@ export async function startDashFaultProxy(
       });
       if (manifest && req.method === "HEAD" && !scenario?.handlesHttp(trace)) { removeOriginValidators(remote.headers);delete remote.headers["content-length"]; }
       const latestProfile = scenario?.timeline?.profile();
-      const held = manifest ? snapshots.held(manifestKey) : undefined;
+      const held = manifest && !observing ? snapshots.held(manifestKey) : undefined;
       if (held) {
         faults.frozen(trace, false, latestProfile);
         await reply(held.status, held.body, held.headers);
@@ -226,7 +233,7 @@ export async function startDashFaultProxy(
           if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
           if (scenarioIndex) scenario?.manifestBindings(trace,scenarioIndex.manifestBindings());
-          const choice = snapshots.observe(manifestKey, remote);
+          const choice = observing ? {value:remote,action:undefined} : snapshots.observe(manifestKey, remote);
           if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);
           remote.body = choice.value.body;
           remote.headers = choice.value.headers;

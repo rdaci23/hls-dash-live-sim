@@ -10,9 +10,9 @@ limitation must never be hidden or presented as a simulator pass.
 | 1. Selective rendition outages | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
 | 2. Realistic network presets | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
-| 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
-| 5. CDN/publication/HTTP policy | Simulator HTTP implementation verified; targeted browser evidence pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
-| 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault browser observations pending | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
+| 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations captured with compatibility limits | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
+| 5. CDN/publication/HTTP policy | Simulator HTTP implementation verified; targeted browser observations captured with compatibility limits | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
+| 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault observations captured with compatibility limits | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Valid restart/event and invalid/DVR HTTP checks pass locally; DVR browser limits retained | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | HTTP implementation and decoded AES/auth-client checks pass locally | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
 | 9. Endurance/concurrency | Ten-minute smoke qualified locally at `93333b4`; final candidate four-hour/CI gates pending | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
@@ -230,3 +230,14 @@ have negative/unit checks, and the real repeated-stop test validates complete
 source/viewer files, zero counters and exited PIDs. The earlier partial soak stays
 unqualified. The corrected candidate requires a fresh exact-commit full review
 and four-hour run; no earlier result silently qualifies it.
+
+### Inspection isolation follow-up
+
+The control page uses explicit baseline manifest previews. Repeated previews do
+not consume manifest rules, establish rollback prerequisites, populate negative
+caches or seed/replace freeze snapshots. Nested simulator origins receive the
+same versioned intent. Unsupported peers cannot silently fall back to a playback
+GET. `npm run manifest:preview` retains both-protocol HTTP isolation, cache body
+identity and restoration evidence; UI tests verify the browser path separately.
+HLS/DASH advertised resource kinds also override filename extensions. Final candidate
+qualification must include this change rather than reuse an earlier soak.

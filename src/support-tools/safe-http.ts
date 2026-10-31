@@ -130,7 +130,7 @@ export interface RemoteResponse {
 export async function fetchRemote(
   value: string,
   policy: OriginPolicy,
-  options: { range?: string; maxBytes?: number; signal?: AbortSignal; method?: "GET" | "HEAD" } = {},
+  options: { range?: string; maxBytes?: number; signal?: AbortSignal; method?: "GET" | "HEAD"; manifestPreview?: boolean } = {},
 ): Promise<RemoteResponse> {
   let url = value;
   const signal = (
@@ -150,6 +150,7 @@ export async function fetchRemote(
       headers: {
         ...policy.headers(url),
         "Accept-Encoding": "identity",
+        ...(options.manifestPreview ? {"X-Sim-Manifest-Preview":"baseline-v1"} : {}),
         ...(options.range ? { Range: options.range } : {}),
       },
     });
@@ -354,7 +355,7 @@ export function sendHeaders(
   if (bodyless) headers = Object.fromEntries(Object.entries(headers).filter(([name]) => !/^content-length$/i.test(name)));
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, ${TRACE_HEADERS}`,
+    "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, X-Sim-Manifest-Preview, ${TRACE_HEADERS}`,
     "Cache-Control": "no-store",
     ...headers,
     ...(bodyless || length === undefined ? {} : { "Content-Length": String(length) }),
@@ -396,8 +397,8 @@ export function preflight(
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": controls ? "GET, HEAD, POST, OPTIONS" : "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range, Authorization" + (controls ? ", Content-Type, X-Sim-Session-Id" : ""),
-      "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, ${TRACE_HEADERS}`,
+      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range, Authorization, X-Sim-Manifest-Preview" + (controls ? ", Content-Type, X-Sim-Session-Id" : ""),
+      "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, X-Sim-Manifest-Preview, ${TRACE_HEADERS}`,
     });
     res.end();
     return true;

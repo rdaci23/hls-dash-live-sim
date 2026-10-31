@@ -53,7 +53,7 @@
     <p class="status" id="action-status" role="status" aria-live="polite">Connecting…</p>
     <section aria-labelledby="stream-heading">
       <h2 id="stream-heading">Connected stream</h2>
-      <p class="help">Paste the local simulator’s manifest URL. Inspection is read-only and can exercise manifest faults. Use a LAN-bound URL for devices; loopback URLs work only on this computer.</p>
+      <p class="help">Paste the local simulator’s manifest URL. Inspection previews the generated baseline without exercising simulator faults. Use a LAN-bound URL for devices; loopback URLs work only on this computer.</p>
       <fieldset id="manifest-fields" disabled>
         <label id="manifest-url-label">Simulator manifest URL
           <input id="manifest-url" type="url" placeholder="http://127.0.0.1:PORT/proxy.m3u8" autocomplete="off" />
@@ -240,7 +240,7 @@
 
     <section>
       <h2>Generated manifest</h2>
-      <p class="help">The response displayed below is the snapshot exported by Copy or Download. Refresh manually to inspect changes; frozen manifests stay frozen.</p>
+      <p class="help">The response displayed below is the snapshot exported by Copy or Download. Refresh manually to inspect the generated baseline; preview requests bypass simulator faults and do not seed frozen snapshots.</p>
       <div class="actions">
         <button id="refresh-manifest" class="secondary" disabled>Refresh Manifest</button>
         <button id="copy-manifest" class="secondary" disabled>Copy Manifest</button>
