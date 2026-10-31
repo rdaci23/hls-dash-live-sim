@@ -13,7 +13,8 @@ export type DiagnosticFault =
   | "response.latency"
   | "manifest.freeze"
   | "scenario.status"
-  | "scenario.transport";
+  | "scenario.transport"
+  | "scenario.payload";
 type EventType =
   | "session.started"
   | "session.closed"
@@ -90,7 +91,11 @@ export interface DiagnosticFields {
     | "capture_manifest"
     | "hold_manifest"
     | "stall_body"
-    | "abort_body";
+    | "abort_body"
+    | "replace_payload"
+    | "delay_headers"
+    | "drip_body"
+    | "break_framing";
 }
 export interface DiagnosticEvent extends DiagnosticFields {
   schemaVersion: 1;
@@ -127,6 +132,7 @@ const values = {
     "manifest.freeze",
     "scenario.status",
     "scenario.transport",
+    "scenario.payload",
   ],
   mode: ["once", "random", "always"],
   reason: [
@@ -143,6 +149,10 @@ const values = {
     "delay",
     "throttle",
     "corrupt_body",
+    "replace_payload",
+    "delay_headers",
+    "drip_body",
+    "break_framing",
     "corrupt_range",
     "capture_manifest",
     "hold_manifest",

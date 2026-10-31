@@ -24,6 +24,10 @@ Without `--fault-config`, a command uses `.hls-dash-faults.json` in its working
 directory, creating defaults if needed. That local file is ignored by Git. For
 reproducible work, explicitly select an isolated file under `output/` instead.
 
+See [payload/transport actions](payload-transport-scenarios.md) for intentionally
+invalid bodies, header delay, slow progress, HTTP/1.1 framing and supported
+shared-network combinations. These are scenario actions, not watched manual fields.
+
 ## Ready-to-copy manual configurations
 
 | Starting file | Behavior |

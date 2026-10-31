@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "resource": "manifest",
+        "track": "root",
+        "segment": "next"
+      },
+      "payload": {
+        "kind": "malformed-manifest"
+      }
+    }
+  ]
+}

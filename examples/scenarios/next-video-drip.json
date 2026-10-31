@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "track": "video:0",
+        "segment": "next"
+      },
+      "transport": {
+        "kind": "drip",
+        "afterBytes": 0,
+        "deadlineMs": 15000,
+        "chunkBytes": 8192,
+        "intervalMs": 100
+      },
+      "expectRetry": true
+    }
+  ]
+}

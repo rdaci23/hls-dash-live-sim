@@ -10,7 +10,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 1. Selective rendition outages | HTTP implementation verified; browser observations pending | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
 | 2. Realistic network presets | HTTP implementation verified; browser observations pending | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
-| 4. Payload and transport coverage | Planned | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
+| 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
 | 5. CDN/publication/HTTP policy | Planned | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
 | 6. Fixtures and independent tracks | Planned | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Planned | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
@@ -48,3 +48,12 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
 - Manual controls: both real adapters passed token/session/run rejection, inert
   reads, scoped cancellation and retained-result/export checks. Eight browser UI
   tests pass, including HLS/DASH manual-run interactions and narrow viewports.
+
+- CI run `41195510249` at manual-controls commit `c5e1a0c` did not start its
+  jobs: GitHub reported account payment/spending-limit restrictions. This is not
+  a CI pass; local committed HTTP evidence remains available.
+
+- Payload/transport development matrix: all 40 owned-fixture wire/payload/network
+  cases passed, including rate changes and cancellation. Regular suite: 338
+  passes, eight optional skips; eight Chrome UI tests and installed-package smoke
+  passed. Targeted fault-browser observations are still pending.

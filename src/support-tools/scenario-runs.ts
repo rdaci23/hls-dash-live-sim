@@ -24,12 +24,21 @@ const presets = [
   ["dash-audio-only-outage", "DASH audio media outage", "dash"],
   ["bandwidth-starvation", "Below-minimum bandwidth and restoration", "both"],
   ["bandwidth-oscillation", "Four bandwidth cycles", "both"],
+  ["next-malformed-manifest", "Malformed manifest with valid control", "both"],
+  ["next-damaged-media", "Damaged video with valid control", "both"],
+  ["next-wrong-track-init", "Wrong-track initialization", "both"],
+  ["next-stale-init", "Stale initialization after an encoder change", "both"],
+  ["next-video-header-delay", "Delay video response headers", "both"],
+  ["next-video-drip", "Slow video body progress", "both"],
+  ["next-video-content-length", "Incorrect HTTP/1.1 content length", "both"],
+  ["next-video-chunked", "Invalid HTTP/1.1 chunk framing", "both"],
   ["network-cycle", "Bandwidth, jitter and manifest freeze", "both"],
 ] as const;
 export function checkScenarioCapabilities(def: ScenarioDefinition, cap: ScenarioCapabilities): void {
   if (cap.protocol === "hls" && !cap.generated && (def.timeline || def.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new HttpError(422, "HLS origin sessions support manifest/init rules only");
   for (const rule of def.rules) {
+    if (rule.payload?.kind === "stale-init" && cap.generated) throw new HttpError(422, "Stale init requires an owned origin with changing matching initialization/media");
     if (rule.target.resource === "init" && !cap.initialization) throw new HttpError(422, "This stream has no initialization objects");
     if (cap.protocol === "dash" && rule.target.resource === "manifest" && !["root", "any"].includes(rule.target.track)) throw new HttpError(422, "DASH has one root manifest");
     if (cap.protocol === "dash" && rule.target.resource === "init" && rule.target.track === "root") throw new HttpError(422, "DASH init requires a declared track");
@@ -71,7 +80,7 @@ export class ScenarioRuns {
     const entries: Array<{ id: string; name: string; enabled: boolean; reason?: string; targets?: unknown; requires?: string; protocols?: string[]; expectedEffect?: string }> = presets.filter(p => p[2] === "both" || p[2] === this.capabilities.protocol).map(p => ({ id: p[0], name: p[1], enabled: true }));
     if (this.loaded) entries.unshift({ id: "loaded", name: "Definition loaded at startup", enabled: true });
     for (const entry of entries) {
-      try { const def = this.load(entry.id); checkScenarioCapabilities(def, this.capabilities); entry.protocols = [this.capabilities.protocol]; entry.targets = def.rules.map(rule => rule.target); entry.expectedEffect = def.timeline ? "Timed bandwidth/jitter/freeze profile, then healthy restoration" : def.rules.map(rule => rule.transport ? `Bounded ${rule.transport.kind} after ${rule.transport.afterBytes} bytes` : `HTTP ${rule.status} for matching resources`).join("; "); entry.requires = def.timeline ? "Generated sample / DASH engine; manual faults off" : "Matching advertised resource; manual faults off"; }
+      try { const def = this.load(entry.id); checkScenarioCapabilities(def, this.capabilities); entry.protocols = [this.capabilities.protocol]; entry.targets = def.rules.map(rule => rule.target); entry.expectedEffect = def.timeline ? "Timed bandwidth/jitter/freeze profile, then healthy restoration" : def.rules.map(rule => rule.payload ? `Intentional ${rule.payload.kind}; init payloads require a captured advertised donor/old init` : rule.transport ? `Bounded ${rule.transport.kind} after ${rule.transport.afterBytes} bytes` : `HTTP ${rule.status} for matching resources`).join("; "); entry.requires = def.timeline ? "Generated sample / DASH engine; manual faults off" : "Matching advertised resource; manual faults off"; }
       catch (error) { entry.enabled = false; entry.reason = error instanceof HttpError ? error.message : "Preset is unavailable"; }
     }
     return entries;

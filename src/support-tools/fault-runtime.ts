@@ -239,6 +239,22 @@ export class FaultRuntime {
       this.shapedBytes -= buffer.length;
     }
   }
+  /** Transport owns framing/buffers; grants share this session's media limiter. */
+  transportGrant(trace?: RequestTrace): (maximum: number, signal: AbortSignal) => Promise<number> {
+    if (!this.timeline) throw new HttpError(422, "Combined transport requires a scenario network timeline");
+    const selected = new Map<string, FaultEffect>();
+    const observe = () => {
+      const profile = this.timeline!.profile();
+      if (!profile.bandwidthKbps || !profile.phaseId) return undefined;
+      if (!selected.has(profile.phaseId)) selected.set(profile.phaseId, this.timeline!.effect("bandwidth", trace, "throttle", { bandwidthKbps: profile.bandwidthKbps }, profile));
+      return selected.get(profile.phaseId);
+    };
+    observe();
+    return async (maximum, signal) => {
+      const effect = observe(), bytes = await this.bandwidth.take(maximum, signal);
+      effect?.prepare(); return bytes;
+    };
+  }
   frozen(trace?: RequestTrace, capture = false, profile?: TimelineProfile): void {
     // The proxy records the snapshot it actually used, even if configuration
     // changed while this request was waiting on an origin or artificial delay.

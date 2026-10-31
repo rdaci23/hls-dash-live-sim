@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "resource": "init",
+        "track": "video:0",
+        "segment": "next"
+      },
+      "payload": {
+        "kind": "wrong-track-init",
+        "replacementTrack": "audio:0"
+      }
+    }
+  ]
+}

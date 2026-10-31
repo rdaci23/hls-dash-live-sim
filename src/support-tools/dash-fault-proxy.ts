@@ -165,7 +165,7 @@ export async function startDashFaultProxy(
         return;
       }
       const reply = async (status: number, body: Buffer | string, headers: Record<string, string>) => {
-        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace))
+        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace, () => faults.transportGrant(trace)))
           send(res, status, body, headers, req.method);
       };
       const cached = manifest ? snapshots.held(manifestKey) : undefined;
@@ -220,7 +220,7 @@ export async function startDashFaultProxy(
               trace,
             )
           : remote.body;
-      if (await scenario?.deliver(res, remote.status, body, remote.headers, req.method, signal, trace)) return;
+      if (await scenario?.deliver(res, remote.status, body, remote.headers, req.method, signal, trace, () => faults.transportGrant(trace))) return;
       if (segment)
         await faults.sendMedia(res, remote.status, body, remote.headers, req.method, signal, trace, !scenario || !!scenario.timeline);
       else send(res, remote.status, body, remote.headers, req.method);

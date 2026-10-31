@@ -224,3 +224,7 @@ installed. These checks do not replace the full playback and device gates.
 Opt-in [manual scenario runs](docs/scenario-controls.md) provide a preset catalog,
 session-scoped arm/start/reset and evidence downloads. Existing automatic startup
 remains the default. [Core coverage roadmap](docs/scenario-roadmap.md).
+
+[Payload and transport scenarios](docs/payload-transport-scenarios.md) cover
+explicit invalid manifests/media/init, header delays, slow progress, HTTP/1.1
+framing failures and verified shared-network combinations.

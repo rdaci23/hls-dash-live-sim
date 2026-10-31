@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "resource": "media",
+        "track": "video:0",
+        "segment": "next"
+      },
+      "payload": {
+        "kind": "damaged-media"
+      }
+    }
+  ]
+}

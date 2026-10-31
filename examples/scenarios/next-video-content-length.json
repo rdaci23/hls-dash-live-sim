@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "target": {
+        "track": "video:0",
+        "segment": "next"
+      },
+      "transport": {
+        "kind": "framing",
+        "afterBytes": 0,
+        "deadlineMs": 15000,
+        "framing": "content-length"
+      },
+      "expectRetry": true
+    }
+  ]
+}

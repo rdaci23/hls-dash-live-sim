@@ -52,7 +52,8 @@
     "rendition:verify": "npm run build && node scripts/verify-rendition-outages.cjs",
     "network:presets": "npm run build && node scripts/verify-network-presets.cjs",
     "resource:verify": "npm run build && node scripts/verify-resource-scenarios.cjs",
-    "controls:verify": "npm run build && node scripts/verify-scenario-controls.cjs"
+    "controls:verify": "npm run build && node scripts/verify-scenario-controls.cjs",
+    "faults:verify": "npm run build && node scripts/verify-core-faults.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

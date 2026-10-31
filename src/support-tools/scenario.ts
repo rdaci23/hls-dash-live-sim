@@ -4,6 +4,8 @@ import { HttpError } from "./safe-http.js";
 import { getFaultConfig } from "./live-stream-fault-config.js";
 import { parseTimeline, ScenarioTimeline, TimelinePhase } from "./scenario-timeline.js";
 import type { ServerResponse } from "node:http";
+import { PayloadFault, PayloadSnapshots } from "./payload-fault.js";
+import { send } from "./safe-http.js";
 import { TransportDelivery, TransportFault } from "./transport-fault.js";
 import type {
   RequestTrace,
@@ -38,6 +40,7 @@ export interface ScenarioRule {
   maxApplications: number;
   status?: number;
   transport?: TransportFault;
+  payload?: PayloadFault;
   expectRetry: boolean;
 }
 export interface ScenarioDefinition {
@@ -95,6 +98,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         "maxApplications",
         "status",
         "transport",
+        "payload",
         "expectRetry",
       ],
       label,
@@ -170,23 +174,51 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       fail(`${label} probability must be from 0 to 1`);
     if (!integer(maxApplications, 1, 10000))
       fail(`${label} maxApplications must be from 1 to 10000`);
+    let payload: PayloadFault | undefined;
+    if (rule.payload !== undefined) {
+      object(rule.payload, ["kind", "replacementTrack"], `${label} payload`);
+      const value = rule.payload;
+      if (!["malformed-manifest", "damaged-media", "wrong-track-init", "stale-init"].includes(value.kind)) fail(`${label} unsupported payload kind`);
+      const required = value.kind === "malformed-manifest" ? "manifest" : value.kind === "damaged-media" ? "media" : "init";
+      if (resource !== required) fail(`${label} payload does not match target resource`);
+      if (value.kind === "wrong-track-init") {
+        if (typeof value.replacementTrack !== "string" || !/^(video|audio|text):(?:0|[1-9]\d{0,2})$/.test(value.replacementTrack) || value.replacementTrack === rule.target.track)
+          fail(`${label} wrong-track-init requires a different advertised replacementTrack alias`);
+      } else if (value.replacementTrack !== undefined) fail(`${label} replacementTrack only applies to wrong-track-init`);
+      if (rule.status !== undefined || rule.transport !== undefined || outage || timeline || rule.expectRetry)
+        fail(`${label} payload cannot combine with status, transport, outage, timeline or retry assertions`);
+      payload = { kind: value.kind, ...(value.replacementTrack ? { replacementTrack: value.replacementTrack } : {}) };
+    }
     let transport: TransportFault | undefined;
     if (rule.transport !== undefined) {
-      object(rule.transport, ["kind", "afterBytes", "durationMs", "deadlineMs"], `${label} transport`);
+      object(rule.transport, ["kind", "afterBytes", "durationMs", "deadlineMs", "chunkBytes", "intervalMs", "framing", "network"], `${label} transport`);
       const value = rule.transport;
-      if (!["stall", "abort"].includes(value.kind) || !integer(value.afterBytes, 0, 8 * 1024 * 1024))
-        fail(`${label} transport requires kind stall/abort and afterBytes from 0 to 8388608`);
+      if (!["stall", "abort", "header-delay", "drip", "framing"].includes(value.kind) || !integer(value.afterBytes, 0, 8 * 1024 * 1024))
+        fail(`${label} transport requires a supported kind and afterBytes from 0 to 8388608`);
       const deadlineMs = value.deadlineMs ?? 15000;
       if (!integer(deadlineMs, 1, 60000)) fail(`${label} transport deadlineMs must be from 1 to 60000`);
-      if (value.kind === "stall" && (!integer(value.durationMs, 1, 30000) || value.durationMs >= deadlineMs))
+      if (["stall", "header-delay"].includes(value.kind) && (!integer(value.durationMs, 1, 30000) || value.durationMs >= deadlineMs))
         fail(`${label} stall durationMs must be from 1 to 30000 and smaller than deadlineMs`);
-      if (value.kind === "abort" && value.durationMs !== undefined)
+      if (!["stall", "header-delay"].includes(value.kind) && value.durationMs !== undefined)
         fail(`${label} abort does not accept durationMs`);
-      if (rule.status !== undefined || outage || timeline)
+      if (["header-delay", "drip", "framing"].includes(value.kind) && value.afterBytes !== 0) fail(`${label} this transport action requires afterBytes 0`);
+      if (value.kind === "drip") {
+        if (!integer(value.chunkBytes, 1, 65536) || !integer(value.intervalMs, 1, 1000)) fail(`${label} drip requires chunkBytes 1..65536 and intervalMs 1..1000`);
+      } else if (value.chunkBytes !== undefined || value.intervalMs !== undefined) fail(`${label} only drip accepts chunkBytes/intervalMs`);
+      if (value.kind === "framing") {
+        if (!["content-length", "chunked"].includes(value.framing)) fail(`${label} framing requires content-length or chunked`);
+      } else if (value.framing !== undefined) fail(`${label} only framing accepts framing`);
+      if (value.network !== undefined && value.network !== true) fail(`${label} network must be true when explicitly supplied`);
+      if (value.network && (!timeline || resource !== "media" || !["header-delay", "drip"].includes(value.kind) || timeline.some(phase => phase.manifestFreeze)))
+        fail(`${label} combined network supports media header-delay or drip with a non-freezing timeline`);
+      if (rule.status !== undefined || outage || (timeline && !value.network))
         fail(`${label} transport cannot combine with status, outage or a network timeline`);
       transport = { kind: value.kind, afterBytes: value.afterBytes,
-        ...(value.kind === "stall" ? { durationMs: value.durationMs } : {}), deadlineMs };
-    } else if (!statuses.includes(rule.status))
+        ...(["stall", "header-delay"].includes(value.kind) ? { durationMs: value.durationMs } : {}),
+        ...(value.kind === "drip" ? { chunkBytes: value.chunkBytes, intervalMs: value.intervalMs } : {}),
+        ...(value.kind === "framing" ? { framing: value.framing } : {}),
+        ...(value.network ? { network: true as const } : {}), deadlineMs };
+    } else if (!payload && !statuses.includes(rule.status))
       fail(`${label} status must be a supported HTTP failure status`);
     if (rule.expectRetry !== undefined && typeof rule.expectRetry !== "boolean")
       fail(`${label} expectRetry must be boolean`);
@@ -227,7 +259,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       ...(beforeMs !== undefined ? { beforeMs } : {}),
       probability,
       maxApplications,
-      ...(transport ? { transport } : { status: rule.status }),
+      ...(payload ? { payload } : transport ? { transport } : { status: rule.status }),
       expectRetry: rule.expectRetry ?? false,
     };
   });
@@ -298,12 +330,29 @@ export class ScenarioEngine {
   private closed = false;
   private deliveries = new WeakMap<RequestTrace, { fault: TransportFault; effect: { prepare(): void }; ready: boolean }>();
   private transport = new TransportDelivery();
+  private payloads = new PayloadSnapshots();
+  private resources = new WeakMap<RequestTrace, { media: LogicalMedia; ranged: boolean }>();
+  private payloadDeliveries = new WeakMap<RequestTrace, { fault: PayloadFault; effect: { prepare(): void }; ready: boolean }>();
+  payloadStatus() { return this.payloads.snapshot(); }
   transportStatus() { return this.transport.snapshot(); }
   async deliver(
     res: ServerResponse, status: number, body: Buffer | string,
     headers: Record<string, string>, method: string,
     signal: AbortSignal, trace: RequestTrace,
+    grantFactory?: () => (maximum: number, signal: AbortSignal) => Promise<number>,
   ): Promise<boolean> {
+    const resource = this.resources.get(trace), payload = this.payloadDeliveries.get(trace);
+    if (method === "GET" && resource && [200, 206].includes(status)) {
+      const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body);
+      if (payload) {
+        if (resource.ranged || status !== 200) throw new HttpError(422, "Payload actions require a complete 200 control response");
+        const changed = this.payloads.apply(payload.fault, resource.media, buffer);
+        const outputHeaders = { ...headers };
+        for (const key of Object.keys(outputHeaders)) if (/^(etag|last-modified|content-length|content-range)$/i.test(key)) delete outputHeaders[key];
+        payload.ready = true; payload.effect.prepare(); send(res, status, changed, outputHeaders, method); return true;
+      }
+      if (!resource.ranged && status === 200 && !this.closed && this.definition.rules.some(rule => ["stale-init", "wrong-track-init"].includes(rule.payload?.kind))) this.payloads.remember(resource.media, buffer);
+    }
     const selected = this.deliveries.get(trace);
     if (!selected || method !== "GET") return false;
     // Preparation is deferred until a valid body exists. Origin errors, oversized
@@ -311,7 +360,7 @@ export class ScenarioEngine {
     await this.transport.send(selected.fault, res, status, body, headers, signal, trace, () => {
       selected.ready = true;
       selected.effect.prepare();
-    });
+    }, selected.fault.network ? grantFactory?.() : undefined);
     return true;
   }
   constructor(
@@ -406,6 +455,7 @@ export class ScenarioEngine {
     this.assertCompatible();
     if (this.closed) throw new HttpError(409, "Scenario is closed");
     if (!media || method !== "GET") return 0;
+    if (this.definition.rules.some(rule => rule.payload)) this.resources.set(trace, { media, ranged: !!range });
     if (media.kind === "media") this.tracks.add(media.trackId);
     const rules = this.definition.rules;
     const matches = (rule: ScenarioRule) =>
@@ -531,21 +581,23 @@ export class ScenarioEngine {
         scenarioId: this.scenarioId,
         ruleId,
         faultId: "fault_" + hash(`${this.scenarioId}:${index}`).slice(0, 32),
-        fault: rule.transport ? "scenario.transport" : "scenario.status",
+        fault: rule.payload ? "scenario.payload" : rule.transport ? "scenario.transport" : "scenario.status",
         mode:
           rule.maxApplications === 1 && rule.kind !== "outage"
             ? "once"
             : rule.probability < 1
               ? "random"
               : "always",
-        action: rule.transport ? (rule.transport.kind === "stall" ? "stall_body" : "abort_body") : "response",
+        action: rule.payload ? "replace_payload" : rule.transport ? (rule.transport.kind === "stall" ? "stall_body" : rule.transport.kind === "header-delay" ? "delay_headers" : rule.transport.kind === "drip" ? "drip_body" : rule.transport.kind === "framing" ? "break_framing" : "abort_body") : "response",
         ...(rule.transport ? { afterBytes: rule.transport.afterBytes,
           stallMs: rule.transport.durationMs, deadlineMs: rule.transport.deadlineMs } : { status: rule.status }),
       });
       if (rule.maxApplications === 1 && rule.kind !== "outage") effect.consumed();
+      const payload = rule.payload ? { fault: rule.payload, effect, ready: false } : undefined;
+      if (payload) this.payloadDeliveries.set(trace, payload);
       const delivery = rule.transport ? { fault: rule.transport, effect, ready: false } : undefined;
       if (delivery) this.deliveries.set(trace, delivery);
-      else effect.prepare();
+      else if (!payload) effect.prepare();
       trace.record("scenario.matched", {
         ruleId,
         applications: state.selected,
@@ -553,8 +605,8 @@ export class ScenarioEngine {
       trace.onOutcome((outcome) => {
         if (outcome.outcome === "cancelled")
           state.failure = "injected_response_cancelled";
-        else if (delivery ? (!delivery.ready || ![200, 206].includes(outcome.status) ||
-          outcome.outcome !== (rule.transport.kind === "abort" ? "aborted" : "completed")) :
+        else if (payload ? (!payload.ready || outcome.status !== 200 || outcome.outcome !== "completed") : delivery ? (!delivery.ready || ![200, 206].includes(outcome.status) ||
+          outcome.outcome !== (["abort", "framing"].includes(rule.transport.kind) ? "aborted" : "completed")) :
           outcome.outcome !== "completed" || outcome.status !== rule.status)
           state.failure = "unexpected_fault_response";
         else state.applied++;
@@ -622,6 +674,7 @@ export class ScenarioEngine {
         maxApplications: rule.maxApplications,
         status: rule.status,
         ...(rule.transport ? { transport: rule.transport } : {}),
+        ...(rule.payload ? { payload: rule.payload } : {}),
         expectRetry: rule.expectRetry,
         selected: state.selected,
         applied: state.applied,
@@ -657,6 +710,7 @@ export class ScenarioEngine {
       tracks: [...this.tracks].sort(),
       ...(this.definition.rules.some(rule => rule.transport) ? { transport: this.transportStatus() } : {}),
       rules,
+      ...(this.definition.rules.some(rule => rule.payload) ? { payload: this.payloadStatus() } : {}),
       ...(timeline ? { timeline, profile: this.timeline.profile() } : {}),
     });
   }
@@ -664,6 +718,7 @@ export class ScenarioEngine {
     if (!this.closed) {
       this.time();
       this.timeline?.close();
+      this.payloads.close();
       this.closed = true;
       this.diagnostics.record("scenario.closed", {
         scenarioId: this.scenarioId,

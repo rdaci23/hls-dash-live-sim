@@ -266,7 +266,7 @@ export async function startHlsim(
   const transport = sessionServer(async (req, res, signal, trace) => {
     const { scenario, faults } = context();
     const sendMedia: FaultRuntime["sendMedia"] = async (response, status, body, headers, method, signal, trace, enabled) => {
-      if (await scenario?.deliver(response, status, body, headers, method, signal, trace)) return;
+      if (await scenario?.deliver(response, status, body, headers, method, signal, trace, () => faults.transportGrant(trace))) return;
       await faults.sendMedia(response, status, body, headers, method, signal, trace, enabled);
     };
     try {
@@ -347,7 +347,7 @@ export async function startHlsim(
           lane);
       }
       const reply = async (status: number, body: Buffer | string, headers: Record<string, string>) => {
-        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace))
+        if (!await scenario?.deliver(res, status, body, headers, req.method, signal, trace, () => faults.transportGrant(trace)))
           send(res, status, body, headers, req.method);
       };
       if (dummy) {
