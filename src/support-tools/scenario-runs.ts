@@ -103,6 +103,9 @@ export class ScenarioRuns {
         if (typeof body.presetId !== "string") throw new HttpError(400, "Choose a scenario preset");
         const definition = this.load(body.presetId); checkScenarioCapabilities(definition, this.capabilities);
         this.armed = definition; this.presetId = body.presetId;
+        // Binding a different immutable definition begins a new run, even if
+        // the previous armed definition was never started.
+        this.runId = randomUUID();
       } else if (name === "start") {
         if (this.active || !this.armed) throw new HttpError(409, "Arm a preset before starting a new run");
         const engine = new ScenarioEngine(this.armed, this.diagnostics);

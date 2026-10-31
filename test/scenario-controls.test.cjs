@@ -61,3 +61,16 @@ test('definitions remain immutable; history is bounded and drops are explicit', 
   }
   assert.equal(runs.report().previousRuns.length, 10); assert.equal(runs.report().droppedPreviousRuns, 2);
 });
+
+test('rearming binds a new immutable definition to a fresh ID and rejects stale controls', async t => {
+  const { ScenarioRuns } = require('../dist/support-tools/scenario-runs.js');
+  const { SessionDiagnostics } = require('../dist/support-tools/session-diagnostics.js');
+  const diagnostics = new SessionDiagnostics('dash'); t.after(() => diagnostics.close());
+  const runs = new ScenarioRuns(diagnostics, { protocol: 'dash', generated: true, initialization: true, videoTracks: 2 }, async () => {}, randomUUID());
+  const original = runs.runId;
+  const first = await runs.action('arm', { runId: original, presetId: 'next-manifest-retry' });
+  const second = await runs.action('arm', { runId: first.runId, presetId: 'next-video-retry' });
+  assert.equal(new Set([original, first.runId, second.runId]).size, 3);
+  await assert.rejects(runs.action('start', { runId: first.runId }), /changed/);
+  assert.equal(runs.report().presetId, 'next-video-retry');
+});
