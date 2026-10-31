@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Exact-candidate expanded core release review, separate browser fault/restoration
+  observations, decoded fixture and endurance gates, and publication preparation.
+- Streaming validation of long rotated traces, native test-viewer origin isolation,
+  separately owned simulator processes and per-process/aggregate RSS gates.
+
 - Ten-minute/concurrent-viewer and four-hour release-soak runners, authored A/V
   markers, bounded append-only diagnostic rotation, complete-file validation and
   explicit request/index/source cleanup counters.

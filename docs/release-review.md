@@ -8,7 +8,17 @@ generated media fixtures; third-party components retain their own licenses.
 Use the exact candidate's retained review report and CI run for final verification;
 results from an older commit do not qualify a newer code change.
 
-## Verified implementation candidate — 30 October 2026
+## Current expanded-core candidate
+
+The historical candidate below predates the expanded core program and cannot
+qualify it. Follow the [core roadmap](scenario-roadmap.md) for implementation and
+known compatibility limits in the [coverage matrix](coverage-matrix.md). The current candidate still requires its exact-commit
+full review, all core HTTP checks, healthy decoded fixtures, targeted browser
+observations, ten-minute concurrent smoke, four-hour soak and executing green CI.
+GitHub has prevented recent jobs from starting due to an account-level restriction;
+local passes are retained independently and do not replace CI.
+
+## Historical implementation candidate — 30 October 2026
 
 Candidate `824c39ec9702f219fd13d42e7e05d69a60ebdbb3` passed the
 [11 routine CI jobs](https://github.com/rdaci23/hls-dash-live-sim/actions/runs/41061539756)
@@ -116,11 +126,18 @@ runs the real control UI checks, installs a production-only package in a tempora
 directory, packs/extracts an archive and scans it for secrets. It also runs npm's
 vulnerability audit and all six full Chrome playback cases: healthy, startup 404
 and established-playback 404 for HLS and DASH, with normal local synchronization.
+It then runs the expanded core simulator verifiers, decoded track/lifecycle/local-
+service browser checks, targeted payload/publication/track browser observations,
+the origin-policy/RSS regression, interrupt cleanup, ten-minute smoke and actual
+four-hour concurrent release soak. The soak runs alongside the remaining local
+checks on the same candidate; a failure/interrupt closes every owned child and
+retains its failed partial evidence. Reserve several hours on an awake machine.
 It does not contact a Roku or change repository visibility.
 
 Reports retain the candidate commit, clean-tree checks, scanner version, archive
 hash and file inventory, redacted scan reports, step logs and browser evidence.
-Only complete successful checks set `candidateChecksPassed`. `releaseReady`
+Only complete successful local checks set `candidateChecksPassed`. This does not
+verify GitHub CI; inspect the exact run separately and retain it with the report. `releaseReady`
 always stays false because publication requires the decisions below. Interrupted
 or failed checks retain evidence and return a failing exit status. No archive is
 published or installed globally. Review the retained file list manually as well.
@@ -149,3 +166,6 @@ The simulator owns valid streams, delivered faults, restoration and diagnostics.
 Known dash.js HTTP fallback/multi-Period ABR behavior is documented as client
 compatibility evidence. Roku recovery fixes remain outside this repository.
 The [release checklist](release-checklist.md) retains those support limits.
+
+[Publication preparation](publication-preparation.md) documents branch protection,
+private vulnerability reporting and the separate approval and npm decisions.

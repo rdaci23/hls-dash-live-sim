@@ -256,3 +256,9 @@ AES-128 keys, authenticated media access/renewal and explicit local UTC faults.
 [Endurance verification](docs/endurance.md) provides a ten-minute smoke and a
 four-hour candidate soak with concurrent viewers, independent decoded A/V timing,
 bounded evidence rotation and explicit cleanup checks.
+
+[Targeted browser observations](docs/browser-scenario-observations.md) record payload,
+publication and audio/text fault delivery and HTTP restoration separately from player
+recovery. [Coverage matrix](docs/coverage-matrix.md) distinguishes HTTP proof, browser evidence
+and compatibility limits. [Publication preparation](docs/publication-preparation.md) lists exact-candidate
+gates and the settings to apply only after approval.

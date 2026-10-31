@@ -15,7 +15,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault browser observations pending | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Valid restart/event and invalid/DVR HTTP checks pass locally; DVR browser limits retained | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | HTTP implementation and decoded AES/auth-client checks pass locally | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
-| 9. Endurance/concurrency | Harness and short concurrent/interrupt checks implemented; ten-minute/four-hour qualification pending | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
+| 9. Endurance/concurrency | Ten-minute smoke qualified locally at `93333b4`; final candidate four-hour/CI gates pending | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
 | 10. Final publication review | Pending all gates | Exact-commit CI/browser/soak evidence, history/package/licenses/docs review, support matrix, branch protection and security-reporting preparation. Publication remains a separate approval. |
 
 Completed foundations: valid HLS/DASH baselines, local UTC, status and sustained
@@ -50,7 +50,7 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
   tests pass, including HLS/DASH manual-run interactions and narrow viewports.
 
 - CI run `41195510249` at manual-controls commit `c5e1a0c` did not start its
-  jobs: GitHub reported account payment/spending-limit restrictions. This is not
+  jobs: GitHub reported an account-level restriction. This is not
   a CI pass; local committed HTTP evidence remains available.
 
 - Payload/transport development matrix: all 40 owned-fixture wire/payload/network
@@ -63,7 +63,7 @@ Do not mark a milestone complete because its scaffolding or tests merely exist.
   fallback (fault-associated errors retained for review); DASH starvation
   high/low/high adaptation and continuation. Full committed matrix remains a
   separate evidence run. CI run `41196562047` at `f67c35e` was also prevented
-  from starting by GitHub account payment/spending-limit restrictions.
+  from starting by an account-level GitHub restriction.
 
 - Stale-init fixture correction: the earlier `f67c35e` stale-init control lacked
   a complete advertised generation transition. Its stale-init evidence is
@@ -92,8 +92,8 @@ ring-buffer evictions. Its on-disk file retained every event, from ID 1 through
 identity, contiguous IDs, endpoints, final newline and absence of loss markers,
 and records a complete-file SHA-256/byte/event manifest. Ring eviction remains
 visible; missing/truncated disk evidence still fails. Archived reports must keep
-their execution commit separate from any later analysis commit. Diagnostic
-rotation and the endurance milestones remain unimplemented.
+their execution commit separate from any later analysis commit. At that checkpoint, diagnostic
+rotation and endurance had not yet been implemented; see the later entries below.
 
 The corrected 40-case payload/transport matrix passed at `6c00f86` with a clean
 working tree. The seven-case browser observation matrix is **not** seven recovery
@@ -154,7 +154,7 @@ has not executed these commits because of its account payment/spending-limit gat
   passed HLS (`output/dvr-hls-freeze-clean-df20268/report.json`) and rejected DASH
   (`output/dvr-dash-freeze-clean-df20268/report.json`), retaining full diagnostics.
 - GitHub run `41210037076` at `df20268` started zero job steps. Its annotation
-  again reports failed account payments or a spending-limit restriction; it is
+  again reports an account-level restriction; it is
   not CI execution evidence.
 
 - Local services development matrix: seven HTTP passes, independent AES decrypt/
@@ -175,3 +175,33 @@ has not executed these commits because of its account payment/spending-limit gat
   counters after close. The real SIGINT check passed after disabling Playwright's
   default early process-exit handler. These are development checks, not the
   required ten-minute or four-hour qualification.
+
+## Endurance memory and expanded review checkpoint
+
+The first full smoke at `002cd10` failed the 128 MiB RSS-growth gate. Investigation
+isolated whole-part diagnostic parsing and healthy-request Playwright route
+retention in the verification driver. Streaming closed-file validation, a native
+origin policy and separately owned simulator processes now retain the unchanged
+per-process budget plus an additional 128 MiB aggregate-growth gate.
+
+The clean actual ten-minute run at `93333b4` passed both protocols: 76 HLS and 75
+DASH decoded A/V pulse pairs, maximum observed separation below 147 ms, complete
+closed evidence, roughly 40 MiB combined Node RSS growth, all ownership counters
+zero and all simulator/browser processes exited. The earlier failed report remains
+failed. This is local smoke evidence for that execution commit, not a four-hour
+or CI pass for a later candidate.
+
+The targeted browser runner added in `8e8e2cf` captures nine payload/publication/
+independent-track cases per protocol, separately recording affected browser
+responses, HTTP restoration and decoded continuation. Representative development
+checks captured both protocols for malformed manifests, damaged media, wrong init,
+framing and rollback. These development reports used a modified tree and do not
+qualify the full candidate matrix. Wrong-init startup checks do not claim decoded
+recovery. The complete matrix remains part of the exact candidate review.
+
+The expanded review now includes every core simulator verifier, the healthy
+browser baseline, decoded fixtures/lifecycle/local services, compatibility
+observations, installed-package/history/license checks, ten-minute smoke and
+actual four-hour soak. The [coverage matrix](coverage-matrix.md) and
+[publication preparation](publication-preparation.md) retain the evidence limits
+and remaining cutover settings. No command publishes or changes visibility.

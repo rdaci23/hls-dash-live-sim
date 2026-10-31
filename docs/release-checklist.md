@@ -121,6 +121,19 @@ that every future commit has passed. For the candidate, inspect the exact
 - LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
   deferred capabilities. They must not appear as supported preset promises.
 
-New features are not prerequisites for this narrow beta unless the advertised
-scope changes. Remaining release checks and publication decisions cannot be
-replaced by adding more streaming features.
+The [expanded core roadmap](scenario-roadmap.md) is now part of the pre-publication
+scope. Its later requirements supersede the older narrow-beta feature boundary.
+
+- [ ] All ten core milestones have qualified on the final commit, including the
+  complete HTTP matrix and targeted browser observations with compatibility limits.
+- [ ] Healthy owned audio/caption, restart/event and local-service browser checks
+  pass; video progress alone cannot qualify audio or captions.
+- [ ] Both protocols pass ten-minute concurrent smoke and the actual four-hour
+  release soak, with A/V timing, memory, retention and complete closed evidence.
+- [ ] Every owned process exits and transfer/index/timer counters drain.
+- [ ] Exact-candidate CI executes and passes; an account-level restriction is a
+  blocker even when local checks pass.
+
+See [publication preparation](publication-preparation.md) for the cutover settings.
+Remaining release checks and publication decisions cannot be replaced by adding
+more streaming features.

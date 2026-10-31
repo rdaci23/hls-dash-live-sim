@@ -90,6 +90,8 @@ Failed/interrupted runs still close their owned resources and retain partial
 reports with explicit failure reasons.
 
 CI defines the ten-minute smoke and retains evidence for seven days. The four-hour
-release run is a separate candidate gate. Check the actual run's report; a workflow
+release run is a separate candidate gate, also available through the optional
+`release_soak` workflow-dispatch input. Select the exact candidate and retain the
+resulting complete artifact; enabling the input alone does not qualify it. Check the actual run's report; a workflow
 definition or a successful short development run is not endurance qualification.
 See the [core roadmap](scenario-roadmap.md) and [release review](release-review.md).

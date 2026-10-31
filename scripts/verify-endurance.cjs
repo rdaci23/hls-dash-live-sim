@@ -1,5 +1,5 @@
 const fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http'), { execFileSync } = require('node:child_process'), { createHash, randomUUID } = require('node:crypto'), assert = require('node:assert/strict');
-const { create: startTrackFixture } = require('./endurance/source-process.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { open } = require('./browser/owned-player.cjs'), { read: raw } = require('./transport-scenarios/verify.cjs'), { read: completeDiagnostics } = require('./browser/complete-diagnostics.cjs'), { Evidence } = require('./endurance/evidence.cjs'), { fairness, Drift, qualifyDrift, qualification } = require('./endurance/acceptance.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs'), { initialization, fragment } = require('./dash-abr/fixture.cjs');
+const { create: startTrackFixture } = require('./endurance/source-process.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { open } = require('./browser/owned-player.cjs'), { read: raw } = require('./transport-scenarios/verify.cjs'), { read: completeDiagnostics } = require('./browser/complete-diagnostics.cjs'), { Evidence } = require('./endurance/evidence.cjs'), { fairness, Drift, qualifyDrift, qualification, coherentClocks } = require('./endurance/acceptance.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs'), { initialization, fragment } = require('./dash-abr/fixture.cjs');
 const root = path.resolve(__dirname, '..'), pause = ms => new Promise(r => setTimeout(r, ms)), hash = b => createHash('sha256').update(b).digest('hex');
 async function closeAgent(agent) { const sockets = [...Object.values(agent.sockets), ...Object.values(agent.freeSockets)].flat(), closed = sockets.map(socket => socket.closed ? Promise.resolve() : new Promise(resolve => socket.once('close', resolve))); agent.destroy(); await Promise.all(closed); assert.equal(Object.values(agent.requests).flat().length, 0); }
 async function port() { const s = http.createServer(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
@@ -308,6 +308,7 @@ async function main() {
             error ??= 'Node RSS exceeded warm-up baseline by 128 MiB';
         report.elapsedMs = performance.now() - began;
         report.wallElapsedMs = Date.now() - wallBegan;
+        if(!coherentClocks(report.elapsedMs,report.wallElapsedMs))error??='Wall/monotonic clock divergence exceeded two seconds; sleep or clock changes cannot qualify';
         report.aggregateRss = { warmBaselineBytes: aggregateBaseline, peakConservativeBytes: aggregatePeak, maximumGrowthBytes: 128 * 1024 * 1024 };
         if (aggregateBaseline !== undefined && aggregatePeak > aggregateBaseline + 128 * 1024 * 1024)
             error ??= "Aggregate Node RSS exceeded warm-up baselines by 128 MiB";
