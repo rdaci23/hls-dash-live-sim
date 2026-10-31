@@ -1,3 +1,4 @@
+import type { ServiceHooks } from "./scenario-services.js";
 import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import path from "node:path";
 import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
@@ -37,7 +38,9 @@ import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 
 export interface HLSStartOptions {
   lifecycleHooks?:LifecycleHooks;
+  serviceHooks?:ServiceHooks;
   ownedFixture?: boolean;
+  ownedAes?:boolean;
   ownedVideoTracks?: number;
   rendition?: "all" | "low" | "main";
   proxy?: boolean;
@@ -76,7 +79,7 @@ export interface HLSLogsOptions {
   name?: string;
 }
 export interface HlsSession {
-  sourceOwnership?: () => {lifecycleActions:number};
+  sourceOwnership?: () => {lifecycleActions:number;serviceActions?:number};
   networkOwnership?: () => ReturnType<FaultRuntime["ownership"]>;
   url: string;
   diagnostics?: SessionDiagnostics;
@@ -254,7 +257,7 @@ export async function startHlsim(
   });
   let scenario: ScenarioEngine | undefined;
   try {
-    if (definition && !manual) scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks);
+    if (definition && !manual) scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks);
   } catch (error) {
     diagnostics.close();
     throw error;
@@ -265,7 +268,7 @@ export async function startHlsim(
   if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();throw new Error("Publication actors require a live/event sample"); }
   const snapshots = new ManifestSnapshots<string>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "hls",lifecycleHooks:options.lifecycleHooks, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
+  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
     publicationAvailable: (kind,track,count) => dummy ? mode !== "vod" && (kind !== "rendition-lag" || (options.windowSegments ?? 6) > (count ?? 1)) : scenarioIndex?.publicationAvailable(kind,track,count) ?? false,
     advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
@@ -482,10 +485,10 @@ export async function startHlsim(
       const resource = lookupResource(url);
       if (!resource) throw new HttpError(404, "Unknown proxy resource");
       policy.check(resource.url);
-      const identified = scenarioIndex?.resolve(resource.url);
+      const identified = options.serviceHooks?.classify(resource.url)??scenarioIndex?.resolve(resource.url);
       // EXT-X-MAP and media can share a file through different byte ranges.
       // The advertised route kind, not just its origin URI, must agree.
-      const logical = (resource.kind === "playlist" && identified?.kind === "manifest") ||
+      const logical = resource.kind==="key"&&identified?.kind==="key"?identified:(resource.kind === "playlist" && identified?.kind === "manifest") ||
         (resource.kind === "init" && identified?.kind === "init") || (options.ownedFixture && resource.kind === "segment" && identified?.kind === "media") ? identified : undefined;
       const scenarioFailure = scenario?.decide(logical, req.headers.range, trace, req.method, req.headers);
       if (scenarioFailure) { send(res, scenarioFailure, "Injected HLS resource failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
@@ -545,7 +548,7 @@ export async function startHlsim(
           resource.url,
           policy,
         );
-        if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
+        if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
         const choice = snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");

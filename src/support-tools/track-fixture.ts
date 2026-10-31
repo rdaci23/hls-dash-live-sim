@@ -1,3 +1,4 @@
+import {FixtureServices} from "./fixture-services.js";
 import { FixtureLifecycle, type FixtureGeneration } from "./fixture-lifecycle.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -87,8 +88,9 @@ export class TrackFixturePublisher {
   private timelines = new Map<string, LiveHlsTimeline>();
   private origin?: Awaited<ReturnType<typeof sessionServer>>;
   readonly lifecycle:FixtureLifecycle;
+  readonly services:FixtureServices;
   private started:number;
-  constructor(readonly mode: StreamMode = 'live', videoRenditions = 2, private clock = () => performance.now(), private wallStarted = Date.now(), private windowSegments = 6) {
+  constructor(readonly mode: StreamMode = 'live', videoRenditions = 2, private clock = () => performance.now(), private wallStarted = Date.now(), private windowSegments = 6, servicesOptions:{protocol?:"hls"|"dash";aes?:boolean}={}) {
     if (!['live', 'event', 'vod'].includes(mode) || ![2, 3].includes(videoRenditions))
       throw Error('Fixture requires live/event/vod and two or three video renditions');
     const root = path.join(__dirname, 'assets/track-sample'), index = JSON.parse(fs.readFileSync(path.join(root, 'index.json'), 'utf8'));
@@ -96,6 +98,7 @@ export class TrackFixturePublisher {
       throw Error('Unsupported owned fixture metadata');
     this.tracks = index.tracks.filter((t: FixtureTrack) => t.type !== 'video' || Number(t.id.split(':')[1]) < videoRenditions);
     const started = this.started = clock();
+    this.services=new FixtureServices(servicesOptions.protocol??"hls",servicesOptions.aes??false);
     this.lifecycle=new FixtureLifecycle(mode,()=>this.positionSeconds());
     this.ast = wallStarted - windowSegments * 2000;
     for (const t of this.tracks) {
@@ -141,9 +144,11 @@ export class TrackFixturePublisher {
     const {first,end}=this.bound(t),generations=this.lifecycle.allGenerations,discontinuities=generations.filter(g=>g.id&&g.startSeconds/2<first).length;
     const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+Math.ceil(Math.max(...t.segments.map(s=>s.duration/t.timescale))),'#EXT-X-MEDIA-SEQUENCE:'+(withFault&&this.lifecycle.activeFault()?.kind==='sequence-rollback'&&this.lifecycle.activeFault()?.track===t.id?Math.max(0,first-4):first),'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
     if(this.mode!=='live')lines.push('#EXT-X-PLAYLIST-TYPE:'+this.mode.toUpperCase());
+    if(t.type!=='text'&&this.services.aes)lines.push('#EXT-X-KEY:METHOD=NONE');
     if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,this.lifecycle.generationAt(first).id)+'"');
     for(let n=first;n<end;n++){
-      const g=generations.find(g=>g.id&&g.startSeconds/2===n);if(g){lines.push('#EXT-X-DISCONTINUITY');if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,g.id)+'"');}
+      const g=generations.find(g=>g.id&&g.startSeconds/2===n);if(g){lines.push('#EXT-X-DISCONTINUITY');if(t.type!=='text'&&this.services.aes)lines.push('#EXT-X-KEY:METHOD=NONE');if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,g.id)+'"');}
+      if(t.type!=='text'&&this.services.aes)lines.push(this.services.encrypted(n)?'#EXT-X-KEY:METHOD=AES-128,URI="'+this.services.keyUri(n)+'",IV=0x'+this.services.iv(n).toString('hex'):'#EXT-X-KEY:METHOD=NONE');
       const s=t.segments[n%4],at=Number(s.baseTime)/t.timescale+Math.floor(n/4)*8;
       lines.push('#EXT-X-PROGRAM-DATE-TIME:'+new Date(this.ast+at*1000).toISOString(),'#EXTINF:'+(s.duration/t.timescale).toFixed(9)+',',this.mediaUri(t,n,true));
     }
@@ -152,6 +157,7 @@ export class TrackFixturePublisher {
   mpd(withFault=false):string{
     const dynamic=this.mode!=='vod'&&!this.lifecycle.ended,duration=this.mode==='vod'?8:this.lifecycle.endSeconds;
     const lines=['<?xml version="1.0" encoding="UTF-8"?>','<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="'+(dynamic?'dynamic':'static')+'" minBufferTime="PT2S"'+(dynamic?' availabilityStartTime="'+new Date(this.ast).toISOString()+'" publishTime="'+new Date().toISOString()+'" minimumUpdatePeriod="PT1S" timeShiftBufferDepth="PT'+(this.windowSegments*2)+'S" suggestedPresentationDelay="PT'+Math.min(6,this.windowSegments*2-2)+'S"':' mediaPresentationDuration="PT'+duration+'S"')+'>'];
+    if(dynamic)this.services.advertiseUtc();
     if(dynamic)lines.push('<UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-head:2014" value="/utc"/>');
     const generations=this.lifecycle.allGenerations.filter(g=>g.startSeconds<=this.positionSeconds());
     for(const [index,g]of generations.entries()){
@@ -187,9 +193,10 @@ export class TrackFixturePublisher {
       return;
     }
     if (url.pathname === '/utc') {
-      send(res, 200, new Date().toISOString(), { 'Content-Type': 'text/plain', Date: new Date().toUTCString() }, req.method);
+      const clock=this.services.utc(req.method);send(res,clock.status,clock.body,{'Content-Type':'text/plain',Date:clock.date,'Cache-Control':'no-store'},req.method);
       return;
     }
+    const key=this.services.key(url.pathname,req.method);if(key){res.once('finish',()=>key.body.fill(0));res.once('close',()=>key.body.fill(0));send(res,key.status,key.body,{'Content-Type':'application/octet-stream','Cache-Control':'no-store'},req.method);return;}
     const generationMatch=/^\/generation-(\d{1,2})(\/.*)$/.exec(url.pathname),generation=generationMatch?Number(generationMatch[1]):0,pathname=generationMatch?generationMatch[2]:url.pathname;
     if(!this.lifecycle.allGenerations.some(g=>g.id===generation))throw new HttpError(404,'Unknown fixture generation');
     const match = /^\/track\/(video|audio|text)\/(\d)\/(init\.m4s|stream\.m3u8|(?:segment|number)-(\d+)\.(m4s|vtt))$/.exec(pathname), track = match ? this.tracks.find(t => t.id === match[1] + ':' + match[2]) : undefined;
@@ -220,6 +227,9 @@ export class TrackFixturePublisher {
         const donor=fault?.kind==='reused-url-incompatible-media'&&fault.track===track.id?this.tracks.find(t=>t.id==='video:1'):track;
         body = retimeFragment(this.files.get(donor.segments[sequence % 4].file), donor, sequence, fault?.kind==='unannounced-timestamp-reset'&&fault.track===track.id?sequence%4:sequence);
       }
+    }
+    if(this.services.aes&&track.type!=='text'&&match[3]!=='init.m4s'){
+      const sequence=Number(match[4])-(match[3].startsWith('number-')?1:0);if(this.services.encrypted(sequence))body=this.services.encrypt(body,sequence);
     }
     let status = 200, headers: Record<string, string> = { 'Content-Type': contentType, 'Accept-Ranges': 'bytes', ETag: '"' + createHash('sha256').update(body).digest('hex') + '"' };
     if (req.method === 'GET' && req.headers.range) {
@@ -261,6 +271,6 @@ export class TrackFixturePublisher {
     const port = (transport.server.address() as {
       port: number;
     }).port;
-    return { port,url:'http://127.0.0.1:'+port,close:async()=>{this.lifecycle.close();await transport.close();} };
+    return { port,url:'http://127.0.0.1:'+port,close:async()=>{this.lifecycle.close();this.services.close();await transport.close();} };
   }
 }

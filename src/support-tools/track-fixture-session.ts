@@ -9,6 +9,7 @@ import path from "node:path";
 export interface TrackFixtureOptions extends HLSStartOptions {
   protocol: "hls" | "dash";
   videoRenditions?: number;
+  hlsAes?:boolean;
 }
 /** Local fixture origin ownership is separate from the externally bound adapter. */
 export async function startTrackFixture(options: TrackFixtureOptions): Promise<HlsSession> {
@@ -19,7 +20,11 @@ export async function startTrackFixture(options: TrackFixtureOptions): Promise<H
   if (!['hls', 'dash'].includes(options.protocol))
     throw Error('Fixture protocol must be hls or dash');
   options.signal?.throwIfAborted();
-  const definition = loadScenario(options.scenarioFile), publisher = new TrackFixturePublisher(options.mode ?? 'live', options.videoRenditions ?? 2, undefined, undefined, options.windowSegments ?? 6);
+  const definition = loadScenario(options.scenarioFile);
+  if(options.hlsAes&&options.protocol!=='hls')throw Error('Local AES fixture requires HLS');
+  if(options.hlsAes&&definition&&!['key-unavailable','wrong-key'].includes(definition.services?.kind))throw Error('AES fixture combinations require dedicated key presets; other compositions are unverified');
+  if(definition?.services?.kind==='token-expiry'&&options.scenarioStart!=='manual')throw Error('Local access-token scenarios require authenticated manual controls');
+  const publisher = new TrackFixturePublisher(options.mode ?? 'live', options.videoRenditions ?? 2, undefined, undefined, options.windowSegments ?? 6,{protocol:options.protocol,aes:options.hlsAes});
   let origin: Awaited<ReturnType<typeof publisher.start>>, session: HlsSession, closing: Promise<void> | undefined;
   const close = () => closing ??= (async () => {
     try {
@@ -33,19 +38,19 @@ export async function startTrackFixture(options: TrackFixtureOptions): Promise<H
     origin = await publisher.start();
     options.signal?.throwIfAborted();
     if (options.protocol === 'hls')
-      session = await startHlsim({ ...options, port, host, lifecycleHooks:publisher.lifecycle.hooks(options.protocol),ownedFixture: true, ownedVideoTracks: options.videoRenditions ?? 2, manifestUrl: origin.url + '/hls/master.m3u8', dummyContent: false });
+      session = await startHlsim({ ...options, port, host, lifecycleHooks:publisher.lifecycle.hooks(options.protocol),serviceHooks:publisher.services.hooks(),ownedFixture: true,ownedAes:options.hlsAes, ownedVideoTracks: options.videoRenditions ?? 2, manifestUrl: origin.url + '/hls/master.m3u8', dummyContent: false });
     else {
       setFaultConfigPath(options.faultConfigPath ?? process.env.HLS_FAULT_CONFIG ?? path.resolve(process.cwd(), '.hls-dash-faults.json'));
       if (options.faultProfile)
         applyConfigOverride({ profile: options.faultProfile });
       if (options.verbose !== undefined)
         applyConfigOverride({ logging: { verbose: options.verbose } });
-      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol), listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
+      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol),serviceHooks:publisher.services.hooks(), listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
       session = { url: `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(':') ? '[' + host + ']' : host}:${port}/dash/manifest.mpd`, diagnostics: proxy.diagnostics, networkOwnership: proxy.networkOwnership, get scenario() { return proxy.scenario; }, runs: proxy.runs, close: () => proxy.close() };
       console.info('Owned DASH track fixture ready: ' + session.url);
     }
     options.signal?.throwIfAborted();
-    return { url: session.url,sourceOwnership:()=>({lifecycleActions:publisher.lifecycle.pendingActions}), networkOwnership: session.networkOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
+    return { url: session.url,sourceOwnership:()=>({lifecycleActions:publisher.lifecycle.pendingActions,serviceActions:publisher.services.pendingActions}), networkOwnership: session.networkOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
   }
   catch (error) {
     await close();

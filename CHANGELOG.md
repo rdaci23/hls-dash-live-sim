@@ -5,22 +5,24 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## 0.2.0 — Unreleased
 
+First public beta, prepared on 30 October 2026. The version is finalized; the
+`v0.2.0` tag, GitHub release and public announcement are pending. Install from a
+[source checkout](docs/getting-started.md); no npm release is published.
+
+### Added
+
+- Local rotating HLS AES-128/clear cycles, key unavailability/wrong responses,
+  session-authenticated media token issue/expiry/renewal and named local UTC
+  failures, malformed responses and bounded skew. Secret-free evidence exports.
+
 - Bounded owned-video timestamp reset, sequence rollback and incompatible-media
   URL reuse, plus isolated DVR retention, outage joining and long-freeze probes.
-
 
 - Owned local encoder restarts with aligned HLS discontinuities/new initialization
   URLs and DASH Period/PTO transitions; growing event ENDLIST/static completion,
   isolated HTTP verification and rendered lifecycle checks.
 - Preserve HLS captions across restart timestamp maps and retain complete AAC
   loop presentation instead of trimming priming samples in every loop.
-
-
-First public beta, prepared on 30 October 2026. The version is finalized; the
-`v0.2.0` tag, GitHub release and public announcement are pending. Install from a
-[source checkout](docs/getting-started.md); no npm release is published.
-
-### Added
 
 - Added optional owned HLS fMP4/DASH tracks, distinguishable alternate AAC tones,
   authored HLS WebVTT/DASH wvtt, a third video rung, independent-track failure

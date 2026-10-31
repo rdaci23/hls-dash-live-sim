@@ -127,3 +127,8 @@ segment-delay bounds, asset requirements and configuration examples.
 
 [Owned track fixtures](track-fixtures.md) document `--fixture tracks`, the optional
 third video rendition, alternate audio/captions and per-track timeline shaping.
+
+The optional tracks source accepts HLS-only `--hls-aes` for rotating local
+AES-128 keys and clear transitions. [Local services](local-services.md) explains
+the additive `services` scenario object, authenticated `/scenario/access` endpoint
+and named UTC GET/HEAD exceptions. None is enabled in ordinary healthy streams.

@@ -249,3 +249,6 @@ remain available.
 
 [Owned lifecycle scenarios](docs/lifecycle-scenarios.md) add aligned encoder
 restarts and growing event completion to the optional local tracks fixture.
+
+[Offline local-service scenarios](docs/local-services.md) cover rotating HLS
+AES-128 keys, authenticated media access/renewal and explicit local UTC faults.

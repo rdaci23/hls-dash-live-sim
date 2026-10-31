@@ -1,3 +1,4 @@
+import type { ServiceHooks } from "./scenario-services.js";
 import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
 import {
@@ -18,6 +19,7 @@ import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
 export interface DashFaultProxyOptions {
   lifecycleHooks?:LifecycleHooks;
+  serviceHooks?:ServiceHooks;
   listenPort: number;
   upstreamPort: number;
   host?: string;
@@ -56,12 +58,12 @@ export async function startDashFaultProxy(
   let scenario: ScenarioEngine | undefined;
   try {
     if (definition && !manual)
-      scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks);
+      scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks);
   } catch (error) {
     diagnostics.close();
     throw error;
   }
-  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.services?.kind==="token-expiry" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
   const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.publication?.kind === "rendition-lag" || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
     manual || !!scenario?.definition.lifecycle || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init"),!!options.lifecycleHooks) : undefined;
@@ -70,7 +72,7 @@ export async function startDashFaultProxy(
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks, generated: true, initialization: true, videoTracks: options.videoTracks,
+  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: true, initialization: true, videoTracks: options.videoTracks,
     publicationAvailable: (kind,track) => scenarioIndex?.publicationAvailable(kind,track) ?? false,
     advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
@@ -144,7 +146,7 @@ export async function startDashFaultProxy(
       );
       const logical = manifest
         ? { kind: "manifest" as const, trackId: "root", trackType: "root" as const, key: `dash:manifest:${request.pathname}` }
-        : scenarioIndex?.resolve(upstreamBase + request.pathname + request.search);
+        : options.serviceHooks?.classify(upstreamBase+request.pathname+request.search)??scenarioIndex?.resolve(upstreamBase + request.pathname + request.search);
       trace.resource(
         upstreamBase + request.pathname + request.search,
         manifest ? "manifest" : logical?.kind === "init" ? "init" : segment ? "segment" : "other",
@@ -158,8 +160,8 @@ export async function startDashFaultProxy(
       }
       const profile = scenario?.timeline?.profile();
       if (
-        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
-        (scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || !scenario.settled) &&
+        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.services?.kind==="token-expiry" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
+        (scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled) &&
         segment &&
         !logical &&
         req.method === "GET"
@@ -218,7 +220,7 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || !scenario.settled))
+          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
           if (scenarioIndex) scenario?.manifestBindings(trace,scenarioIndex.manifestBindings());
           const choice = snapshots.observe(manifestKey, remote);

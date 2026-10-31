@@ -16,7 +16,8 @@ export type DiagnosticFault =
   | "scenario.transport"
   | "scenario.payload"
   | "scenario.cache"
-  | "scenario.publication";
+  | "scenario.publication"
+  | "scenario.service";
 type EventType =
   | "session.started"
   | "session.closed"
@@ -69,7 +70,7 @@ export interface DiagnosticFields {
   phaseId?: string;
   manifestFreeze?: boolean;
   trackId?: string;
-  targetKind?: "media" | "manifest" | "init";
+  targetKind?: "media" | "manifest" | "init" | "key" | "utc";
   segmentId?: string;
   segmentOrdinal?: number;
   attempt?: number;
@@ -139,7 +140,7 @@ const values = {
   result: ["pending", "passed", "failed", "incomplete"],
   method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
   resourceKind: ["manifest", "segment", "init", "key", "other"],
-  targetKind: ["media", "manifest", "init"],
+  targetKind: ["media", "manifest", "init", "key", "utc"],
   resourceSource: ["sample", "origin", "livesim2", "local"],
   fault: [
     "segment.missing",
@@ -156,6 +157,7 @@ const values = {
     "scenario.payload",
     "scenario.cache",
     "scenario.publication",
+    "scenario.service",
   ],
   mode: ["once", "random", "always"],
   reason: [

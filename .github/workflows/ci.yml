@@ -212,6 +212,33 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  local-services:
+    name: Offline keys, access renewal and UTC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chrome
+      - run: npm run services:verify -- --output output/ci-local-services
+      - run: npm run browser:services -- --output output/ci-service-browser
+      - name: Retain service evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: local-services-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/ci-local-services/
+            output/ci-service-browser/
+          if-no-files-found: error
+          retention-days: 7
+
   owned-lifecycle:
     name: Owned lifecycle and DVR
     runs-on: ubuntu-24.04

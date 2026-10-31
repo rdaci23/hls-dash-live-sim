@@ -242,6 +242,7 @@ const program = yargs(hideBin(process.argv))
         })
         .option("sim-type", { choices: ["hls", "dash"] })
         .option("fixture", { choices: ["tracks"], description: "Owned local fMP4, alternate audio and caption fixture; no DASH container" })
+        .option("hls-aes",{type:"boolean",default:false,description:"Local rotating AES-128 and clear transitions; requires HLS tracks fixture"})
         .option("video-renditions", { choices: [2,3], type: "number", description: "Video ladder size for --fixture tracks (default 2)" })
         .option("manifest-url", {
           alias: "manifestUrl",
@@ -347,9 +348,10 @@ const program = yargs(hideBin(process.argv))
         ...auth(args),
       };
       if (args.fixture && (args.asset || args.image || args.name || args["force-pull"] || args["periods-per-hour"] || args.periods || args["period-durations"] || args.utc === "external" || args["fault-proxy"] === false)) throw new Error("Owned tracks cannot combine with engine assets, image/Period options, external UTC or disabled fault proxy");
+      if(args["hls-aes"]&&(!args.fixture||type!=="hls"))throw new Error("hls-aes requires HLS --fixture tracks");
       if (args["video-renditions"] && !args.fixture) throw new Error("video-renditions requires --fixture tracks");
       const session = await starting(async (signal) =>
-        args.fixture ? await startTrackFixture({ ...common, signal, protocol: type, mode: args.mode, windowSegments: args["window-segments"], videoRenditions: args["video-renditions"], proxy: args.proxy }) : type === "dash"
+        args.fixture ? await startTrackFixture({ ...common, signal, protocol: type, mode: args.mode, windowSegments: args["window-segments"], videoRenditions: args["video-renditions"],hlsAes:args["hls-aes"], proxy: args.proxy }) : type === "dash"
           ? await startLivesim2({
               ...common,
               signal,

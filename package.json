@@ -66,7 +66,9 @@
     "browser:lifecycle": "npm run build && node scripts/verify-lifecycle-browser.cjs",
     "lifecycle:invalid": "npm run build && node scripts/verify-invalid-lifecycle.cjs",
     "dvr:verify": "npm run build && node scripts/verify-dvr-scenarios.cjs",
-    "browser:dvr": "npm run build && node scripts/verify-dvr-browser.cjs"
+    "browser:dvr": "npm run build && node scripts/verify-dvr-browser.cjs",
+    "services:verify": "npm run build && node scripts/verify-local-services.cjs",
+    "browser:services": "npm run build && node scripts/verify-service-browser.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

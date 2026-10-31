@@ -390,12 +390,12 @@ export function preflight(
     send(res, 403, "Only local player origins may access this session");
     return true;
   }
-  const controls = scenarioControls && /^\/scenario\/(arm|start|reset)$/.test(new URL(req.url ?? "/", "http://localhost").pathname);
+  const controls = scenarioControls && /^\/scenario\/(arm|start|reset|access)$/.test(new URL(req.url ?? "/", "http://localhost").pathname);
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": controls ? "GET, HEAD, POST, OPTIONS" : "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range" + (controls ? ", Content-Type, Authorization, X-Sim-Session-Id" : ""),
+      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range, Authorization" + (controls ? ", Content-Type, X-Sim-Session-Id" : ""),
       "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, ${TRACE_HEADERS}`,
     });
     res.end();

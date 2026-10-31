@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "services": {
+    "kind": "token-expiry",
+    "afterMs": 30000,
+    "beforeMs": 45000
+  }
+}

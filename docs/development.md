@@ -30,6 +30,8 @@ use your existing Chrome installation.
 
 | Command | Coverage | Requirements |
 | --- | --- | --- |
+| `npm run services:verify` | Seven local key/auth/UTC HTTP cases, scope, restoration and redacted exports. | Node; no Docker. |
+| `npm run browser:services` | Three-minute decoded AES baseline and HLS/DASH local-token renewal. | Chrome; no Docker. |
 | `npm run lifecycle:invalid` | Six intentional timestamp/sequence/incompatible-URL checks; controls, HEAD and restoration. | Node, no Docker. |
 | `npm run dvr:verify` | Retention expiry, join outage and 45-second freeze/resume HTTP checks. | Node, no Docker; about three minutes. |
 | `npm run browser:dvr` | Explicit pause/seek and separate automatic join/long-freeze observations. | Chrome, no Docker; several minutes. |

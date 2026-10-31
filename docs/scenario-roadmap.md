@@ -14,7 +14,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 5. CDN/publication/HTTP policy | Simulator HTTP implementation verified; targeted browser evidence pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
 | 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault browser observations pending | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Valid restart/event and invalid/DVR HTTP checks pass locally; DVR browser limits retained | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
-| 8. Offline keys/auth/UTC faults | Planned | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
+| 8. Offline keys/auth/UTC faults | HTTP implementation and decoded AES/auth-client checks pass locally | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
 | 9. Endurance/concurrency | Planned | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
 | 10. Final publication review | Pending all gates | Exact-commit CI/browser/soak evidence, history/package/licenses/docs review, support matrix, branch protection and security-reporting preparation. Publication remains a separate approval. |
 
@@ -147,3 +147,20 @@ has not executed these commits because of its account payment/spending-limit gat
   player settings in both protocols; long-freeze recovery passed HLS decoded
   tracks/continuation but DASH stalled after its automatic seek. These are
   retained compatibility observations, not simulator or release recovery passes.
+
+- Invalid/DVR checkpoint `df20268`: clean six-case HTTP reports at
+  `output/invalid-clean-df20268/report.json` and
+  `output/dvr-clean-df20268/report.json`. The stricter fresh-window browser probe
+  passed HLS (`output/dvr-hls-freeze-clean-df20268/report.json`) and rejected DASH
+  (`output/dvr-dash-freeze-clean-df20268/report.json`), retaining full diagnostics.
+- GitHub run `41210037076` at `df20268` started zero job steps. Its annotation
+  again reports failed account payments or a spending-limit restriction; it is
+  not CI execution evidence.
+
+- Local services development matrix: seven HTTP passes, independent AES decrypt/
+  rotation/clear-control checks, a three-minute HLS encrypted decoded baseline
+  and HLS/DASH authenticated-client renewal with 60-second continuation passed.
+  The client receives the actual 401, renews and retries before the player sees
+  the response; bare-player HLS 401 recovery is explicitly unqualified.
+  472 regular tests pass, eight optional integrations skip; UI eight checks and
+  installed-package smoke pass. Endurance and exact candidate CI remain open.
