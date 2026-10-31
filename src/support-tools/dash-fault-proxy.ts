@@ -68,7 +68,7 @@ export async function startDashFaultProxy(
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks,
+  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks,
     publicationAvailable: (kind,track) => scenarioIndex?.publicationAvailable(kind,track) ?? false,
     advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
@@ -77,6 +77,7 @@ export async function startDashFaultProxy(
     faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline);
     unsubscribeTimeline = next?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   }, options.controlToken, definition) : undefined;
+  } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();throw error; } })();
   const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
     const { scenario, faults } = context();

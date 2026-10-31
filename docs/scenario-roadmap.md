@@ -120,3 +120,10 @@ has not executed these commits because of its account payment/spending-limit gat
   `output/publication-committed-a7c56ed/report.json`; advertised timing, effective
   per-representation frontiers, repeated/new downloads and restoration are HTTP
   results. Targeted fault-browser qualification remains separate.
+
+- Owned independent tracks: `f0d624a`, clean eight-case HTTP report at
+  `output/track-scenarios-committed-f0d624a/report.json` and two Chrome decoded-track
+  checks at `output/track-browser-committed-f0d624a/report.json`. Both protocols
+  decoded en/ro/en tone changes, correctly timed active/empty captions and actual
+  low/third video dimensions. Complete diagnostic-file manifests were retained.
+  Fault playback/recovery and endurance remain separate open work.
