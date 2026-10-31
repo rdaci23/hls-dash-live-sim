@@ -15,7 +15,8 @@ export type DiagnosticFault =
   | "scenario.status"
   | "scenario.transport"
   | "scenario.payload"
-  | "scenario.cache";
+  | "scenario.cache"
+  | "scenario.publication";
 type EventType =
   | "session.started"
   | "session.closed"
@@ -45,11 +46,13 @@ type EventType =
   | "scenario.closed"
   | "scenario.run"
   | "http.response"
-  | "edge.decision";
+  | "edge.decision"
+  | "publication.decision";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
 type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
 export interface DiagnosticFields {
+  publicationAction?: "delay" | "lag";
   cacheDecision?: "origin" | "fill" | "hit" | "bypass" | "restore";
   originBodyIdentity?: string;
   bodyIdentity?: string;
@@ -121,6 +124,7 @@ export interface DiagnosticsOptions {
 export const TRACE_HEADERS =
   "X-Sim-Session-Id, X-Sim-Request-Id, X-Sim-Fault-Ids, X-Sim-Run-Id";
 const values = {
+  publicationAction: ["delay","lag"],
   cacheDecision: ["origin","fill","hit","bypass","restore"],
   result: ["pending", "passed", "failed", "incomplete"],
   method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE", "PATCH", "OTHER"],
@@ -141,6 +145,7 @@ const values = {
     "scenario.transport",
     "scenario.payload",
     "scenario.cache",
+    "scenario.publication",
   ],
   mode: ["once", "random", "always"],
   reason: [
@@ -309,6 +314,7 @@ export class SessionDiagnostics {
       "bodyIdentity",
       "originBodyIdentity",
       "cacheDecision",
+      "publicationAction",
       "runId",
       "scenarioId",
       "ruleId",

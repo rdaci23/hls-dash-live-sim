@@ -58,8 +58,8 @@ export async function startDashFaultProxy(
     diagnostics.close();
     throw error;
   }
-  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
-  const needsIndex = manual || scenario && (needsMediaIdentity || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
+  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.publication?.kind === "rendition-lag" || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
     manual || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init")) : undefined;
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
@@ -68,6 +68,7 @@ export async function startDashFaultProxy(
   }>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "dash", generated: true, initialization: true, videoTracks: options.videoTracks,
+    publicationAvailable: (kind,track) => scenarioIndex?.publicationAvailable(kind,track) ?? false,
     advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
     scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
@@ -152,8 +153,8 @@ export async function startDashFaultProxy(
       }
       const profile = scenario?.timeline?.profile();
       if (
-        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
-        (scenario.http || scenario.cache || !scenario.settled) &&
+        scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")) &&
+        (scenario.http || scenario.cache || scenario.publication || !scenario.settled) &&
         segment &&
         !logical &&
         req.method === "GET"
@@ -212,8 +213,9 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || !scenario.settled))
+          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || !scenario.settled))
             scenarioIndex.observe(text, remote.url);
+          if (scenarioIndex) scenario?.manifestBindings(trace,scenarioIndex.manifestBindings());
           const choice = snapshots.observe(manifestKey, remote);
           if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);
           remote.body = choice.value.body;

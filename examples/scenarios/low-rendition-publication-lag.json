@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "publication": {
+    "kind": "rendition-lag",
+    "track": "video:0",
+    "afterMs": 30000,
+    "beforeMs": 45000,
+    "segments": 1
+  }
+}

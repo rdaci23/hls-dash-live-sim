@@ -57,7 +57,8 @@
     "browser:core": "npm run build && node scripts/verify-core-browser.cjs",
     "http:verify": "npm run build && node scripts/verify-http-policy.cjs",
     "headers:verify": "npm run build && node scripts/verify-status-headers.cjs",
-    "cache:verify": "npm run build && node scripts/verify-cache-scenarios.cjs"
+    "cache:verify": "npm run build && node scripts/verify-cache-scenarios.cjs",
+    "publication:verify": "npm run build && node scripts/verify-publication-scenarios.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

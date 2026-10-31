@@ -132,3 +132,6 @@ the release candidate commit. Do not relabel earlier reports as freshly verified
 
 `npm run cache:verify` checks [real origin/edge caching](cache-scenarios.md) with
 separate diagnostic files and full-body identities.
+
+`npm run publication:verify` checks [publication frontiers and availability](publication-scenarios.md)
+against generated HLS and the pinned DASH engine.

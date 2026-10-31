@@ -11,6 +11,12 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Added bounded manifest rollback and actual negative-cache actors with origin/edge
+  decisions, byte identity, HEAD/no-cache bypass, expiry and restoration evidence.
+
+- Added one-rendition publication lag and bounded fresh-media delay, with advertised
+  DASH availability timing, HEAD exclusions, resource isolation and restoration probes.
+
 - Named HTTP revalidation/range policies with completed-delivery accounting,
   conservative healthy default conditions and HEAD handling, controlled
   Retry-After/cache/challenge headers and a 54-case failure-status matrix.
@@ -100,6 +106,3 @@ not relabel the implementation candidate's evidence as a new verification run.
 
 See [supported behavior](docs/implementation.md), [dependency notices](THIRD_PARTY_NOTICES.md)
 and the maintainer's [publication checklist](docs/release-checklist.md).
-
-- Added bounded manifest rollback and actual negative-cache actors with origin/edge
-  decisions, byte identity, HEAD/no-cache bypass, expiry and restoration evidence.

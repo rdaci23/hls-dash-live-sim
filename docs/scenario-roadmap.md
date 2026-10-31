@@ -11,7 +11,7 @@ limitation must never be hidden or presented as a simulator pass.
 | 2. Realistic network presets | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | Nonzero below-minimum cap and restoration; four restricted/healthy cycles; pacing, bytes, cancellation and active-transfer changes. |
 | 3. Scenario controls | HTTP lifecycle and browser UI verified; playback observations separate | Catalog, opt-in manual start, authenticated session-scoped arm/start/reset, fresh run IDs, retained outcomes, evidence export; publication/UTC unchanged. |
 | 4. Payload and transport coverage | HTTP/raw-wire implementation verified; browser observations pending | Explicit malformed manifests/media, wrong/stale init, header delay, bounded drip and HTTP/1.1 framing; verified network composition. |
-| 5. CDN/publication/HTTP policy | HTTP policy, safe headers, rollback and bounded negative cache implemented; lag/publication actors and browser evidence pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
+| 5. CDN/publication/HTTP policy | Simulator HTTP implementation verified; targeted browser evidence pending | Snapshot rollback and rendition lag, delayed publication, real negative cache, safe headers, revalidation/304, ranges/If-Range/resumption and status matrix. |
 | 6. Fixtures and independent tracks | Planned | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Planned | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | Planned | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
@@ -110,3 +110,8 @@ has not executed these commits because of its account payment/spending-limit gat
   `output/http-policy-committed-4e1997e/report.json` and
   `output/status-headers-committed-4e1997e/report.json`. These verify HTTP behavior,
   not browser recovery or CDN publication actors.
+
+- Cache actors: `2b60075`, clean four-case HLS/DASH report at
+  `output/cache-scenarios-committed-2b60075/report.json`. This includes actual
+  stored negative responses, independent origin restoration, cache-body identity,
+  no upstream fetch on hit, expiry, and fresh/newer/stale/restored manifests.

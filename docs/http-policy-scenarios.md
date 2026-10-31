@@ -4,7 +4,8 @@ These scenarios exercise HTTP behavior separately from browser retry/recovery.
 They extend version 1 without changing existing rule fingerprints or automatic
 startup. The [cache actors](cache-scenarios.md) implement rollback and actual negative
 caching separately; a cache header alone does not establish an actual cache hit.
-Rendition lag and publication-delay actors remain pending.
+[Publication actors](publication-scenarios.md) separately cover one-rendition
+lag and bounded fresh-segment delay.
 [Primary-source implementation notes](http-policy-research.md).
 
 ## Revalidation and resumption

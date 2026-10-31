@@ -1,10 +1,12 @@
-import { attributes, variantEntries } from "./hls-playlist.js";
+import { attributes, variantEntries, mediaSegments } from "./hls-playlist.js";
 import { HttpError } from "./safe-http.js";
 import type { LogicalMedia, TrackType } from "./scenario.js";
 
 /** Only advertised playlists and EXT-X-MAP resources; never guess media identity. */
 export class HlsScenarioIndex {
   private entries = new Map<string, LogicalMedia>();
+  private manifestCounts = new Map<string,number>();
+  publicationAvailable(kind:string,track:string,count=1): boolean { return kind === "rendition-lag" && this.advancing(track) && (this.manifestCounts.get(track) ?? 0) > count; }
   private liveManifests = new Map<string,boolean>();
   advancing(track: string): boolean { return this.liveManifests.get(track) === true; }
   private tracks = new Map<string, string>();
@@ -63,6 +65,7 @@ export class HlsScenarioIndex {
       put(url, { kind: "init", ...owningTrack, key: `hls:init:${this.canonical(url)}` });
     }
     this.entries = entries; this.tracks = tracks;
+    this.manifestCounts.set(parent.trackId,mediaSegments(text).length);
     this.liveManifests.set(parent.trackId, /^#EXTINF:/m.test(text) && !/^#EXT-X-ENDLIST/m.test(text));
   }
 }

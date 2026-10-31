@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "publication": {
+    "kind": "segment-delay",
+    "track": "video:0",
+    "afterMs": 30000,
+    "beforeMs": 45000,
+    "delayMs": 4000
+  }
+}

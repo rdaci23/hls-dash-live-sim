@@ -239,3 +239,6 @@ separate from player recovery.
 
 See [origin and edge-cache scenarios](docs/cache-scenarios.md) for fresh/newer/stale
 manifests, real negative caching, setup and isolated verification.
+
+[Publication scenarios](docs/publication-scenarios.md) cover one-rendition lag
+and fresh-segment delay with independent HTTP evidence.

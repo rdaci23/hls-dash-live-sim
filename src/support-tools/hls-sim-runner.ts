@@ -162,7 +162,7 @@ export async function startHlsim(
   if (options.proxy === false) return startVod(options, host, port);
   if (definition?.cache?.kind === "manifest-rollback" && definition.cache.target.track === "root") throw new Error("HLS rollback requires a media-playlist track rather than the master");
   const dummy = options.dummyContent ?? !options.manifestUrl;
-  if (definition && !dummy && ((definition.http?.target.resource === "media" || definition.cache?.target.resource === "media") || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
+  if (definition && !dummy && ((definition.http?.target.resource === "media" || definition.cache?.target.resource === "media" || definition.publication?.kind === "segment-delay") || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new Error(
       "HLS media/timeline scenarios require generated sample media; origin scenarios support only manifest and init targets",
     );
@@ -256,9 +256,11 @@ export async function startHlsim(
   let faults = new FaultRuntime(Math.random, scenario?.timeline);
   const scenarioIndex = (scenario || manual) && !dummy ? new HlsScenarioIndex(options.manifestUrl,
     manual || (definition?.http?.target.resource === "init" || definition?.cache?.target.resource === "init") || !!definition?.rules.some(rule => rule.target.resource === "init")) : undefined;
+  if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();throw new Error("Publication actors require a live/event sample"); }
   const snapshots = new ManifestSnapshots<string>(128, !scenario && !manual);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
   const runs = manual ? new ScenarioRuns(diagnostics, { protocol: "hls", generated: dummy, initialization: !dummy, videoTracks: dummy ? variants.length : undefined,
+    publicationAvailable: (kind,track,count) => dummy ? mode !== "vod" && (kind !== "rendition-lag" || (options.windowSegments ?? 6) > (count ?? 1)) : scenarioIndex?.publicationAvailable(kind,track,count) ?? false,
     advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
       if (kind === "manifest" && ["root", "any"].includes(track)) return true;
@@ -405,6 +407,7 @@ export async function startHlsim(
                 trackType: "video",
                 trackId: `video:${variants.findIndex((variant) => variant.uri.startsWith(match[1] + "/"))}`,
                 key: `hls:${match[1]}:number:${sequence}`,
+                availableAtMs: timeline.availableAtMs(sequence),
                 locator: { kind: "number", value: String(sequence) },
               },
               req.headers.range,
@@ -533,7 +536,7 @@ export async function startHlsim(
           resource.url,
           policy,
         );
-        if (scenarioIndex && (!scenario || scenario.http || scenario.cache || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
+        if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
         const choice = snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");

@@ -67,6 +67,7 @@ export class LiveHlsTimeline {
       end,
     };
   }
+  availableAtMs(sequence: number): number { return this.wallStartedAt-this.initialOffset*1000+this.timeAt(sequence+1)*1000; }
   available(sequence: number): boolean {
     const { first, end } = this.bounds();
     return Number.isInteger(sequence) && sequence >= first && sequence < end;

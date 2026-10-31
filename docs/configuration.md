@@ -121,3 +121,6 @@ different purposes: a delivered fault does not by itself prove player recovery.
 
 [Cache scenarios](cache-scenarios.md) document bounded rollback/negative-cache
 definitions and distinct origin/edge session configuration.
+
+[Publication scenarios](publication-scenarios.md) specify rendition-lag and
+segment-delay bounds, asset requirements and configuration examples.

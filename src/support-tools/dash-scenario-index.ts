@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import { parseMPD } from "./mpd.js";
+import { parseMPD, parseDuration } from "./mpd.js";
 import { HttpError } from "./safe-http.js";
 import type { LogicalMedia, TrackType } from "./scenario.js";
 const list = (value): any[] =>
@@ -19,6 +19,15 @@ function uint(value: unknown): bigint {
 
 /** Identify advertised media from the MPD, rather than guessing from file extensions. */
 export class DashScenarioIndex {
+  private bindings = new Map<string,string>();
+  manifestBindings(): ReadonlyMap<string,string> { return this.bindings; }
+  private periodCount = 0;
+  publicationAvailable(kind:string,track:string): boolean {
+    if (!this.dynamic || kind === "rendition-lag" && this.periodCount !== 1) return false;
+    this.prune();let matched=false;
+    for (const {media} of this.entries.values()) if(media.kind === "media" && media.trackId === track){matched=true;if(kind === "segment-delay" && !Number.isFinite(media.availableAtMs))return false;}
+    return matched;
+  }
   private dynamic = false;
   advancing(): boolean { return this.dynamic; }
   private entries = new Map<string, { media: LogicalMedia; expires: number }>();
@@ -58,6 +67,7 @@ export class DashScenarioIndex {
     }).parse(text).MPD;
     this.prune();
     const next = new Map<string, LogicalMedia>();
+    const bindings = new Map<string,string>();
     const tracks = new Map(this.tracks),
       scopes = new Map(this.scopes);
     const source = new URL(base);
@@ -118,6 +128,7 @@ export class DashScenarioIndex {
             trackId = `${trackType}:${[...tracks.values()].filter((value) => value.startsWith(trackType + ":")).length}`;
             tracks.set(trackKey, trackId);
           }
+          bindings.set(JSON.stringify([String(adaptation["@_id"] ?? adaptationIndex),rawId]),trackId);
           if (tracks.size > 128)
             throw new HttpError(503, "DASH scenario track capacity reached");
           const template = {
@@ -191,6 +202,12 @@ export class DashScenarioIndex {
                   trackId,
                   trackType,
                   key: `dash:${trackId}:scope:${scope}:${addressing}:${value}`,
+                  ...(info.type === "dynamic" && Number.isFinite(info.availabilityStartTimeEpoch) &&
+                    (period["@_start"] !== undefined || list(root.Period).length === 1) &&
+                    Number.isFinite(Number(template["@_availabilityTimeOffset"] ?? 0)) && template["@_availabilityTimeComplete"] !== "false" ? {
+                      availableAtMs: (info.availabilityStartTimeEpoch + (parseDuration(period["@_start"]) ?? 0) +
+                        Number(time + duration - uint(template["@_presentationTimeOffset"] ?? "0")) / Number(template["@_timescale"] ?? "1") - Number(template["@_availabilityTimeOffset"] ?? 0)) * 1000,
+                    } : {}),
                   locator: { kind: addressing, value },
                 },
               );
@@ -209,6 +226,8 @@ export class DashScenarioIndex {
     )
       throw new HttpError(503, "DASH scenario retained index capacity reached");
     for (const [key, media] of next) this.entries.set(key, { media, expires });
+    this.periodCount = list(root.Period).length;
+    this.bindings = bindings;
     this.dynamic = root["@_type"] === "dynamic";
     this.tracks = tracks;
     this.scopes = scopes;

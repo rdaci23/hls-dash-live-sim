@@ -33,7 +33,7 @@ async function catalog(text, base, protocol, { latestGeneration = false } = {}) 
     for (const period of list(root.Period)) for (const adaptation of list(period.AdaptationSet)) {
       const type = adaptation['@_contentType'];
       for (const representation of list(adaptation.Representation)) {
-        const template = adaptation.SegmentTemplate, entries = list(template?.SegmentTimeline?.S);
+        const template = { ...root.SegmentTemplate,...period.SegmentTemplate,...adaptation.SegmentTemplate,...representation.SegmentTemplate }, entries = list(template?.SegmentTimeline?.S);
         if (!entries.length) continue;
         const id = String(representation['@_id']), key = type + ':' + id;
         if (!byTrack.has(key)) { byTrack.set(key, `${type}:${counts.get(type) || 0}`); counts.set(type, (counts.get(type) || 0) + 1); }
