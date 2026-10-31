@@ -11,6 +11,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Selective HLS high/low and DASH low rendition outage presets, HTTP isolation
+  and restoration verification, and a tracked private core-coverage roadmap.
+
 - DASH audio-only timed outage preset and simulator HTTP verification in both
   Time/Number modes, with healthy video/init/MPD/UTC controls, continued live
   publication and same-download audio restoration. [Scope](docs/dash-audio-outage.md).

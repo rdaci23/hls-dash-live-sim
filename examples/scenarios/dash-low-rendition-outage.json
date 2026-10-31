@@ -1,0 +1,1 @@
+{"version":1,"seed":42,"rules":[{"kind":"outage","target":{"track":"video:0","segment":"each"},"status":503,"afterMs":60000,"beforeMs":80000}]}

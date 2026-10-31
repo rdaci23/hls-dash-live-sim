@@ -49,6 +49,7 @@
     "transport:verify": "npm run build && node scripts/verify-transport-scenarios.cjs",
     "retry:verify": "npm run build && node scripts/verify-multi-retry.cjs",
     "audio:verify": "npm run build && node scripts/verify-dash-audio-outage.cjs",
+    "rendition:verify": "npm run build && node scripts/verify-rendition-outages.cjs",
     "resource:verify": "npm run build && node scripts/verify-resource-scenarios.cjs"
   },
   "dependencies": {
