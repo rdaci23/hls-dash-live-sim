@@ -205,3 +205,28 @@ observations, installed-package/history/license checks, ten-minute smoke and
 actual four-hour soak. The [coverage matrix](coverage-matrix.md) and
 [publication preparation](publication-preparation.md) retain the evidence limits
 and remaining cutover settings. No command publishes or changes visibility.
+
+## Subtitle-cancellation and review-shutdown correction
+
+The expanded clean review at `97ce309` passed the simulator matrix, full six-case
+browser baseline, decoded fixtures/lifecycle/services, all 18 targeted fault
+observations and the seven broader compatibility observations. It then rejected
+an HLS long-freeze result because eight post-resume nonfatal subtitle aborts were
+not explained by the original manual-selection-only classifier. No recovered
+playback pass was substituted for that failed report.
+
+The exact events correlate with synchronous same-track subtitle-switch events;
+the pinned hls.js controller explicitly aborts the current subtitle fragment on
+that path. A red/green regression now accepts only the exact nonfatal subtitle
+abort with a matching switch/track within 1 ms, retaining the earlier explicit
+manual-selection path and every raw error. Fatal errors, ordinary load failures,
+unrelated tracks and unrelated times still fail. The isolated real HLS long-freeze
+rerun passes decoded restoration and 60-second continuation with that classifier.
+
+Stopping the parallel review also exposed a repeated-signal ownership defect that
+could interrupt the soak's evidence closure. The owner now signals the soak
+coordinator once and lets it close descendants; late children and repeated stops
+have negative/unit checks, and the real repeated-stop test validates complete
+source/viewer files, zero counters and exited PIDs. The earlier partial soak stays
+unqualified. The corrected candidate requires a fresh exact-commit full review
+and four-hour run; no earlier result silently qualifies it.

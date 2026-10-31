@@ -8,6 +8,13 @@ function languageEvidence(metrics,fromMs,language){
 function expectedCancellation(error,events){
  if(error.kind!=='hls'||error.fatal!==false||error.type!=='networkError'||error.details!=='aborted'||error.message!=='Aborted'||error.frag?.type!=='subtitle')return false;
  const near=e=>e.atMs<=error.atMs+1&&error.atMs-e.atMs<=500;
- return events.some(e=>e.kind==='subtitle-switch'&&near(e))&&events.some(e=>e.kind==='selection'&&e.text!==undefined&&near(e));
+ const switches=events.filter(e=>e.kind==='subtitle-switch'&&near(e));
+ if(!switches.length)return false;
+ // hls.js 1.7.3 onSubtitleTrackSwitch aborts the current subtitle fragment,
+ // including native same-track LIVE refreshes after a long freeze. The abort
+ // is synchronous: require the same track and <=1 ms, or the existing explicit
+ // selection correlation. Keep every raw event; no other player error qualifies.
+ const automatic=Number.isInteger(error.frag.level)&&error.frag.level>=0&&switches.some(e=>e.id===error.frag.level&&Math.abs(e.atMs-error.atMs)<=1);
+ return automatic||events.some(e=>e.kind==='selection'&&e.text!==undefined&&near(e));
 }
 module.exports={languageEvidence,expectedCancellation};

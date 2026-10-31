@@ -6,6 +6,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const assert = require('node:assert/strict');
 const { bound, endurance } = require('./release/acceptance.cjs');
+const {createProcessOwner}=require('./release/process-owner.cjs');
 const root = path.resolve(__dirname, '..'), args = process.argv.slice(2);
 const capture = (command, params, cwd = root) => execFileSync(command, params, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -21,14 +22,9 @@ async function main() {
     const checkout = path.join(directory, 'checkout'), commit = capture('git', ['rev-parse', 'HEAD']);
     const report = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit, sourceTreeClean: true, scannerVersion, steps: [], candidateChecksPassed: false, releaseReady: false, projectLicense: require('../package.json').license,
         outstanding: ['Exact-candidate CI must execute and pass', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit public visibility approval; npm is a separate decision'] };
-    const active = new Set();
+    const active = createProcessOwner();
     let interrupted = false, soakWork, soakFailure;
-    const stop = () => { interrupted = true; for (const child of active) {
-        try {
-            process.platform === 'win32' ? child.kill('SIGTERM') : process.kill(-child.pid, 'SIGTERM');
-        }
-        catch { }
-    } };
+    const stop = () => { interrupted = true; active.stop(); };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
     async function step(name, command, params, cwd = checkout, stdoutFile, observation = false) {
@@ -41,7 +37,8 @@ async function main() {
         const output = stdoutFile ? await fs.open(stdoutFile, 'wx', 0o600) : undefined;
         let code;
         try {
-            code = await new Promise((resolve, reject) => { const child = spawn(command, params, { cwd, detached: process.platform !== 'win32', stdio: ['ignore', output?.fd ?? handle.fd, handle.fd] }); active.add(child); child.once('error', error => { active.delete(child); reject(error); }); child.once('exit', code => { active.delete(child); resolve(code); }); });
+            active.assertRunning();
+            code = await new Promise((resolve, reject) => { const child = spawn(command, params, { cwd, detached: process.platform !== 'win32', stdio: ['ignore', output?.fd ?? handle.fd, handle.fd] }); active.add(child,name.startsWith('endurance-')); child.once('error', error => { active.delete(child); reject(error); }); child.once('exit', code => { active.delete(child); resolve(code); }); });
         }
         finally {
             await handle.close();
@@ -180,6 +177,7 @@ async function main() {
         if (!report.candidateChecksPassed)
             stop();
         await soakWork;
+        report.childOwnership={activeProcesses:active.size};
         process.removeListener('SIGINT', stop);
         process.removeListener('SIGTERM', stop);
         await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });

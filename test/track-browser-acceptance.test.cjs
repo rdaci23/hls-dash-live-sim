@@ -5,8 +5,15 @@ test('decoded audio and captions need progressing tone windows, scheduled active
  assert.equal(languageEvidence(metrics(),0,'en').verified,true);
  for(const edit of [m=>m.contextState='suspended',m=>m.elapsedMs=3000,m=>m.audio.forEach(a=>a.contextTime=1),m=>m.captions[0].tracks[0].cues[0].end=100,m=>m.audio.forEach(a=>a.toneHz=880),m=>m.audio.forEach(a=>a.mediaTime=8),m=>m.audio.forEach(a=>a.rms=0),m=>m.captions[0].mediaTime=10.8,m=>m.captions[0].tracks[0].mode='hidden',m=>m.captions[0].tracks[0].cues[0].text='RO cue 1',m=>m.captions[1].tracks[0].loadedCues=0,m=>m.captions[1].tracks[0].language='ro']){const m=metrics();edit(m);assert.equal(languageEvidence(m,0,'en').verified,false);}
 });
-test('only pinned nonfatal subtitle aborts correlated with an explicit selection and player switch are expected',()=>{
+test('manual subtitle cancellation requires the explicit selection and player switch',()=>{
  const error={kind:'hls',atMs:1000,fatal:false,type:'networkError',details:'aborted',message:'Aborted',frag:{type:'subtitle'}},events=[{kind:'selection',atMs:990,text:'ro'},{kind:'subtitle-switch',atMs:991,id:1}];assert.equal(expectedCancellation(error,events),true);
  for(const edit of [e=>e.fatal=true,e=>e.frag.type='audio',e=>e.details='bufferStalledError',e=>e.atMs=1700,e=>e.kind='video']){const e=structuredClone(error);edit(e);assert.equal(expectedCancellation(e,events),false);}
  assert.equal(expectedCancellation(error,[events[0]]),false);assert.equal(expectedCancellation(error,[events[1]]),false);
+});
+
+test('pinned automatic same-track subtitle switches explain their exact nonfatal abort without a manual action',()=>{
+ const error={kind:'hls',atMs:102071,fatal:false,type:'networkError',details:'aborted',message:'Aborted',frag:{type:'subtitle',level:0}},events=[{kind:'subtitle-switch',atMs:102071,id:0}];
+ assert.equal(expectedCancellation(error,events),true);
+ for(const event of [{kind:'subtitle-switch',atMs:102071,id:1},{kind:'subtitle-switch',atMs:101000,id:0},{kind:'selection',atMs:102071,text:'en'}])assert.equal(expectedCancellation(error,[event]),false);
+ for(const edit of [e=>e.fatal=true,e=>e.frag.type='video',e=>e.details='fragLoadError',e=>e.message='connection closed',e=>delete e.frag.level]){const e=structuredClone(error);edit(e);assert.equal(expectedCancellation(e,events),false);}
 });

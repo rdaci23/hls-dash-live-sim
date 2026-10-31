@@ -137,7 +137,12 @@ The pinned hls.js subtitle controller explicitly aborts its current fragment on
 subtitle switches; its loader reports that cancellation as a nonfatal network
 `aborted` event. The verifier retains such events separately only when they are
 subtitle aborts within 500 ms of both an explicit selection and a player subtitle
-switch. Other errors remain failures.
+switch, or synchronous automatic switches with the same subtitle-track ID within
+1 ms. The pinned controller also emits same-track switches for LIVE native-track
+updates after a long freeze; no manual action is required for that path. Fatal
+errors, unrelated tracks/timestamps and ordinary load failures remain failures.
+Every raw error is retained; this classifies the client cancellation and does not
+alter player recovery or hide decoded-audio/caption requirements.
 [Switch path](https://raw.githubusercontent.com/video-dev/hls.js/v1.7.3/src/controller/subtitle-stream-controller.ts),
 [abort callback](https://raw.githubusercontent.com/video-dev/hls.js/v1.7.3/src/loader/fragment-loader.ts),
 [error propagation](https://raw.githubusercontent.com/video-dev/hls.js/v1.7.3/src/controller/base-stream-controller.ts).

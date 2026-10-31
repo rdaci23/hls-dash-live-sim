@@ -86,7 +86,10 @@ and 10,000 healthy requests within the memory budget.
 
 The real-browser interruption check sends SIGINT, requires failed qualification
 and checks that simulator/browser PIDs have exited, counters drain and closed files validate.
-Failed/interrupted runs still close their owned resources and retain partial
+The review signals its soak coordinator once, allowing it to close its own
+browsers, sources and journals. Repeated stop requests cannot send a second
+termination signal during evidence closure; the real interruption check exercises
+that path. Failed/interrupted runs still close their owned resources and retain partial
 reports with explicit failure reasons.
 
 CI defines the ten-minute smoke and retains evidence for seven days. The four-hour

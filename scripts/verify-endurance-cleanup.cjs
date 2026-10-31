@@ -1,11 +1,13 @@
 const fs = require('node:fs/promises'), path = require('node:path'), { spawn } = require('node:child_process'), assert = require('node:assert/strict');
+const{createProcessOwner}=require('./release/process-owner.cjs');
 async function main() {
     const args = require('yargs/yargs')(process.argv.slice(2)).option('output', { type: 'string', default: 'output/endurance-interrupt-' + Date.now() }).strict().parseSync(), directory = path.resolve(args.output);
     await fs.mkdir(path.dirname(directory), { recursive: true });
     await fs.mkdir(directory, { mode: 0o700 });
     const log = await fs.open(path.join(directory, 'child.log'), 'wx', 0o600), child = spawn(process.execPath, ['scripts/verify-endurance.cjs', '--mode', 'development', '--development-seconds', '90', '--output', path.join(directory, 'run')], { cwd: path.resolve(__dirname, '..'), stdio: ['ignore', log.fd, log.fd] });
+    const owner=createProcessOwner();owner.add(child,true);
     let timer;
-    const stop = () => { clearTimeout(timer); child.kill('SIGINT'); };
+    const stop = () => { clearTimeout(timer); owner.stop();owner.stop(); };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
     timer = setTimeout(stop, 10000);
@@ -17,6 +19,8 @@ async function main() {
         clearTimeout(timer);
         process.removeListener('SIGINT', stop);
         process.removeListener('SIGTERM', stop);
+        owner.delete(child);
+        assert.equal(owner.size,0);
         await log.close();
     }
     assert.equal(code, 1);
