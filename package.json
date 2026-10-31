@@ -73,7 +73,8 @@
     "endurance:release": "npm run build && node scripts/verify-endurance.cjs --mode release",
     "endurance:dev": "npm run build && node scripts/verify-endurance.cjs --mode development",
     "endurance:cleanup": "npm run build && node scripts/verify-endurance-cleanup.cjs",
-    "browser:routing": "npm run build && node scripts/verify-browser-routing.cjs"
+    "browser:routing": "npm run build && node scripts/verify-browser-routing.cjs",
+    "browser:scenarios": "npm run build && node scripts/verify-scenario-browser.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",
