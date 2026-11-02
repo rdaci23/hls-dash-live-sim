@@ -4,8 +4,17 @@ The endurance runner uses the owned local tracks source, one real Chrome viewer
 and two independent HTTP viewers **per protocol**, concurrently. It needs no
 Docker, external clocks or media. The repository/npm remain private.
 
+The endurance viewer controls sandboxed Chrome through a bounded CDP pipe using
+Runtime, Page and Log events. It retains the shared player page, normal player
+settings and every decoded audio/caption/frame sample. Main-page and worker
+exceptions and console errors remain release blockers. Independent HTTP viewers
+retain the wire checks; Chrome network-observation bookkeeping is unnecessary for
+this runner. Protocol calls, buffers, owned Chrome process groups and temporary
+profiles must drain on close.
+
 ```sh
 npm run endurance:cleanup -- --output output/endurance-interruption
+npm run endurance:driver -- --output output/endurance-driver
 npm run endurance:smoke -- --output output/endurance-smoke
 npm run endurance:release -- --output output/endurance-candidate
 # Short harness development only; cannot qualify either release gate:
@@ -68,8 +77,8 @@ that interval. Every attempted cancellation is retained before its assertion.
   metadata-only reads avoid copying event windows during owner shutdown.
   In-memory diagnostics serialize only when a file or verbose output needs the
   line; snapshots/exports retain the same bounded event window. The browser routing
-  precheck removes its synthetic redirect interception before the unchanged
-  10,000-request, 128 MiB allowed-request check, and rechecks blocked origins.
+  precheck uses an actual owned HTTP 302 to verify blocked redirects before the
+  unchanged 10,000-request, 128 MiB allowed-request check.
   Timeline boundary tables are built once, settlement reads avoid full phase
   reports, and fault runtimes retain private config copies refreshed by the
   existing change subscription rather than cloning config on each request.

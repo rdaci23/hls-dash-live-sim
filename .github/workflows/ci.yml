@@ -276,6 +276,7 @@ jobs:
       - run: npm ci
       - run: npx --no-install playwright install --with-deps chrome
       - run: npm run browser:routing -- --output output/ci-browser-routing
+      - run: npm run endurance:driver -- --output output/ci-endurance-driver
       - run: npm run endurance:cleanup -- --output output/ci-endurance-cleanup
       - run: npm run endurance:smoke -- --output output/ci-endurance
       - name: Retain complete endurance evidence
@@ -287,6 +288,7 @@ jobs:
             output/ci-endurance/
             output/ci-endurance-cleanup/
             output/ci-browser-routing/
+            output/ci-endurance-driver/
           if-no-files-found: error
           retention-days: 7
 

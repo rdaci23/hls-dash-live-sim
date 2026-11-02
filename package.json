@@ -75,7 +75,8 @@
     "endurance:cleanup": "npm run build && node scripts/verify-endurance-cleanup.cjs",
     "browser:routing": "npm run build && node scripts/verify-browser-routing.cjs",
     "browser:scenarios": "npm run build && node scripts/verify-scenario-browser.cjs",
-    "manifest:preview": "npm run build && node scripts/verify-manifest-preview.cjs"
+    "manifest:preview": "npm run build && node scripts/verify-manifest-preview.cjs",
+    "endurance:driver": "npm run build && node scripts/verify-endurance-driver.cjs"
   },
   "dependencies": {
     "express": "^4.19.2",

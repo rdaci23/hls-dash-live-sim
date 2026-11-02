@@ -31,6 +31,7 @@ use your existing Chrome installation.
 
 | Command | Coverage | Requirements |
 | --- | --- | --- |
+| `npm run endurance:driver` | Decoded native Chrome startup, CSP origin isolation, main/worker exceptions, console errors and owned-process/protocol cleanup. | Chrome; no Docker; about 30 seconds. |
 | `npm run endurance:smoke` | Ten-minute concurrent HLS/DASH browser plus two HTTP viewers each, drift/RSS/cleanup and complete rotated evidence. | Chrome, no Docker; about ten minutes. |
 | `npm run endurance:release` | Four-hour real-time release-candidate soak, with the same ownership/evidence gates. | Chrome; keep the host awake; cannot shorten release mode. |
 | `npm run services:verify` | Seven local key/auth/UTC HTTP cases, scope, restoration and redacted exports. | Node; no Docker. |

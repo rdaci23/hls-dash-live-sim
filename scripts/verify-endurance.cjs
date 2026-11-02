@@ -1,10 +1,10 @@
 const fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http'), { execFileSync } = require('node:child_process'), { createHash, randomUUID } = require('node:crypto'), assert = require('node:assert/strict');
-const { create: startTrackFixture } = require('./endurance/source-process.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { open } = require('./browser/owned-player.cjs'), { read: raw } = require('./transport-scenarios/verify.cjs'), { read: completeDiagnostics } = require('./browser/complete-diagnostics.cjs'), { Evidence } = require('./endurance/evidence.cjs'), { fairness, Drift, qualifyDrift, qualification, coherentClocks } = require('./endurance/acceptance.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs'), { initialization, fragment } = require('./dash-abr/fixture.cjs');
+const { create: startTrackFixture } = require('./endurance/source-process.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { open } = require('./browser/owned-endurance-player.cjs'), { read: raw } = require('./transport-scenarios/verify.cjs'), { read: completeDiagnostics } = require('./browser/complete-diagnostics.cjs'), { Evidence } = require('./endurance/evidence.cjs'), { fairness, Drift, qualifyDrift, qualification, coherentClocks } = require('./endurance/acceptance.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs'), { initialization, fragment } = require('./dash-abr/fixture.cjs');
 const root = path.resolve(__dirname, '..'), pause = ms => new Promise(r => setTimeout(r, ms)), hash = b => createHash('sha256').update(b).digest('hex');
 async function closeAgent(agent) { const sockets = [...Object.values(agent.sockets), ...Object.values(agent.freeSockets)].flat(), closed = sockets.map(socket => socket.closed ? Promise.resolve() : new Promise(resolve => socket.once('close', resolve))); agent.destroy(); await Promise.all(closed); assert.equal(Object.values(agent.requests).flat().length, 0); }
 async function port() { const s = http.createServer(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
 const { timeline } = require('./endurance/workload.cjs');
-async function closeState(state, duration, memoryCheckpoint) {
+async function closeState(state, memoryCheckpoint) {
     const result = { protocol: state.protocol, firstFrameMs: state.firstFrameMs, frames: state.lastFrames, mediaTime: state.lastMediaTime, downloads: state.downloads, churn: state.churn, slowReaders: state.slow, cancellations: state.cancellations, retentionProbes: state.retentionProbes, fairness: state.fairness, drift: state.drift.report(), decodedChecks: state.decodedChecks, publications: Object.fromEntries(state.publications), browserVersion: state.ui?.browserVersion, playerVersion: state.ui?.playerVersion, ownedContainers: 0, errors: [] };
     const attempt = async (action) => {
         try {
@@ -38,8 +38,13 @@ async function closeState(state, duration, memoryCheckpoint) {
     await attempt(() => state.evidence.close());
     result.cleanup = { httpClients: { activeSockets: state.agents.flatMap(agent => [...Object.values(agent.sockets), ...Object.values(agent.freeSockets)].flat()).filter(socket => !socket.closed).length, queuedRequests: state.agents.flatMap(agent => Object.values(agent.requests).flat()).length }, network: state.session.networkOwnership(), resources: state.session.resourceOwnership(), source: state.session.sourceOwnership() };
     result.browserProcess = state.ui?.processOwnership();
+    result.browserDriver = state.ui?.driver;
     result.simulatorProcess = state.session.processOwnership();
     result.cleanup.sourceProcess = { pendingMessages: result.simulatorProcess.pendingMessages, samplerTimers: result.simulatorProcess.samplerTimers };
+    return result;
+}
+async function verifyClosedState(state, result, duration, memoryCheckpoint) {
+    const attempt = async action => { try { const value=await action(); memoryCheckpoint?.(); return value; } catch(error) { result.errors.push(error.message); } };
     await attempt(async () => { result.sourceEvidence = (await completeDiagnostics(path.join(state.dir, 'requests.jsonl'), state.session.diagnostics.snapshot())).completeFile; });
     await attempt(async () => { result.viewerEvidence = (await completeDiagnostics(state.evidence.file, state.evidence.metadata())).completeFile; });
     await attempt(async () => {
@@ -47,8 +52,9 @@ async function closeState(state, duration, memoryCheckpoint) {
             throw Error('Owned work failed to drain');
         if (!result.simulatorProcess.exited || result.simulatorProcess.exitCode !== 0 || result.simulatorProcess.memory.breach)
             throw Error('Owned simulator process exit or RSS gate failed');
-        if (!result.browserProcess?.exited)
-            throw Error('Owned browser process did not exit');
+        if (!result.browserProcess?.exited || !result.browserProcess.webServerClosed)
+            throw Error('Owned browser process or player server did not close');
+        if (['pendingCalls','pendingTimers','bufferedBytes','processGroupAlive'].some(key=>result.browserProcess[key])) throw Error('Owned browser protocol work failed to drain');
         if ((duration >= 60000 && (!state.retentionProbes || !state.slow || !state.cancellations || !state.churn)) || state.fairness.length !== timeline(duration).filter(p => p.network.bandwidthKbps === 1200).length)
             throw Error('Endurance workload component was not exercised');
         if (state.publications.size !== 6 || [...state.publications.values()].some(p => p.advances < Math.floor(duration / 4000)))
@@ -307,10 +313,13 @@ async function main() {
         controller.abort();
         await Promise.allSettled(jobs);
         for (const state of sessions) {
-            const result = await closeState(state, duration, memoryCheckpoint);
-            report.protocols.push(result);
-            if (result.errors.length)
-                error ??= state.protocol + ': ' + result.errors[0];
+            report.protocols.push(await closeState(state, memoryCheckpoint));
+        }
+        // Stop every viewer/source before validating potentially large journals.
+        for (let index=0;index<sessions.length;index++) {
+            const result=report.protocols[index];
+            await verifyClosedState(sessions[index],result,duration,memoryCheckpoint);
+            if(result.errors.length) error ??= sessions[index].protocol+': '+result.errors[0];
         }
         process.removeListener('SIGINT', stop);
         process.removeListener('SIGTERM', stop);

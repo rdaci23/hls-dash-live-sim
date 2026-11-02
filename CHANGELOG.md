@@ -110,6 +110,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Use a bounded native Chrome CDP driver for endurance playback, avoiding unused
+  browser-network bookkeeping. Preserve the shared player page, sandbox, decoded
+  audio/captions, exception audits, independent HTTP viewers and 128 MiB gates;
+  verify native driver error visibility, origin isolation and shutdown separately.
+
 - Reuse private fixed-shape diagnostic records and validation patterns after the
   bounded window fills, reducing recorder allocation churn. Keep snapshots
   independent, omit absent fields and preserve journal/export content and order.
@@ -119,9 +124,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
   preserving reference expiry, origin policy, fresh upstream reads and validation
   of changed input; trim duplicate parsing/header work in HTTP viewer probes.
 
-- Avoid unused diagnostic serialization and release synthetic browser routing
-  interception after its negative probe; preserve bounded event exports, origin
-  isolation and the 10,000-request/128 MiB routing gate.
+- Avoid unused diagnostic serialization. Verify browser origin isolation with an
+  actual owned HTTP redirect and repeated healthy requests through the CDP
+  driver, preserving bounded exports and the 10,000-request/128 MiB routing gate.
 - Reuse immutable timeline boundary tables and private subscribed fault config,
   and check timeline settlement without building full reports on each request.
   Preserve phase boundaries, effect evidence, one-shot rearming and live updates.
