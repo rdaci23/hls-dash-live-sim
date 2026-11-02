@@ -52,6 +52,11 @@ that interval. Every attempted cancellation is retained before its assertion.
   a maximum increase of 128 MiB. Their combined growth must also stay within
   128 MiB; separating processes cannot hide combined growth. OS high-water RSS
   is retained. Browser-process memory is recorded separately.
+  Ordinary Node allocation/GC settings apply. Live index refreshes stage only the
+  advertised changes, DASH metadata and indexing share one validated XML parse,
+  and diagnostic recording reuses its field tables and reads verbosity directly.
+  These reduce transient allocation while preserving retention and complete logs;
+  the warm-up, workload and 128 MiB individual/shared limits remain the same.
 - Resource indexes, pending work and transfer ownership are sampled. After close,
   all owned transfers/timers, active requests, indexes, buffered source files and
   source actions must drain, and every owned simulator and browser process must exit. The runner

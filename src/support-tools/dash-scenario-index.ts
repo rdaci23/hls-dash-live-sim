@@ -1,5 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
-import { parseMPD, parseDuration } from "./mpd.js";
+import { parseMPDDocument, parseDuration } from "./mpd.js";
 import { HttpError } from "./safe-http.js";
 import type { LogicalMedia, TrackType } from "./scenario.js";
 const list = (value): any[] =>
@@ -47,8 +46,9 @@ export class DashScenarioIndex {
   }
   private prune(): void {
     const now = this.clock();
-    for (const [key, value] of this.entries)
+    this.entries.forEach((value,key)=>{
       if (value.expires < now) this.entries.delete(key);
+    });
   }
   available(resource: string, track: string): boolean {
     this.prune();
@@ -60,14 +60,7 @@ export class DashScenarioIndex {
     return this.entries.get(this.canonical(value))?.media;
   }
   observe(text: string, base: string): void {
-    const info = parseMPD(text, base);
-    const root = new XMLParser({
-      ignoreAttributes: false,
-      removeNSPrefix: true,
-      parseTagValue: false,
-      parseAttributeValue: false,
-      processEntities: false,
-    }).parse(text).MPD;
+    const { info, root } = parseMPDDocument(text, base);
     this.prune();
     const next = new Map<string, LogicalMedia>();
     const bindings = new Map<string,string>();

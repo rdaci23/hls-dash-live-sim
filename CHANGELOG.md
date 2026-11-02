@@ -105,6 +105,13 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
   guides, a short demo, contribution instructions and [MIT licensing](LICENSE)
   for project-owned code, documentation and generated fixtures.
 
+### Fixed
+
+- Reduce memory growth during repeated live-manifest refreshes and diagnostic
+  recording. HLS stages index changes without copying retained history; DASH
+  reuses one validated parse. Retention, safety checks and the shared 128 MiB
+  endurance limit are preserved.
+
 ### Verification
 
 The implementation candidate `824c39e` passed all 11 routine CI jobs and a

@@ -54,6 +54,10 @@ export function parseDuration(value: string | undefined): number | undefined {
   );
 }
 export function parseMPD(text: string, url: string): MPDInfo {
+  return parseMPDDocument(text, url).info;
+}
+/** Validated metadata and its lossless XML tree, parsed once for index callers. */
+export function parseMPDDocument(text: string, url: string): { info: MPDInfo; root: any } {
   if (
     Buffer.byteLength(text) > 4 * 1024 * 1024 ||
     /<!DOCTYPE|<!ENTITY/i.test(text)
@@ -155,5 +159,5 @@ export function parseMPD(text: string, url: string): MPDInfo {
     }
   if (!info.representations.length)
     throw new Error("MPD contains no supported representations");
-  return info;
+  return { info, root };
 }

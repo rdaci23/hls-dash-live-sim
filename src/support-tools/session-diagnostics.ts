@@ -188,6 +188,54 @@ const values = {
     "abort_body",
   ],
 };
+const diagnosticFields = Object.freeze([
+  "bodyIdentity",
+  "originBodyIdentity",
+  "cacheDecision",
+  "publicationAction",
+  "networkScope",
+  "lifecycleKind",
+  "lifecycleState",
+  "generation",
+  "sourceMediaTimeMs",
+  "runId",
+  "scenarioId",
+  "ruleId",
+  "phaseId",
+  "manifestFreeze",
+  "trackId",
+  "targetKind",
+  "segmentId",
+  "segmentOrdinal",
+  "attempt",
+  "applications",
+  "result",
+  "requestId",
+  "method",
+  "resourceId",
+  "resourceKind",
+  "resourceSource",
+  "faultId",
+  "fault",
+  "mode",
+  "status",
+  "bodyBytes",
+  "expectedBytes",
+  "headersMs",
+  "firstByteMs",
+  "lastByteMs",
+  "transportElapsedMs",
+  "afterBytes",
+  "stallMs",
+  "deadlineMs",
+  "durationMs",
+  "delayMs",
+  "jitterMs",
+  "bandwidthKbps",
+  "reason",
+  "action",
+]);
+const numericFields = Object.freeze(["bodyBytes", "expectedBytes", "headersMs", "firstByteMs", "lastByteMs", "transportElapsedMs", "afterBytes", "stallMs", "deadlineMs", "durationMs", "delayMs", "jitterMs", "bandwidthKbps"]);
 function allowedField(key: string, value: unknown): boolean {
   if (values[key]) return values[key].includes(value);
   if (key === "bodyIdentity" || key === "originBodyIdentity") return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -222,7 +270,7 @@ function allowedField(key: string, value: unknown): boolean {
       Number.isInteger(value) && Number(value) >= 100 && Number(value) <= 599
     );
   return (
-    ["bodyBytes", "expectedBytes", "headersMs", "firstByteMs", "lastByteMs", "transportElapsedMs", "afterBytes", "stallMs", "deadlineMs", "durationMs", "delayMs", "jitterMs", "bandwidthKbps"].includes(key) &&
+    numericFields.includes(key) &&
     typeof value === "number" &&
     Number.isFinite(value) &&
     value >= 0
@@ -330,54 +378,10 @@ export class SessionDiagnostics {
       elapsedMs: Math.round((performance.now() - this.started) * 1000) / 1000,
     };
     // Copy a fixed set of fields even when called from plain JS with extra data.
-    for (const key of [
-      "bodyIdentity",
-      "originBodyIdentity",
-      "cacheDecision",
-      "publicationAction",
-      "networkScope",
-      "lifecycleKind",
-      "lifecycleState",
-      "generation",
-      "sourceMediaTimeMs",
-      "runId",
-      "scenarioId",
-      "ruleId",
-      "phaseId",
-      "manifestFreeze",
-      "trackId",
-      "targetKind",
-      "segmentId",
-      "segmentOrdinal",
-      "attempt",
-      "applications",
-      "result",
-      "requestId",
-      "method",
-      "resourceId",
-      "resourceKind",
-      "resourceSource",
-      "faultId",
-      "fault",
-      "mode",
-      "status",
-      "bodyBytes",
-      "expectedBytes",
-      "headersMs",
-      "firstByteMs",
-      "lastByteMs",
-      "transportElapsedMs",
-      "afterBytes",
-      "stallMs",
-      "deadlineMs",
-      "durationMs",
-      "delayMs",
-      "jitterMs",
-      "bandwidthKbps",
-      "reason",
-      "action",
-    ])
-      if (allowedField(key, fields[key])) value[key] = fields[key];
+    for (const key of diagnosticFields) {
+      const field = fields[key];
+      if (field !== undefined && allowedField(key, field)) value[key] = field;
+    }
     if (this.events.length < this.capacity) this.events.push(value);
     else {
       this.events[this.offset] = value;

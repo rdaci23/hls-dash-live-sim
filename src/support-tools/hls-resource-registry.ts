@@ -39,12 +39,12 @@ export class HlsResourceRegistry {
     const now = this.clock();
     if (!force && now - this.prunedAt < 1000) return;
     this.prunedAt = now;
-    for (const [id, resource] of this.resources) {
+    this.resources.forEach((resource,id)=>{
       if (!resource.owners.size && resource.expires <= now) {
         this.resources.delete(id);
         if (resource.kind === "playlist") this.release(resource.url, now);
       }
-    }
+    });
   }
   get(id: string): { url: string; kind: Kind } | undefined {
     this.prune();

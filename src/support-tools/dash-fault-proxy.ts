@@ -11,7 +11,7 @@ import {
   sessionServer,
   HttpError,
 } from "./safe-http.js";
-import { getFaultConfig } from "./live-stream-fault-config.js";
+import { getFaultConfig, isFaultLoggingVerbose } from "./live-stream-fault-config.js";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ScenarioEngine, ScenarioDefinition, parseScenario } from "./scenario.js";
@@ -57,7 +57,7 @@ export async function startDashFaultProxy(
   const policy = new OriginPolicy(upstreamBase);
   const diagnostics = new SessionDiagnostics("dash", {
     file: options.diagnosticsFile,rotateFiles:options.diagnosticsRotateFiles,maxFileBytes:options.diagnosticsMaxFileBytes,
-    verbose: () => getFaultConfig().logging?.verbose,
+    verbose: isFaultLoggingVerbose,
   });
   let scenario: ScenarioEngine | undefined;
   try {

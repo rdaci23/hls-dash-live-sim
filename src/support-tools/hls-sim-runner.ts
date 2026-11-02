@@ -22,6 +22,7 @@ import {
 import { ownershipArgs, assertOwnedContainer } from "./container-ownership.js";
 import {
   getFaultConfig,
+  isFaultLoggingVerbose,
   setFaultConfigPath,
   applyConfigOverride,
 } from "./live-stream-fault-config.js";
@@ -257,7 +258,7 @@ export async function startHlsim(
   }
   const diagnostics = new SessionDiagnostics("hls", {
     file: options.diagnosticsFile,rotateFiles:options.diagnosticsRotateFiles,maxFileBytes:options.diagnosticsMaxFileBytes,
-    verbose: () => getFaultConfig().logging?.verbose,
+    verbose: isFaultLoggingVerbose,
   });
   let scenario: ScenarioEngine | undefined;
   try {

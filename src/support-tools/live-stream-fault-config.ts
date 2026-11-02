@@ -261,6 +261,10 @@ export function setFaultConfigPath(file: string): void {
 export function getFaultConfig(): FaultConfig {
   return structuredClone(activeConfig);
 }
+/** Scalar read for per-event logging; never expose the mutable configuration. */
+export function isFaultLoggingVerbose(): boolean {
+  return activeConfig.logging?.verbose === true;
+}
 export function getFaultConfigPath(): string {
   return activePath;
 }

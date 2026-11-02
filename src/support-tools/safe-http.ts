@@ -372,18 +372,24 @@ export function preflight(
     "localhost",
     "127.0.0.1",
     "::1",
-    ...Object.values(os.networkInterfaces())
-      .flat()
-      .filter(Boolean)
-      .map((entry) => entry.address),
   ]);
+  let interfacesRead = false;
+  const local = (name: string) => {
+    if (localHosts.has(name)) return true;
+    if (!interfacesRead) {
+      interfacesRead = true;
+      for (const entries of Object.values(os.networkInterfaces()))
+        for (const entry of entries ?? []) localHosts.add(entry.address);
+    }
+    return localHosts.has(name);
+  };
   const hostname = (url: URL) => url.hostname.replace(/^\[|\]$/g, "");
   try {
     const requested = hostname(new URL("http://" + req.headers.host));
-    if (!localHosts.has(requested)) throw new Error();
+    if (!local(requested)) throw new Error();
     if (
       req.headers.origin &&
-      !localHosts.has(hostname(new URL(req.headers.origin)))
+      !local(hostname(new URL(req.headers.origin)))
     )
       throw new Error();
     if (loopback(host) && !loopback(requested.replace(/^\[|\]$/g, "")))
