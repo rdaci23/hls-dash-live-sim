@@ -107,6 +107,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Reuse private fixed-shape diagnostic records and validation patterns after the
+  bounded window fills, reducing recorder allocation churn. Keep snapshots
+  independent, omit absent fields and preserve journal/export content and order.
+
 - Remove remaining config clones from scenario conflict checks and non-key HLS
   requests. Reuse identical small HLS rewrites within a fixed string budget while
   preserving reference expiry, origin policy, fresh upstream reads and validation

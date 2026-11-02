@@ -70,6 +70,8 @@ that interval. Every attempted cancellation is retained before its assertion.
   small HLS playlists reuse their rewrite with refreshed reference expiry; the
   string cache is bounded to 2 MiB and upstream manifests are still fetched fresh.
   HTTP viewer probes avoid duplicate parsing, header copies and Fetch buffering.
+  Diagnostic windows reuse private fixed-shape records and validation patterns;
+  snapshots still return independent objects with absent optional fields omitted.
   These reduce transient allocation while preserving retention and complete logs;
   the warm-up, workload and 128 MiB individual/shared limits remain the same.
 - Resource indexes, pending work and transfer ownership are sampled. After close,

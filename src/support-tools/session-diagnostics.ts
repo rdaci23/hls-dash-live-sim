@@ -188,81 +188,80 @@ const values = {
     "abort_body",
   ],
 };
-const diagnosticFields = Object.freeze([
-  "bodyIdentity",
-  "originBodyIdentity",
-  "cacheDecision",
-  "publicationAction",
-  "networkScope",
-  "lifecycleKind",
-  "lifecycleState",
-  "generation",
-  "sourceMediaTimeMs",
-  "runId",
-  "scenarioId",
-  "ruleId",
-  "phaseId",
-  "manifestFreeze",
-  "trackId",
-  "targetKind",
-  "segmentId",
-  "segmentOrdinal",
-  "attempt",
-  "applications",
-  "result",
-  "requestId",
-  "method",
-  "resourceId",
-  "resourceKind",
-  "resourceSource",
-  "faultId",
-  "fault",
-  "mode",
-  "status",
-  "bodyBytes",
-  "expectedBytes",
-  "headersMs",
-  "firstByteMs",
-  "lastByteMs",
-  "transportElapsedMs",
-  "afterBytes",
-  "stallMs",
-  "deadlineMs",
-  "durationMs",
-  "delayMs",
-  "jitterMs",
-  "bandwidthKbps",
-  "reason",
-  "action",
-]);
+function diagnosticSlot(): Required<DiagnosticEvent> {
+  return {
+    schemaVersion: 1, event: "session.started", eventId: 0,
+    sessionId: "", protocol: "hls", timestamp: "", elapsedMs: 0,
+    bodyIdentity: undefined,
+    originBodyIdentity: undefined,
+    cacheDecision: undefined,
+    publicationAction: undefined,
+    networkScope: undefined,
+    lifecycleKind: undefined,
+    lifecycleState: undefined,
+    generation: undefined,
+    sourceMediaTimeMs: undefined,
+    runId: undefined,
+    scenarioId: undefined,
+    ruleId: undefined,
+    phaseId: undefined,
+    manifestFreeze: undefined,
+    trackId: undefined,
+    targetKind: undefined,
+    segmentId: undefined,
+    segmentOrdinal: undefined,
+    attempt: undefined,
+    applications: undefined,
+    result: undefined,
+    requestId: undefined,
+    method: undefined,
+    resourceId: undefined,
+    resourceKind: undefined,
+    resourceSource: undefined,
+    faultId: undefined,
+    fault: undefined,
+    mode: undefined,
+    status: undefined,
+    bodyBytes: undefined,
+    expectedBytes: undefined,
+    headersMs: undefined,
+    firstByteMs: undefined,
+    lastByteMs: undefined,
+    transportElapsedMs: undefined,
+    afterBytes: undefined,
+    stallMs: undefined,
+    deadlineMs: undefined,
+    durationMs: undefined,
+    delayMs: undefined,
+    jitterMs: undefined,
+    bandwidthKbps: undefined,
+    reason: undefined,
+    action: undefined,
+  };
+}
+const envelopeFields = new Set(["schemaVersion", "event", "eventId", "sessionId", "protocol", "timestamp", "elapsedMs"]);
+const diagnosticFields = Object.freeze(Object.keys(diagnosticSlot()).filter(key => !envelopeFields.has(key)));
 const numericFields = Object.freeze(["bodyBytes", "expectedBytes", "headersMs", "firstByteMs", "lastByteMs", "transportElapsedMs", "afterBytes", "stallMs", "deadlineMs", "durationMs", "delayMs", "jitterMs", "bandwidthKbps"]);
+const identityPattern = /^[a-f0-9]{64}$/;
+const uuidPattern = /^[a-f0-9-]{36}$/;
+const fieldPatterns = Object.freeze({
+  bodyIdentity: identityPattern, originBodyIdentity: identityPattern,
+  requestId: uuidPattern, runId: uuidPattern,
+  faultId: /^fault_(?:[a-f0-9]{32}|[a-f0-9-]{36})$/,
+  resourceId: /^resource_[a-f0-9]{24}$/,
+  scenarioId: /^scenario_[a-f0-9]{32}$/,
+  segmentId: /^segment_[a-f0-9]{32}$/,
+  ruleId: /^rule:\d{1,2}$/,
+  phaseId: /^phase:\d{1,2}$/,
+  trackId: /^(?:root|(video|audio|text):\d{1,3})$/,
+});
 function allowedField(key: string, value: unknown): boolean {
   if (values[key]) return values[key].includes(value);
-  if (key === "bodyIdentity" || key === "originBodyIdentity") return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
-  if (key === "requestId" || key === "runId")
-    return typeof value === "string" && /^[a-f0-9-]{36}$/.test(value);
-  if (key === "faultId")
-    return (
-      typeof value === "string" &&
-      /^fault_(?:[a-f0-9]{32}|[a-f0-9-]{36})$/.test(value)
-    );
-  if (key === "resourceId")
-    return typeof value === "string" && /^resource_[a-f0-9]{24}$/.test(value);
-  if (key === "scenarioId")
-    return typeof value === "string" && /^scenario_[a-f0-9]{32}$/.test(value);
-  if (key === "segmentId")
-    return typeof value === "string" && /^segment_[a-f0-9]{32}$/.test(value);
-  if (key === "ruleId")
-    return typeof value === "string" && /^rule:\d{1,2}$/.test(value);
-  if (key === "phaseId")
-    return typeof value === "string" && /^phase:\d{1,2}$/.test(value);
+  const pattern: RegExp | undefined = fieldPatterns[key];
+  if (pattern) return typeof value === "string" && pattern.test(value);
   if(key === "generation")return Number.isSafeInteger(value)&&Number(value)>=0&&Number(value)<64;
   if(key === "sourceMediaTimeMs")return typeof value === "number"&&Number.isFinite(value)&&value>=0&&value<=Number.MAX_SAFE_INTEGER;
   if (key === "manifestFreeze") return typeof value === "boolean";
-  if (key === "trackId")
-    return (
-      typeof value === "string" && /^(?:root|(video|audio|text):\d{1,3})$/.test(value)
-    );
   if (key === "attempt" || key === "applications" || key === "segmentOrdinal")
     return Number.isSafeInteger(value) && Number(value) >= 1;
   if (key === "status")
@@ -284,6 +283,7 @@ export class SessionDiagnostics {
   private started = performance.now();
   private sequence = 0;
   private events: DiagnosticEvent[] = [];
+  private spare?: DiagnosticEvent;
   private offset = 0;
   private capacity: number;
   private fileLimit: number;
@@ -368,26 +368,29 @@ export class SessionDiagnostics {
   }
   record(event: EventType, fields: DiagnosticFields = {}): void {
     if (this.closed) return;
-    const value: DiagnosticEvent = {
-      schemaVersion: 1,
-      event,
-      eventId: ++this.sequence,
-      sessionId: this.sessionId,
-      protocol: this.protocol,
-      timestamp: new Date().toISOString(),
-      elapsedMs: Math.round((performance.now() - this.started) * 1000) / 1000,
-    };
+    const verbose = this.options.verbose?.();
+    if (this.closed) return;
+    // Assemble the spare outside the published window, then retire one old slot.
+    // Public reads copy present primitives; old snapshots cannot change or inherit data.
+    const value: DiagnosticEvent = this.spare ?? diagnosticSlot();
+    this.spare = undefined;
+    value.sessionId = this.sessionId;
+    value.protocol = this.protocol;
+    value.event = event;
+    value.eventId = ++this.sequence;
+    value.timestamp = new Date().toISOString();
+    value.elapsedMs = Math.round((performance.now() - this.started) * 1000) / 1000;
     // Copy a fixed set of fields even when called from plain JS with extra data.
     for (const key of diagnosticFields) {
       const field = fields[key];
-      if (field !== undefined && allowedField(key, field)) value[key] = field;
+      value[key] = field !== undefined && allowedField(key, field) ? field : undefined;
     }
     if (this.events.length < this.capacity) this.events.push(value);
     else {
+      this.spare = this.events[this.offset];
       this.events[this.offset] = value;
       this.offset = (this.offset + 1) % this.capacity;
     }
-    const verbose = this.options.verbose?.();
     // The event window remains available for snapshots/exports without a sink.
     if (!verbose && !this.rotation && this.fd === undefined) return;
     const line = JSON.stringify(value) + "\n";
@@ -425,7 +428,11 @@ export class SessionDiagnostics {
     const events = this.events.length < this.capacity ? this.events : [
       ...this.events.slice(this.offset), ...this.events.slice(0, this.offset),
     ];
-    return structuredClone({ ...this.metadata(), events });
+    return { ...this.metadata(), events: events.map(value => {
+      const copy: DiagnosticEvent = {schemaVersion:value.schemaVersion,event:value.event,eventId:value.eventId,sessionId:value.sessionId,protocol:value.protocol,timestamp:value.timestamp,elapsedMs:value.elapsedMs};
+      for (const key of diagnosticFields) if (value[key] !== undefined) copy[key] = value[key];
+      return copy;
+    }) };
   }
   exportJsonl(): string {
     const { events, ...metadata } = this.snapshot();

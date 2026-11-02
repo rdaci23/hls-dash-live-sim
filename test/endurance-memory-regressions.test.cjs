@@ -178,3 +178,35 @@ test('repeated HLS rewrites preserve resource identity, retention, policy enforc
   now=16001;assert.equal(registry.get(id),undefined);
   registry.close();assert.deepEqual(registry.snapshot(),{registryResources:0,registryPlaylists:0});
 });
+
+for(const protocol of ['hls','dash']) test(protocol+' wrapped diagnostic slots never mutate snapshots or retain fields from an older event', () => {
+  const {SessionDiagnostics}=require('../dist/support-tools/session-diagnostics.js');
+  const d=new SessionDiagnostics(protocol,{maxEvents:1});
+  d.record('fault.applied',{fault:'scenario.status',status:503,bodyBytes:17,trackId:'video:1',requestId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'});
+  const previous=d.snapshot(), saved=structuredClone(previous);
+  for(let i=0;i<100;i++)d.record('request.completed',{bodyBytes:0,manifestFreeze:false,url:'private-marker'});
+  assert.deepEqual(previous,saved);
+  const current=d.snapshot().events[0];
+  assert.equal(Object.hasOwn(current,'status'),false);
+  assert.equal(Object.hasOwn(current,'fault'),false);
+  assert.equal(Object.hasOwn(current,'trackId'),false);
+  assert.equal(Object.hasOwn(current,'requestId'),false);
+  assert.equal(current.bodyBytes,0);assert.equal(current.manifestFreeze,false);
+  assert.deepEqual(Object.keys(current),['schemaVersion','event','eventId','sessionId','protocol','timestamp','elapsedMs','manifestFreeze','bodyBytes']);
+  assert.deepEqual(d.exportJsonl().trim().split('\n').map(JSON.parse).slice(1),[current]);
+  d.close();
+  assert.equal(d.snapshot().events[0].event,'session.closed');
+  assert.equal(Object.hasOwn(d.snapshot().events[0],'bodyBytes'),false);
+  assert.ok(!d.exportJsonl().includes('private-marker'));
+});
+
+test('diagnostic reads during field evaluation observe the last complete event', () => {
+  const {SessionDiagnostics}=require('../dist/support-tools/session-diagnostics.js');
+  const d=new SessionDiagnostics('hls',{maxEvents:1});
+  d.record('request.completed',{status:200,bodyBytes:42});
+  const before=d.snapshot();let observed;
+  d.record('request.completed',{get bodyBytes(){observed=d.snapshot();return 17;}});
+  assert.deepEqual(observed.events,before.events);
+  assert.equal(d.snapshot().events[0].bodyBytes,17);
+  d.close();
+});
