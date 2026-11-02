@@ -17,6 +17,9 @@ const root = path.resolve(__dirname, '../..');
         const result = await read(file, metadata);
         assert.equal(result.completeFile.complete, true);
         eventCount = result.completeFile.eventCount;
+        assert.equal(result.events.length, 2000);
+        assert.equal(result.events[0].eventId, 48003);
+        assert.equal(result.events.at(-1).event, 'session.closed');
     }
     const peak = Math.max(process.memoryUsage().rss, process.resourceUsage().maxRSS * 1024), growth = peak - baseline;
     console.log(JSON.stringify({ baseline, peak, growth, eventCount, iterations: 12, limit: 128 * 1024 * 1024 }));

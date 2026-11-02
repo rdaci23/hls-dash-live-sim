@@ -43,7 +43,11 @@ async function read(file, metadata) {
                     throw Error('Diagnostic event lost or identity changed');
                 first ??= event;
                 last = event;
-                recent.push(event);
+                // The closed manifest gives the final count. Validate every event,
+                // but retain only the final window rather than promoting early
+                // objects while they pass through a rolling window.
+                if (event.eventId > metadata.eventsRecorded - 2000)
+                    recent.push(event);
                 if (recent.length > 2000)
                     recent.shift();
                 count++;

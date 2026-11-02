@@ -3,6 +3,23 @@ const { SessionDiagnostics } = require('../dist/support-tools/session-diagnostic
 async function record(t, maximum = 64, count = 80) { const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rotated-diag-')); t.after(() => fs.rm(dir, { recursive: true, force: true })); const file = path.join(dir, 'requests.jsonl'), diag = new SessionDiagnostics('hls', { file, maxEvents: 3, maxFileBytes: 1024, rotateFiles: maximum }); for (let i = 0; i < count; i++)
     diag.record('scenario.started'); diag.close(); return { file, diag, metadata: diag.snapshot() }; }
 test('bounded append-only rotation retains every event across closed hashed parts despite memory eviction', async (t) => { const { file, metadata } = await record(t); const result = await read(file, metadata); assert.equal(result.completeFile.eventCount, 82); assert.ok(result.completeFile.files.length > 1); assert.equal(result.completeFile.complete, true); assert.equal(result.events.at(-1).event, 'session.closed'); assert.ok(metadata.droppedEvents > 0); assert.ok(result.completeFile.files.every(p => p.bytes <= 1024)); });
+test('closed replay retains the final window and still validates events outside it', async (t) => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rotated-tail-'));
+    t.after(() => fs.rm(dir, { recursive: true, force: true }));
+    const file = path.join(dir, 'requests.jsonl');
+    const diag = new SessionDiagnostics('hls', { file, maxEvents: 3, maxFileBytes: 65536, rotateFiles: 16 });
+    for (let i = 0; i < 2500; i++) diag.record('scenario.started');
+    diag.close();
+    const metadata = diag.snapshot(), result = await read(file, metadata);
+    assert.equal(result.completeFile.eventCount, 2502);
+    assert.equal(result.events.length, 2000);
+    assert.equal(result.events[0].eventId, 503);
+    assert.equal(result.events.at(-1).eventId, 2502);
+    const bytes = await fs.readFile(file, 'utf8');
+    assert.ok(bytes.includes('"eventId":2,'));
+    await fs.writeFile(file, bytes.replace('"eventId":2,', '"eventId":9,'));
+    await assert.rejects(read(file, metadata), /Diagnostic event lost or identity changed/);
+});
 test('missing, truncated, changed or mismatched rotated evidence never qualifies', async (t) => { for (const mutation of ['missing', 'truncated', 'body', 'index', 'runtime']) {
     const { file, metadata } = await record(t), part = path.join(path.dirname(file), metadata.rotation.files[1].file);
     if (mutation === 'missing')
