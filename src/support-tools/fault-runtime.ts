@@ -30,13 +30,15 @@ const names: Record<string, DiagnosticFault> = {
   freeze: "manifest.freeze",
 };
 export class FaultRuntime {
+  // The subscription delivers a private defensive copy on each configuration change.
+  private config = getFaultConfig();
   private modes = new Map<string, FaultMode>();
   private arms = new Map<string, string>();
   private consumed = new Set<string>();
   private activations = new Map<string, { signature: string; id: string }>();
   private shapedBodies = 0;
   private shapedBytes = 0;
-  private bandwidth = new SharedBandwidthLimiter(getFaultConfig().network?.bandwidthKbps);
+  private bandwidth = new SharedBandwidthLimiter(this.config.network?.bandwidthKbps);
   private trackLimits = new Map<string,SharedBandwidthLimiter>();
   private closed = false;
   ownership(){const tracks=[...this.trackLimits.values()].map(l=>l.snapshot()),global=this.bandwidth.snapshot();return{activeBodies:this.shapedBodies,bufferedBytes:this.shapedBytes,pendingGrants:global.pendingGrants+tracks.reduce((n,v)=>n+v.pendingGrants,0),pendingTimers:global.pendingTimers+tracks.reduce((n,v)=>n+v.pendingTimers,0)};}
@@ -45,6 +47,7 @@ export class FaultRuntime {
   }
   private unsubscribeTimeline?: () => void;
   private unsubscribe = onFaultConfigChange((config) => {
+    this.config = config;
     const values = faultModes(config);
     for (const [category, mode] of Object.entries(values))
       if (
@@ -70,17 +73,17 @@ export class FaultRuntime {
     this.latency = config.segment?.latencyMs;
     this.freeze = config.manifest?.freeze;
   });
-  private jitter = getFaultConfig().network?.jitterMs;
-  private bandwidthKbps = getFaultConfig().network?.bandwidthKbps;
-  private latency = getFaultConfig().segment?.latencyMs;
-  private freeze = getFaultConfig().manifest?.freeze;
+  private jitter = this.config.network?.jitterMs;
+  private bandwidthKbps = this.config.network?.bandwidthKbps;
+  private latency = this.config.segment?.latencyMs;
+  private freeze = this.config.manifest?.freeze;
   private effect(
     category: string,
     mode: "once" | "random" | "always",
     trace?: RequestTrace,
     extra = {},
   ): FaultEffect | undefined {
-    const config = getFaultConfig();
+    const config = this.config;
     const signature =
       mode +
       ":" +
@@ -116,7 +119,7 @@ export class FaultRuntime {
   }
   // Observation only: reading status must never select or consume a fault.
   snapshot() {
-    const config = getFaultConfig();
+    const config = this.config;
     return {
       rules: Object.entries(faultModes(config))
         .filter(([, mode]) => mode && mode !== "off")
@@ -148,7 +151,7 @@ export class FaultRuntime {
     trace?: RequestTrace,
     action: "response" | "corrupt_body" | "corrupt_range" = "response",
   ): boolean {
-    const arm = getFaultConfig()._oneShot?.[category];
+    const arm = this.config._oneShot?.[category];
     if (this.modes.get(category) !== mode || this.arms.get(category) !== arm) {
       this.modes.set(category, mode);
       this.arms.set(category, arm);
@@ -167,7 +170,7 @@ export class FaultRuntime {
     return true;
   }
   segmentStatus(resource: string, trace?: RequestTrace): number {
-    const config = getFaultConfig();
+    const config = this.config;
     if (this.trigger(config.segment?.missing, "missing", resource, trace))
       return 404;
     if (this.trigger(config.segment?.forbidden, "forbidden", resource, trace))
@@ -182,7 +185,7 @@ export class FaultRuntime {
   ): Buffer {
     if (
       !this.trigger(
-        getFaultConfig().segment?.malformed,
+        this.config.segment?.malformed,
         "malformed",
         resource,
         trace,
@@ -200,7 +203,7 @@ export class FaultRuntime {
   }
   async delay(signal: AbortSignal, trace?: RequestTrace, method = "GET", jitterEligible = true, lane = "manifest"): Promise<void> {
     signal.throwIfAborted();
-    const config = getFaultConfig();
+    const config = this.config;
     const profile = this.timeline?.profile();
     const ms = this.timeline ? 0 : config.segment?.latencyMs ?? 0;
     const jitterMs = method === "GET" && jitterEligible ? (profile ? profile.jitterMs : config.network?.jitterMs ?? 0) : 0;
@@ -226,7 +229,7 @@ export class FaultRuntime {
   ): Promise<void> {
     signal.throwIfAborted();
     const profile = this.timeline?.profile();
-    const bandwidthKbps = enabled ? (profile ? profile.bandwidthKbps : getFaultConfig().network?.bandwidthKbps ?? 0) : 0;
+    const bandwidthKbps = enabled ? (profile ? profile.bandwidthKbps : this.config.network?.bandwidthKbps ?? 0) : 0;
     const shapingTrack=trace?.targetKind === "media"?trace.trackId:undefined;
     const trackCap=enabled?profile?.tracks?.[shapingTrack]?.bandwidthKbps??0:0;
     if ((!bandwidthKbps && !trackCap) || method !== "GET" || ![200, 206].includes(status)) {

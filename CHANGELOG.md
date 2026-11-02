@@ -107,6 +107,13 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Avoid unused diagnostic serialization and release synthetic browser routing
+  interception after its negative probe; preserve bounded event exports, origin
+  isolation and the 10,000-request/128 MiB routing gate.
+- Reuse immutable timeline boundary tables and private subscribed fault config,
+  and check timeline settlement without building full reports on each request.
+  Preserve phase boundaries, effect evidence, one-shot rearming and live updates.
+
 - Bound HLS/DASH origin request lifetimes with native HTTP reads and explicit
   deadline/listener cleanup, retaining redirect allowlists, decompression limits,
   cancellation and exact response bytes. Endurance reports include heap/Buffer

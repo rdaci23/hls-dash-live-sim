@@ -387,8 +387,11 @@ export class SessionDiagnostics {
       this.events[this.offset] = value;
       this.offset = (this.offset + 1) % this.capacity;
     }
+    const verbose = this.options.verbose?.();
+    // The event window remains available for snapshots/exports without a sink.
+    if (!verbose && !this.rotation && this.fd === undefined) return;
     const line = JSON.stringify(value) + "\n";
-    if (this.options.verbose?.()) console.error(line.trimEnd());
+    if (verbose) console.error(line.trimEnd());
     if(this.rotation){const failed=this.rotation.failed,limited=this.rotation.limited;this.rotation.write(line,value.eventId);if(!failed&&this.rotation.failed){console.error('[diagnostics] Rotated file recording failed; evidence is incomplete.');this.record('diagnostics.file_error');}else if(!limited&&this.rotation.limited){console.error('[diagnostics] Rotation bound reached; evidence is incomplete.');this.record('diagnostics.file_limit');}}
     if (this.fd !== undefined && !this.fileLimitReached) {
       // Reserve room for a final, valid JSONL truncation marker.

@@ -102,3 +102,51 @@ for (const protocol of ['hls', 'dash']) test(protocol + ' metadata reads preserv
   assert.equal(complete.completeFile.eventCount, 7);
   assert.deepEqual(complete.events.slice(-3), exported.slice(1));
 });
+
+for (const protocol of ['hls', 'dash']) test(protocol + ' in-memory diagnostics retain bounded events and exports as verbosity changes without a file', t => {
+  const { SessionDiagnostics } = require('../dist/support-tools/session-diagnostics.js');
+  let verbose = false;
+  const lines = [];
+  t.mock.method(console, 'error', line => lines.push(JSON.parse(line)));
+  const d = new SessionDiagnostics(protocol, { maxEvents: 3, verbose: () => verbose });
+  for (let i = 0; i < 8; i++) d.record('request.completed', {status:200,bodyBytes:0,manifestFreeze:false,url:'private-marker'});
+  assert.equal(lines.length, 0);
+  assert.equal(d.snapshot().events.length, 3);
+  assert.equal(d.metadata().eventsRecorded, 9);
+  verbose = true;
+  d.record('request.completed', {status:206,bodyBytes:17});
+  assert.deepEqual(lines, [d.snapshot().events.at(-1)]);
+  verbose = false;
+  d.close();
+  const exported = d.exportJsonl().trim().split('\n').map(JSON.parse);
+  assert.deepEqual(exported.slice(1), d.snapshot().events);
+  assert.equal(exported[0].fileEnabled, false);
+  assert.equal(exported[0].eventsRecorded, 11);
+  assert.equal(exported.at(-1).event, 'session.closed');
+  assert.ok(!d.exportJsonl().includes('private-marker'));
+  assert.equal(lines.length, 1);
+});
+
+test('fault runtime private configuration follows updates and one-shot rearming without exposing mutable state', t => {
+  const { FaultRuntime } = require('../dist/support-tools/fault-runtime.js');
+  const config = require('../dist/support-tools/live-stream-fault-config.js');
+  const runtime = new FaultRuntime(() => 0);
+  t.after(() => { runtime.close(); config.applyConfigOverride({segment:{missing:'off',latencyMs:0},network:{bandwidthKbps:0,jitterMs:0}}); });
+  config.applyConfigOverride({segment:{missing:'once',latencyMs:7},network:{bandwidthKbps:80,jitterMs:11}});
+  const detached = config.getFaultConfig(), snapshot = runtime.snapshot();
+  detached.segment.missing = 'off'; snapshot.rules[0].mode = 'off';
+  assert.equal(runtime.snapshot().latencyMs,7);
+  assert.equal(runtime.snapshot().bandwidthKbps,80);
+  assert.equal(runtime.snapshot().jitterMs,11);
+  assert.equal(runtime.segmentStatus('fixture'),404);
+  assert.equal(runtime.segmentStatus('fixture'),0);
+  assert.equal(runtime.snapshot().rules.find(r=>r.fault==='segment.missing').state,'consumed');
+  config.applyConfigOverride({segment:{missing:'once',latencyMs:0},network:{bandwidthKbps:0,jitterMs:0}});
+  assert.equal(runtime.segmentStatus('fixture'),0,'unrelated updates do not rearm a one-shot fault');
+  config.applyConfigOverride({segment:{missing:'off'}});
+  config.applyConfigOverride({segment:{missing:'once'}});
+  assert.equal(runtime.segmentStatus('fixture'),404);
+  assert.equal(runtime.snapshot().latencyMs,0);
+  assert.equal(runtime.snapshot().bandwidthKbps,0);
+  assert.equal(runtime.snapshot().jitterMs,0);
+});

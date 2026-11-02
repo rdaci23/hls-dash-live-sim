@@ -475,7 +475,7 @@ export class ScenarioEngine {
       : (this.elapsed = Math.max(this.elapsed, this.clock() - this.started, 0));
   }
   get settled(): boolean {
-    return (!this.services || this.services.report().result !== "pending") && (!this.lifecycle || this.lifecycle.report().result !== "pending") && (!this.publication || this.publication.report().result !== "pending") && (!this.cache || this.cache.report().result !== "pending") && (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.report().every(phase => phase.result !== "pending")) && this.states.every(
+    return (!this.services || this.services.report().result !== "pending") && (!this.lifecycle || this.lifecycle.report().result !== "pending") && (!this.publication || this.publication.report().result !== "pending") && (!this.cache || this.cache.report().result !== "pending") && (!this.http || this.http.report().result !== "pending") && (!this.timeline || this.timeline.settled) && this.states.every(
       (_, index) => this.stateStatus(index) !== "pending",
     );
   }

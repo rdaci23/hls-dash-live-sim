@@ -16,8 +16,14 @@ async function main() {
         const unallowed = 'http://127.0.0.1:' + sentinel.address().port + '/forbidden';
         assert.equal(await ui.page.evaluate(url => fetch(url).then(() => false, () => true), unallowed), true);
         const redirect = new URL('/redirect-probe', ui.page.url()).href;
-        await ui.page.route(redirect, r => r.fulfill({ status: 302, headers: { Location: unallowed } }));
-        assert.equal(await ui.page.evaluate(url => fetch(url).then(() => false, () => true), redirect), true);
+        const redirectProbe = r => r.fulfill({ status: 302, headers: { Location: unallowed } });
+        await ui.page.route(redirect, redirectProbe);
+        try { assert.equal(await ui.page.evaluate(url => fetch(url).then(() => false, () => true), redirect), true); }
+        finally { await ui.page.unroute(redirect, redirectProbe); }
+        // The synthetic redirect must not intercept the 10,000 allowed requests.
+        // Confirm origin isolation still holds after removing that test fixture.
+        assert.equal(await ui.page.evaluate(url => fetch(url).then(() => false, () => true), unallowed), true);
+        report.syntheticRedirectReleased = true;
         assert.equal(hits, 0);
         const request = async (count) => ui.page.evaluate(async ({ url, count }) => { for (let n = 0; n < count; n += 32)
             await Promise.all(Array.from({ length: Math.min(32, count - n) }, () => fetch(url).then(async (r) => { if (r.status !== 200)

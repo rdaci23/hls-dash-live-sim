@@ -59,6 +59,13 @@ that interval. Every attempted cancellation is retained before its assertion.
   and parent-cancellation listeners when complete. HTTP track probes use the
   existing bounded native viewer rather than retaining Fetch timeout graphs;
   metadata-only reads avoid copying event windows during owner shutdown.
+  In-memory diagnostics serialize only when a file or verbose output needs the
+  line; snapshots/exports retain the same bounded event window. The browser routing
+  precheck removes its synthetic redirect interception before the unchanged
+  10,000-request, 128 MiB allowed-request check, and rechecks blocked origins.
+  Timeline boundary tables are built once, settlement reads avoid full phase
+  reports, and fault runtimes retain private config copies refreshed by the
+  existing change subscription rather than cloning config on each request.
   These reduce transient allocation while preserving retention and complete logs;
   the warm-up, workload and 128 MiB individual/shared limits remain the same.
 - Resource indexes, pending work and transfer ownership are sampled. After close,

@@ -63,6 +63,7 @@ export class ScenarioTimeline {
   private lanes = new Map<string, number>();
   private closed = false;
   private stoppedAt = 0;
+  private readonly boundaries: readonly number[];
   private invalid = false;
   get failureReason(): "jitter_capacity_exceeded" | undefined {
     return this.invalid ? "jitter_capacity_exceeded" : undefined;
@@ -76,6 +77,7 @@ export class ScenarioTimeline {
     private diagnostics: SessionDiagnostics,
     private elapsed: () => number,
   ) {
+    this.boundaries = phases.flatMap(p => [p.afterMs, p.beforeMs]);
     this.trackStates=phases.map(p=>Object.fromEntries(Object.keys(p.tracks??{}).map(track=>[track,{completed:0,bandwidth:0,jitter:0}])));
     this.states = phases.map(() => ({ selected: 0, completed: 0, cancelled: 0, bandwidth: 0, jitter: 0, freeze: 0 }));
     this.sync();
@@ -100,7 +102,7 @@ export class ScenarioTimeline {
       this.diagnostics.record("scenario.profile", { scenarioId: this.scenarioId, ...profile });
       for (const listener of this.listeners) listener(profile);
     }
-    const next = this.phases.flatMap(p => [p.afterMs, p.beforeMs]).find(t => t > now);
+    const next = this.boundaries.find(t => t > now);
     if (next !== this.nextBoundary || (!this.timer && next !== undefined)) {
       clearTimeout(this.timer);
       this.nextBoundary = next;
@@ -164,6 +166,10 @@ export class ScenarioTimeline {
       else result = this.closed ? "incomplete" : "pending";
       return { phaseId: `phase:${index}`, ...p, ...(p.tracks?{trackObservations:tracks}:{}),...state, failure: this.failureReason, result };
     });
+  }
+  get settled(): boolean {
+    this.sync();
+    return this.invalid || this.closed || this.at() >= this.phases[this.phases.length - 1].beforeMs;
   }
   ownership(){return{scenarioTimers:this.timer?1:0,scenarioListeners:this.listeners.size};}
   close(): void {

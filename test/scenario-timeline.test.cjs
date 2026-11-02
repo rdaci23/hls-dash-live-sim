@@ -43,6 +43,22 @@ test('phase boundaries freeze snapshots, retain live latest, and restore the hea
   h.at(1100);h.engine.close();assert.equal(h.engine.timeline.profile().manifestFreeze,false);
   const elapsed=h.engine.report().elapsedMs;h.at(9999);assert.equal(h.engine.report().elapsedMs,elapsed);
 });
+test('long schedules preserve every boundary, gap and settlement result without materializing reports for status reads', t => {
+  const phases = Array.from({length: 49}, (_, index) => phase({afterMs:index*200+50,beforeMs:index*200+150,network:{bandwidthKbps:index+1,jitterMs:0},manifestFreeze:false}));
+  const h = harness(t, definition(phases));
+  for (const at of [0, ...phases.flatMap(p => [p.afterMs-1,p.afterMs,p.beforeMs-1,p.beforeMs]), 10000]) {
+    h.at(at);
+    const index = phases.findIndex(p => at >= p.afterMs && at < p.beforeMs), profile = h.engine.timeline.profile();
+    assert.equal(profile.phaseId, index < 0 ? undefined : 'phase:'+index);
+    assert.equal(profile.bandwidthKbps,index < 0 ? 0 : index+1);
+    assert.equal(h.engine.timeline.settled,h.engine.timeline.report().every(p => p.result !== 'pending'));
+    assert.equal(h.engine.settled,h.engine.timeline.settled);
+  }
+  const early = harness(t, definition(phases));
+  early.at(60); early.engine.close();
+  assert.equal(early.engine.timeline.settled,true);
+  assert.equal(early.engine.settled,true);
+});
 test('seeded jitter repeats per request lane without unrelated audio changing video samples', t => {
   const a=harness(t),b=harness(t);a.at(200);b.at(200);a.engine.timeline.profile();b.engine.timeline.profile();
   const expected=[],actual=[];
@@ -80,6 +96,7 @@ test('jitter lane capacity is explicit and cannot silently reset repeatability',
   for(let n=0;n<512;n++)h.engine.timeline.jitter('lane:'+n,100);
   assert.throws(()=>h.engine.timeline.jitter('overflow',100),/capacity/);
   assert.equal(h.engine.report().result,'failed');
+  assert.equal(h.engine.timeline.settled,true);
 });
 test('HTTP retry rules and a seeded network phase compose without mutating the manual config', async t => {
   const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
