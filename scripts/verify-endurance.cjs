@@ -122,7 +122,9 @@ async function main() {
                 if (resource.init) {
                     let timescale = state.timing.get(resource.track);
                     if (!timescale) {
-                        const init = Buffer.from(await (await fetch(resource.init, { signal: controller.signal })).arrayBuffer());
+                        const response = await raw(resource.init, {signal: controller.signal, timeoutMs: 10000});
+                        assert.equal(response.status,200); assert.ok(response.complete);
+                        const init = response.bytes;
                         timescale = initialization(init).timescale;
                         state.timing.set(resource.track, timescale);
                     }

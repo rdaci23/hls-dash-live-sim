@@ -7,7 +7,7 @@ import { ScenarioResponseHeaders, parseResponseHeaders, responseHeaders } from "
 import { HttpResponsePolicy, HttpResponsePolicyDefinition, ConditionalHeaders, conditionalHeaders, parseHttpPolicy } from "./http-response-policy.js";
 import { createHash } from "node:crypto";
 import { HttpError } from "./safe-http.js";
-import { getFaultConfig } from "./live-stream-fault-config.js";
+import { hasManualFaultConflict } from "./live-stream-fault-config.js";
 import { parseTimeline, ScenarioTimeline, TimelinePhase } from "./scenario-timeline.js";
 import type { ServerResponse } from "node:http";
 import { PayloadFault, PayloadSnapshots } from "./payload-fault.js";
@@ -339,8 +339,7 @@ const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
 export function manualFaultConflict(): boolean {
-  const config = getFaultConfig();
-  return Object.entries(config.segment ?? {}).some(([key, value]) => key === "latencyMs" ? Number(value) > 0 : value !== "off") || Object.values(config.drm ?? {}).some(value => value !== "off") || config.manifest?.freeze !== "off" || Object.values(config.network ?? {}).some(value => Number(value) > 0);
+  return hasManualFaultConflict();
 }
 
 /** Immutable per-session rules. Choices depend on logical identity, never global RNG order. */

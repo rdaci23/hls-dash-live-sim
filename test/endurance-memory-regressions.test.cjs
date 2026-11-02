@@ -150,3 +150,31 @@ test('fault runtime private configuration follows updates and one-shot rearming 
   assert.equal(runtime.snapshot().bandwidthKbps,0);
   assert.equal(runtime.snapshot().jitterMs,0);
 });
+
+test('scalar manual conflict state matches normalized config and updates before subscribers observe it', t => {
+  const config = require('../dist/support-tools/live-stream-fault-config.js');
+  const baseline={segment:{missing:'off',forbidden:'off',malformed:'off',latencyMs:0},network:{bandwidthKbps:0,jitterMs:0},manifest:{freeze:'off'},drm:{licenseFailure:'off',keyRotationMismatch:'off'}};
+  const expected = c => Object.entries(c.segment??{}).some(([k,v])=>k==='latencyMs'?Number(v)>0:v!=='off') || Object.values(c.drm??{}).some(v=>v!=='off') || c.manifest?.freeze!=='off' || Object.values(c.network??{}).some(v=>Number(v)>0);
+  const off=config.onFaultConfigChange(c=>assert.equal(config.hasManualFaultConflict(),expected(c)));
+  t.after(()=>{off();config.applyConfigOverride(baseline);});
+  const patches=[{}, {segment:{latencyMs:1}}, {network:{bandwidthKbps:1}}, {network:{jitterMs:1}}, {manifest:{freeze:'always'}}];
+  for(const category of ['missing','forbidden','malformed'])for(const mode of ['once','random','always'])patches.push({segment:{[category]:mode}});
+  for(const category of ['licenseFailure','keyRotationMismatch'])for(const mode of ['once','random','always'])patches.push({drm:{[category]:mode}});
+  for(const patch of patches){config.applyConfigOverride(baseline);config.applyConfigOverride(patch);const c=config.getFaultConfig();assert.equal(config.hasManualFaultConflict(),expected(c));c.network.jitterMs=123;assert.equal(config.hasManualFaultConflict(),expected(config.getFaultConfig()));}
+});
+
+test('repeated HLS rewrites preserve resource identity, retention, policy enforcement and invalid-input rejection', () => {
+  const { HlsResourceRegistry }=require('../dist/support-tools/hls-resource-registry.js');
+  const { OriginPolicy }=require('../dist/support-tools/safe-http.js');
+  let now=0;const registry=new HlsResourceRegistry(()=>now),base='http://fixture.test/live/main.m3u8',policy=new OriginPolicy(base);
+  const playlist=uri=>'#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\n'+uri+'\n';
+  const original=registry.rewrite(playlist('a.m4s'),base,base,policy),id=/\/r\/([a-f0-9]{32})/.exec(original)[1];
+  for(now=1000;now<=10000;now+=1000)assert.equal(registry.rewrite(playlist('a.m4s'),base,base,policy),original);
+  assert.equal(registry.get(id).url,'http://fixture.test/live/a.m4s');
+  assert.throws(()=>registry.rewrite(playlist('a.m4s'),base,base,new OriginPolicy('http://other.test')),/not allowed/);
+  assert.throws(()=>registry.rewrite(playlist('a.m4s')+'#EXT-X-PART:DURATION=1,URI="p.m4s"\n',base,base,policy),/Low-latency/);
+  now=11000;registry.rewrite(playlist('b.m4s'),base,base,policy);
+  now=14999;assert.ok(registry.get(id),'last observation retains retired media for its complete grace period');
+  now=16001;assert.equal(registry.get(id),undefined);
+  registry.close();assert.deepEqual(registry.snapshot(),{registryResources:0,registryPlaylists:0});
+});

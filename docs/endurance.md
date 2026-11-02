@@ -66,6 +66,10 @@ that interval. Every attempted cancellation is retained before its assertion.
   Timeline boundary tables are built once, settlement reads avoid full phase
   reports, and fault runtimes retain private config copies refreshed by the
   existing change subscription rather than cloning config on each request.
+  Manual-conflict checks read a scalar refreshed with config changes. Identical
+  small HLS playlists reuse their rewrite with refreshed reference expiry; the
+  string cache is bounded to 2 MiB and upstream manifests are still fetched fresh.
+  HTTP viewer probes avoid duplicate parsing, header copies and Fetch buffering.
   These reduce transient allocation while preserving retention and complete logs;
   the warm-up, workload and 128 MiB individual/shared limits remain the same.
 - Resource indexes, pending work and transfer ownership are sampled. After close,

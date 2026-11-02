@@ -175,6 +175,10 @@ function arm(
   return next;
 }
 let activeConfig = merge(DEFAULT_CONFIG, {});
+function manualConflict(config: FaultConfig): boolean {
+  return Object.entries(config.segment ?? {}).some(([key, value]) => key === "latencyMs" ? Number(value) > 0 : value !== "off") || Object.values(config.drm ?? {}).some(value => value !== "off") || config.manifest?.freeze !== "off" || Object.values(config.network ?? {}).some(value => Number(value) > 0);
+}
+let activeManualConflict = manualConflict(activeConfig);
 let activePath = path.resolve(process.cwd(), ".hls-dash-faults.json");
 let watcher: fs.FSWatcher | undefined;
 let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -183,6 +187,7 @@ const listeners = new Set<(config: FaultConfig) => void>();
 function update(config: FaultConfig) {
   if (JSON.stringify(config) === JSON.stringify(activeConfig)) return;
   activeConfig = config;
+  activeManualConflict = manualConflict(config);
   for (const listener of listeners) listener(getFaultConfig());
 }
 let lastDiskText = "";
@@ -265,6 +270,8 @@ export function getFaultConfig(): FaultConfig {
 export function isFaultLoggingVerbose(): boolean {
   return activeConfig.logging?.verbose === true;
 }
+/** Allocation-free observation, refreshed before config change subscribers run. */
+export function hasManualFaultConflict(): boolean { return activeManualConflict; }
 export function getFaultConfigPath(): string {
   return activePath;
 }

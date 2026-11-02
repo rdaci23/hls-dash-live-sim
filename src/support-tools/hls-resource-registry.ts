@@ -9,13 +9,14 @@ interface Resource {
   owners: Set<string>;
   expires: number;
 }
+interface RewriteCache { text: string; base: string; policy: OriginPolicy; body: string; }
 
 /** Keep every advertised URI reachable; retire references only after a grace period. */
 export class HlsResourceRegistry {
   private resources = new Map<string, Resource>();
   private playlists = new Map<
     string,
-    { ids: Set<string>; retention: number }
+    { ids: Set<string>; retention: number; cache?: RewriteCache }
   >();
   private prunedAt = -Infinity;
   constructor(
@@ -57,6 +58,18 @@ export class HlsResourceRegistry {
     policy: OriginPolicy,
   ): string {
     this.prune();
+    const current = this.playlists.get(owner);
+    if (current?.cache?.text === text && current.cache.base === base && current.cache.policy === policy) {
+      this.prune(true);
+      if (this.playlists.get(owner) === current) {
+        const expires = this.clock() + current.retention;
+        for (const id of current.ids) {
+          const resource = this.resources.get(id);
+          resource.expires = Math.max(resource.expires, expires);
+        }
+        return current.cache.body;
+      }
+    }
     const next = new Map<string, { url: string; kind: Kind }>();
     const body = rewritePlaylist(text, base, (url, kind) => {
       policy.check(url);
@@ -98,7 +111,10 @@ export class HlsResourceRegistry {
       }
       resource.owners.add(owner);
     }
-    this.playlists.set(owner, { ids: new Set(next.keys()), retention });
+    // At most 128 owners, with <=16 KiB of cached UTF-16 text/output per owner.
+    // Larger manifests keep the existing rewrite path without a cache.
+    const cache = text.length <= 4096 && body.length <= 4096 ? {text,base,policy,body} : undefined;
+    this.playlists.set(owner, { ids: new Set(next.keys()), retention, ...(cache ? {cache} : {}) });
     return body;
   }
 }

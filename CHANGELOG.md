@@ -107,6 +107,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Remove remaining config clones from scenario conflict checks and non-key HLS
+  requests. Reuse identical small HLS rewrites within a fixed string budget while
+  preserving reference expiry, origin policy, fresh upstream reads and validation
+  of changed input; trim duplicate parsing/header work in HTTP viewer probes.
+
 - Avoid unused diagnostic serialization and release synthetic browser routing
   interception after its negative probe; preserve bounded event exports, origin
   isolation and the 10,000-request/128 MiB routing gate.

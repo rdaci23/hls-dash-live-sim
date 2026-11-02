@@ -515,7 +515,7 @@ export async function startHlsim(
         return;
       }
       if (resource.kind === "playlist" && !observing) snapshots.assertCapacity(resource.url);
-      const config = getFaultConfig();
+      const config = !scenario && resource.kind === "key" && req.method !== "HEAD" ? getFaultConfig() : undefined;
       const failure =
         scenario || req.method === "HEAD"
           ? 0
@@ -523,7 +523,7 @@ export async function startHlsim(
             ? faults.segmentStatus(resource.url, trace)
             : resource.kind === "key" &&
                 faults.trigger(
-                  config.drm?.licenseFailure,
+                  config?.drm?.licenseFailure,
                   "key-failure",
                   resource.url,
                   trace,
@@ -581,7 +581,7 @@ export async function startHlsim(
         resource.kind === "key" &&
         req.method !== "HEAD" &&
         faults.trigger(
-          config.drm?.keyRotationMismatch,
+          config?.drm?.keyRotationMismatch,
           "key-mismatch",
           resource.url,
           trace,
