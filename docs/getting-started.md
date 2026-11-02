@@ -13,8 +13,9 @@ published. See the [changelog](../CHANGELOG.md) for release scope and known limi
 | Run browser verification | Development dependencies and Google Chrome. |
 | Regenerate media fixtures | FFmpeg with libx264; existing samples work without it. |
 
-CI covers Node 22/24/26 on Linux and macOS. Windows and the declared legacy Node
-20.3 floor are not verified. Use Node 24 for the documented setup.
+Routine CI uses Linux/Node 24. Manual full checks cover Node 22/24/26 on Linux and
+macOS. Windows and the declared legacy Node 20.3 floor are not verified. Use Node
+24 for the documented setup.
 
 ```sh
 git clone https://github.com/rdaci23/hls-dash-live-sim.git

@@ -135,7 +135,7 @@ rendered/request correlation and failures. `selectiveFaultDeliveryVerified` is
 separate from the HTTP client's overall `passed` result. Cleanup observations
 cannot establish a pass. `releaseReady` remains false even after a successful run.
 
-Routine CI runs bandwidth adaptation and the real-engine fault-isolation test;
+Manual full CI runs bandwidth adaptation and the real-engine fault-isolation test;
 the known-failing optional HTTP player probe is invoked explicitly. Artifacts
 remain subject to private repository access controls and expire after seven days.
 The fixture is also checked in the production package smoke. Tests own their

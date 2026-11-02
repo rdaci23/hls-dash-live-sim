@@ -46,16 +46,17 @@ release requirement.
 - [x] Security-reporting policy documents the planned private route and current
   enablement limitation; actual contact/activation remains a publication step.
 - [x] Current support/limits documentation, quick start and contributor guidance.
-- [x] CI definitions for Linux/macOS Node 22/24/26, Chrome UI, pinned DASH engine,
-  HTTP scenarios, Roku compilation and production-only package-install smoke.
+- [x] Routine Linux/Node 24 CI for docs, types and unit tests; manual full checks
+  retain Linux/macOS Node 22/24/26, Chrome UI, pinned DASH engine, HTTP scenarios,
+  Roku compilation and production-only package-install smoke.
 - [x] Optional manual CI full-browser gate with retained run evidence.
-- [x] Separate automatic HLS bandwidth-adaptation runner and CI job with rendered
+- [x] Separate automatic HLS bandwidth-adaptation runner and manual CI job with rendered
   high/low/high evidence; see [its exact scope and gates](hls-abr.md).
 - [x] Optional multi-rendition DASH fixture, automatic bandwidth adaptation and
-  routine CI, plus real-engine high-rendition HTTP fault isolation. The optional
+  manual CI, plus real-engine high-rendition HTTP fault isolation. The optional
   default dash.js HTTP fallback probe fails and remains a client compatibility
   observation; [scope and evidence](dash-abr.md).
-- [x] Separate timed HLS/DASH media-outage runner and routine CI job with measured
+- [x] Separate timed HLS/DASH media-outage runner and manual CI job with measured
   stall/resume and post-recovery rendering; [scope and retry policy](sustained-outages.md).
 
 - [x] Optional native HLS/DASH compatibility recorder and retained observations,

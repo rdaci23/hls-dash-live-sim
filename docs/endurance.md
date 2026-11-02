@@ -96,7 +96,7 @@ termination signal during evidence closure; the real interruption check exercise
 that path. Failed/interrupted runs still close their owned resources and retain partial
 reports with explicit failure reasons.
 
-CI defines the ten-minute smoke and retains evidence for seven days. The four-hour
+Manual full CI runs the ten-minute smoke and retains evidence for seven days. The four-hour
 release run is a separate candidate gate, also available through the optional
 `release_soak` workflow-dispatch input. Select the exact candidate and retain the
 resulting complete artifact; enabling the input alone does not qualify it. Check the actual run's report; a workflow

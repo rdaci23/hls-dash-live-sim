@@ -168,7 +168,7 @@ state; it never assumes a pasted URL shares the control process's fault file.
 
 Automated API/protocol tests, the control-page browser checks, real Docker
 integration, HTTP scenario verification and a production-dependency package smoke
-check are described in [development and CI](development.md). CI also compiles the
+check are described in [development and CI](development.md). Manual full CI also compiles the
 standalone SceneGraph tester; compilation is not a physical-device test.
 
 Recorded full playback gates pass for Chrome hls.js/dash.js and Roku Express 4K

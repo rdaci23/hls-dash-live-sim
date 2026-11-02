@@ -22,7 +22,8 @@ Repository visibility and npm publication remain separate release decisions.
 
 ## Quick start
 
-Use Node.js 24 LTS; CI also checks Node 22 and 26 on Linux and macOS.
+Use Node.js 24 LTS. Routine CI uses Linux/Node 24; manual full checks also cover
+Node 22 and 26 on Linux and macOS.
 HLS needs only Node. DASH additionally needs a running Docker daemon.
 These commands are for a repository checkout:
 

@@ -2,8 +2,9 @@
 
 ## Environment
 
-For a checkout, use Node.js 24 LTS and npm. CI checks Node 22, 24 and 26 on Ubuntu
-24.04 and macOS 15. The package still declares the legacy Node 20.3 engine floor;
+For a checkout, use Node.js 24 LTS and npm. Routine CI uses Ubuntu 24.04 and Node
+24. Manual full checks cover Node 22, 24 and 26 on Ubuntu 24.04 and macOS 15.
+The package still declares the legacy Node 20.3 engine floor;
 that floor and Windows are not part of this CI matrix. Prefer a maintained Node
 release. No runtime compatibility requirement is changed by this documentation.
 
@@ -89,38 +90,52 @@ DASH ladder. Stop sessions first. [Provenance](../assets/README.md).
 
 ## GitHub Actions
 
-[CI workflow](https://github.com/rdaci23/hls-dash-live-sim/blob/main/.github/workflows/ci.yml) runs on pushes to `main`, pull requests
-and manual dispatch. Linux/macOS matrix jobs run docs, types, regular tests, Roku
-compilation, HLS HTTP scenarios and the packaged-CLI smoke. The DASH engine job also runs the
-[bounded transport matrix](transport-scenarios.md) and retains its evidence. Separate Linux jobs
-run Chrome control UI tests and real DASH integration plus both HTTP scenarios.
-The DASH integration job also runs [network timeline replay](network-scenarios.md)
-and the [simulator freeze/resume check](manifest-freeze.md)
-and retains its evidence for seven days.
-A dedicated Linux/Node 24 job runs the [HLS automatic ABR check](hls-abr.md) on
-every CI invocation and retains its raw/report/screenshot evidence for seven days.
-A separate Linux/Node 24 **DASH automatic ABR switching** job runs the
-[DASH ladder check](dash-abr.md) on every invocation with seven-day evidence
-retention. Its optional HTTP-error player probe is separate and is not a CI pass.
-Another dedicated job runs the [sustained HLS/DASH outage pair](sustained-outages.md)
-on every invocation with the same seven-day evidence retention.
-The run is successful only when all selected jobs pass; logs retain individual
-failures. Inspect [repository Actions](https://github.com/rdaci23/hls-dash-live-sim/actions)
-for the actual commit result rather than treating workflow presence as proof.
+[CI workflow](https://github.com/rdaci23/hls-dash-live-sim/blob/main/.github/workflows/ci.yml)
+runs one **Routine / Linux / Node 24** job on pushes to `main` and pull requests.
+It installs locked dependencies, then runs `docs:check`, `typecheck` and `npm test`.
+The unit suite builds the project; it needs neither Chrome nor Docker. Routine
+runs do not execute the platform matrix, package smoke, browser/integration jobs
+or endurance smoke.
 
-Manual dispatch offers a **playback** checkbox. Enabling it runs the full six-case
-browser gate with normal synchronization and numeric acceptance thresholds. Its
-reports, diagnostics and screenshots are retained as a repository Actions artifact
-for seven days, including partial evidence on failure. No smoke result is counted
-as a full playback pass. Hosted-runner results are distinct from the recorded
-controlled-local-network browser and physical Roku evidence.
+Run the broader checks explicitly from **Actions → CI → Run workflow**, selecting
+the candidate branch or tag. Every manual dispatch runs the six Linux/macOS
+Node 22/24/26 matrix checks, including notices, Roku compilation, HLS HTTP
+scenarios and production package installation. Separate jobs run Chrome control
+UI, pinned DASH integration, payload/transport and HTTP policy checks, independent
+tracks, lifecycle, local services, HLS/DASH ABR, sustained outages and the actual
+ten-minute concurrent smoke. Their evidence is retained for seven days.
+
+Manual dispatch also offers these optional additions, all off by default:
+
+| Input | Additional checks |
+| --- | --- |
+| `playback` | Full six-case browser playback gate and strict DVR browser matrix. |
+| `core_observations` | Seven rendition/network profiles and nine owned fault browser profiles. |
+| `release_soak` | Actual four-hour concurrent release-candidate soak. |
+
+Enable all three for the complete manual candidate suite. With GitHub CLI:
+
+```sh
+gh workflow run ci.yml --ref main -f playback=true -f core_observations=true -f release_soak=true
+```
+
+Select a stable candidate and confirm the run's actual commit. Only executed,
+passing jobs qualify; disabled or skipped checks provide no verification. Reports,
+diagnostics and screenshots include partial evidence on failure. No smoke result
+counts as a full playback or four-hour pass. Hosted-runner results remain separate
+from controlled-local-network browser and physical Roku evidence. Inspect
+[repository Actions](https://github.com/rdaci23/hls-dash-live-sim/actions) for the
+actual result. Manual runs still consume hosted-runner allowance; reducing routine
+work does not itself clear an account billing or spending-limit restriction.
 
 Actions are pinned to full commit SHAs, checkout credentials are not persisted,
 and the workflow token has only `contents: read`. No deployment, npm publication,
 release creation, repository-visibility change or physical-device access is
 configured. Secrets and private origin URLs are not needed. Repository Actions
-access controls apply to logs and artifacts. Job timeouts and
-per-ref concurrency cancellation bound stale work. CI does not set branch
+access controls apply to logs and artifacts. Job timeouts and per-ref concurrency
+cancellation bound stale work. Routine and manual runs use separate concurrency
+groups, so a push does not cancel an ongoing manual candidate check. A new manual
+run on the same ref replaces the previous manual run. CI does not set branch
 protection; maintainers configure required checks as part of the
 [publication checklist](release-checklist.md).
 
@@ -133,11 +148,13 @@ The maintained runtime matrix follows the [Node release table](https://nodejs.or
 
 ## Release evidence
 
-A green routine CI run is required preparation, not a declaration of release
-readiness. It skips full browser playback by default and cannot run a physical
-Roku. Use the [playback procedure](playback-gates.md) and
-[release checklist](release-checklist.md) for those gates. Retain evidence tied to
-the release candidate commit. Do not relabel earlier reports as freshly verified.
+A green routine CI run establishes docs, types and unit-test results. Release
+qualification additionally requires the exact candidate's full manual checks with
+all three inputs enabled, plus the local candidate review. CI cannot test a
+physical Roku. Use the [playback procedure](playback-gates.md) and
+[release checklist](release-checklist.md) for the separate evidence requirements.
+Retain evidence tied to the release candidate commit. Do not relabel earlier
+reports as freshly verified.
 
 `npm run cache:verify` checks [real origin/edge caching](cache-scenarios.md) with
 separate diagnostic files and full-body identities.

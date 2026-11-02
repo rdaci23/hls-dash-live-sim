@@ -90,7 +90,7 @@ server JSONL diagnostics. The parent report records source commit and dirty-tree
 status at run start. A single-protocol run cannot set `bothProtocolsVerified`;
 a passing pair still leaves `releaseReady: false`.
 
-Routine CI runs the pair in the DASH engine integration job and retains evidence
+Manual full CI runs the pair in the DASH engine integration job and retains evidence
 as a private repository artifact for seven days, including partial evidence on
 failure. A CLI failure or incomplete evidence is never counted as verification.
 The original failing development attempts remain in their local output directories.

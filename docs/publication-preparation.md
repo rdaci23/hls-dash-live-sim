@@ -13,9 +13,11 @@ new commits.
    the full healthy browser baseline, decoded fixture checks, all core HTTP checks,
    targeted browser observations, ten-minute smoke and four-hour concurrent soak.
    Set aside several hours on an awake, dedicated machine with Chrome and Docker.
-2. Inspect the exact commit's GitHub Actions run. Every required job must execute
-   and pass. An account-level restriction, skipped job or local pass cannot stand
-   in for CI. Rerun the same commit after any external restriction is resolved.
+2. Inspect the exact commit's routine GitHub Actions run and dispatch the full
+   manual suite with `playback`, `core_observations` and `release_soak` enabled;
+   see [development and CI](development.md). Every required job must execute and
+   pass. An account-level restriction, skipped job or local pass cannot stand in
+   for CI. Rerun the same commit after any external restriction is resolved.
 3. Review the archive inventory, secret scans, media provenance, MIT license,
    third-party notices, install instructions and configuration examples. Keep
    npm `private: true`; npm distribution requires a separate decision.
@@ -32,11 +34,10 @@ settings now; do not change visibility to work around the restriction.
 
 - Protect `main`, prohibit force pushes and branch deletion, and require pull
   requests and resolved review conversations for future changes.
-- Require the actual routine CI job names shown on the candidate, including all
-  six Linux/macOS Node checks, Chrome UI, DASH integration, HTTP policy, independent
-  tracks, lifecycle, local services, endurance smoke, HLS/DASH ABR and sustained
-  outage checks. Do not require optional workflow-dispatch jobs that are skipped
-  on ordinary pull requests. Review the settings when CI names change.
+- Require **Routine / Linux / Node 24**, the check that runs on every pull request.
+  Keep the broader matrix, browser, integration and endurance jobs as manual
+  candidate gates; requiring them on ordinary pull requests would block merges
+  because those jobs are skipped. Review settings when CI names change.
 - Choose reviewer requirements that work for the maintainer team; do not configure
   an approval rule a solo maintainer cannot satisfy without a documented path.
 - Enable **Settings → Security and quality → Advanced Security → Private vulnerability reporting**.

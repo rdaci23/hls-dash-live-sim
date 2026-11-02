@@ -25,12 +25,31 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'manual' || 'routine' }}
   cancel-in-progress: true
 
 jobs:
+  routine:
+    name: Routine / Linux / Node 24
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run docs:check
+      - run: npm run typecheck
+      - run: npm test
+
   checks:
     name: Checks / ${{ matrix.os }} / Node ${{ matrix.node }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -57,6 +76,7 @@ jobs:
 
   control-ui:
     name: Chrome control UI
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -73,6 +93,7 @@ jobs:
 
   dash-engine:
     name: DASH engine integration
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -193,6 +214,7 @@ jobs:
 
   http-policy:
     name: HTTP policy and safe response headers
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -228,6 +250,7 @@ jobs:
 
   endurance-smoke:
     name: Ten-minute concurrent HLS and DASH smoke
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -257,6 +280,7 @@ jobs:
 
   local-services:
     name: Offline keys, access renewal and UTC
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -284,6 +308,7 @@ jobs:
 
   owned-lifecycle:
     name: Owned lifecycle and DVR
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -318,6 +343,7 @@ jobs:
 
   independent-tracks:
     name: Owned independent audio and captions
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -345,6 +371,7 @@ jobs:
 
   hls-abr:
     name: HLS automatic ABR recovery
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -369,6 +396,7 @@ jobs:
 
   sustained-outage:
     name: Sustained HLS and DASH outage recovery
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -398,6 +426,7 @@ jobs:
 
   dash-abr:
     name: DASH automatic ABR switching
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

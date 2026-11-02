@@ -98,7 +98,7 @@ If 206 is returned, Content-Range and actual byte count must match the requested
 100-byte prefix. All waits, HTTP requests, sessions and containers belong to this
 run; Ctrl+C cancels them and retains incomplete evidence.
 
-Routine CI runs both accelerated modes in the DASH engine integration job and
+Manual full CI runs both accelerated modes in the DASH engine integration job and
 retains `audio-outage-…` artifacts. Regular tests cover the preset's boundaries
 and target exclusions, cancelled/empty runs, and rejection of incomplete or
 misattributed evidence. There is no new player or Roku release claim.

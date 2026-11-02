@@ -122,5 +122,5 @@ Only the full pair sets `bothProtocolsVerified`; `releaseReady` stays false.
 
 Unit/HTTP regressions additionally cover generated HLS child manifests, late
 refresh gates, shared-file init/media ranges, ambiguity/capacity rejection, failed
-retries and unchanged legacy media selection. Routine CI runs the pair in the
+retries and unchanged legacy media selection. Manual full CI runs the pair in the
 DASH engine job and retains its artifact, including partial evidence on failure.

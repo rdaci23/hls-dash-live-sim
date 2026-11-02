@@ -177,7 +177,7 @@ records commit and dirty-tree status, including untracked source files. Only a
 passing HLS/DASH pair sets `sustainedOutageGatesPassed: true`. It never sets
 `releaseReady`, and does not replace the original six-case release gates.
 
-Routine CI runs this pair on Linux/Node 24 and retains evidence in the private
+Manual full CI runs this pair on Linux/Node 24 and retains evidence in the private
 repository for seven days, including failures. A green CI job applies to the exact
 candidate and recorded Chrome/player/image versions. Physical Roku checks are
 manual and remain separate from hosted CI. The 20-second native profile above

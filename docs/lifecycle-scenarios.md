@@ -132,5 +132,5 @@ stopped at its automatic seek to the new window. That is unqualified browser
 recovery. The verifier now additionally requires newly rendered media inside the
 restored source window; looping old frames cannot pass. Both protocols passed
 HTTP held-body identity, retention expiry, advancing publication and fresh media
-restoration. CI always checks these HTTP contracts; the strict DVR browser matrix
-runs with the opt-in full-playback workflow and retains its failures.
+restoration. Manual full CI checks these HTTP contracts; the strict DVR browser
+matrix additionally requires the `playback` dispatch input and retains its failures.

@@ -103,8 +103,8 @@ external request fails verification. The test window ends before cleanup; raw
 cleanup observations remain in the evidence. No media bodies or origin
 credentials are recorded. `releaseReady` stays false even on success.
 
-The **HLS automatic ABR recovery** job runs this check on ordinary CI pushes and
-pull requests using Linux/Node 24/Chrome. Evidence is retained as a private-repo
+The **HLS automatic ABR recovery** job runs this check in manual full CI using
+Linux/Node 24/Chrome. Evidence is retained as a private-repo
 Actions artifact for seven days, including failed runs. See
 [Actions](https://github.com/rdaci23/hls-dash-live-sim/actions) for the candidate
 commit's result. Pure acceptance tests reject event-only, uncorrelated, short,
