@@ -130,6 +130,11 @@ The run title includes its scope. Playback and core-observation inputs apply to
 full scope; a green endurance run qualifies only those endurance checks. The full
 candidate still needs the complete full-scope suite and local release review.
 
+For an explicitly unqualified allocation investigation, add `-f memory_profile=true`
+to an endurance-scope dispatch. This starts the release workload, skips the separate
+smoke job, and retains a driver memory profile when measurement stops. Its run title
+is **memory-profile**. Leave this input off for candidate verification.
+
 Select a stable candidate and confirm the run's actual commit. Only executed,
 passing jobs qualify; disabled or skipped checks provide no verification. Reports,
 diagnostics and screenshots include partial evidence on failure. No smoke result

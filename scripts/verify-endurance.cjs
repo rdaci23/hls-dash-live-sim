@@ -62,7 +62,8 @@ async function closeState(state, duration, memoryCheckpoint) {
     return result;
 }
 async function main() {
-    const args = require('yargs/yargs')(process.argv.slice(2)).option('mode', { choices: ['development', 'smoke', 'release'], default: 'smoke' }).option('development-seconds', { type: 'number' }).option('output', { type: 'string', default: 'output/endurance-' + Date.now() }).strict().parseSync();
+    const args = require('yargs/yargs')(process.argv.slice(2)).option('mode', { choices: ['development', 'smoke', 'release'], default: 'smoke' }).option('development-seconds', { type: 'number' }).option('profile-memory', {type:'boolean',default:false}).option('output', { type: 'string', default: 'output/endurance-' + Date.now() }).strict().parseSync();
+    if (args['profile-memory'] && args.mode !== 'release') throw Error('profile-memory requires release mode and never qualifies a release');
     if (!['development', 'smoke', 'release'].includes(args.mode))
         throw Error('Choose exactly one endurance mode');
     if (args['development-seconds'] !== undefined && (args.mode !== 'development' || !Number.isInteger(args['development-seconds']) || args['development-seconds'] < 30 || args['development-seconds'] > 300))
@@ -79,6 +80,8 @@ async function main() {
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
     const report = { schemaVersion: 1, mode: args.mode, commit, workingTreeModified: dirty(), requestedDurationMs: duration, passed: false, releaseReady: false, protocols: [] };
+    const memoryProfile = args['profile-memory'] ? await require('./endurance/memory-profile.cjs').start() : undefined;
+    report.diagnosticOnly = !!memoryProfile;
     try {
         for (const protocol of ['hls', 'dash']) {
             const dir = path.join(directory, protocol);
@@ -295,6 +298,11 @@ async function main() {
     }
     finally {
         report.streamingElapsedMs = runBegan ? performance.now() - runBegan : 0;
+        report.driverMemoryAtStop = require('./endurance/memory-profile.cjs').memory();
+        if (memoryProfile) {
+            try { const profile = await memoryProfile.stop(); await fs.writeFile(path.join(directory,'driver-memory-profile.json'),JSON.stringify(profile)+'\n',{mode:0o600}); report.memoryProfileFile='driver-memory-profile.json'; }
+            catch (e) { error ??= 'Driver memory profile failed: '+e.message; }
+        }
         stopping = true;
         controller.abort();
         await Promise.allSettled(jobs);
@@ -319,7 +327,7 @@ async function main() {
         report.workingTreeModified ||= dirty() || git() !== commit;
         report.error = error;
         report.passed = !error && report.protocols.length === 2 && report.streamingElapsedMs >= duration;
-        Object.assign(report, qualification({ mode: args.mode, passed: report.passed, dirty: report.workingTreeModified, elapsedMs: report.streamingElapsedMs }));
+        Object.assign(report, qualification({ mode: args.mode, passed: report.passed, dirty: report.workingTreeModified, elapsedMs: report.streamingElapsedMs, diagnosticOnly: report.diagnosticOnly }));
         await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
         if (!report.passed)
             process.exitCode = 1;

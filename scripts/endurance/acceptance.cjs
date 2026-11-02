@@ -45,6 +45,6 @@ class Drift {
     report() { return { pairedCycles: this.count, maxAbsoluteMs: this.maxAbsoluteMs, maxDriftMs: this.maxDriftMs, baselineMs: this.baseline }; }
 }
 function qualifyDrift(report, minimum) { assert.ok(report.pairedCycles >= minimum, 'Independent decoded A/V cycle evidence is missing'); }
-function qualification({mode,passed,dirty,elapsedMs}){const clean=passed&&!dirty;return{qualifiedSmoke:clean&&['smoke','release'].includes(mode)&&elapsedMs>=600000,qualifiedReleaseSoak:clean&&mode==='release'&&elapsedMs>=14400000};}
+function qualification({mode,passed,dirty,elapsedMs,diagnosticOnly=false}){const clean=passed&&!dirty&&!diagnosticOnly;return{qualifiedSmoke:clean&&['smoke','release'].includes(mode)&&elapsedMs>=600000,qualifiedReleaseSoak:clean&&mode==='release'&&elapsedMs>=14400000};}
 function coherentClocks(elapsedMs,wallElapsedMs){return Number.isFinite(elapsedMs)&&Number.isFinite(wallElapsedMs)&&elapsedMs>=0&&wallElapsedMs>=0&&Math.abs(elapsedMs-wallElapsedMs)<=2000;}
 module.exports = { fairness, Drift, qualifyDrift, qualification, coherentClocks };

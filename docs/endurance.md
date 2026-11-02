@@ -18,6 +18,13 @@ sleep, interruption, source error, missing evidence or changed working tree cann
 qualify. Reports retain the exact commit and distinguish development, smoke and
 release-soak qualification. No mode publishes, tags or changes visibility.
 
+For driver-memory diagnosis, add `--profile-memory` to release mode and use a new
+output directory. This marks the report `diagnosticOnly` and disables both
+qualification flags. After measurement stops, it records allocation stacks and
+before/after diagnostic garbage-collection statistics in
+`driver-memory-profile.json`; it does not capture heap object contents. Normal
+commands retain ordinary GC and the same RSS/workload gates.
+
 The packaged [smoke profile](../examples/scenarios/endurance-smoke.json) and
 [four-hour profile](../examples/scenarios/endurance-four-hour.json) expose the
 network schedule in the scenario catalog. Running a profile alone is not the

@@ -27,6 +27,7 @@ test('short, dirty, interrupted or malformed modes cannot qualify a long gate',(
  for(const value of [{mode:'development',passed:true,dirty:false,elapsedMs:14400000},{mode:'smoke',passed:true,dirty:false,elapsedMs:599999},{mode:'release',passed:true,dirty:true,elapsedMs:14400000},{mode:'release',passed:false,dirty:false,elapsedMs:14400000},{mode:['release','development'],passed:true,dirty:false,elapsedMs:14400000}])assert.deepEqual(qualification(value),{qualifiedSmoke:false,qualifiedReleaseSoak:false});
  assert.deepEqual(qualification({mode:'release',passed:true,dirty:false,elapsedMs:14400000}),{qualifiedSmoke:true,qualifiedReleaseSoak:true});
  assert.deepEqual(qualification({mode:'smoke',passed:true,dirty:false,elapsedMs:600000}),{qualifiedSmoke:true,qualifiedReleaseSoak:false});
+ assert.deepEqual(qualification({mode:'release',passed:true,dirty:false,elapsedMs:14400000,diagnosticOnly:true}),{qualifiedSmoke:false,qualifiedReleaseSoak:false});
 });
 
 test('elapsed time rejects wall/monotonic divergence instead of qualifying sleep or clock jumps',()=>{const{coherentClocks}=require('../scripts/endurance/acceptance.cjs');assert.equal(coherentClocks(600000,600001),true);assert.equal(coherentClocks(600000,610000),false);assert.equal(coherentClocks(600000,590000),false);assert.equal(coherentClocks(NaN,600000),false);});

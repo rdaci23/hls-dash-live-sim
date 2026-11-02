@@ -11,6 +11,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Opt-in, explicitly unqualified endurance-driver allocation profiling, with heap
+  statistics captured at measurement stop. Profiling cannot qualify either gate.
+
 - Inert versioned HLS/DASH baseline manifest previews, including layered simulator
   origins; inspection cannot consume faults or establish freeze/cache snapshots.
   Unsupported peers are rejected before a manifest request. Advertised HLS/DASH media
