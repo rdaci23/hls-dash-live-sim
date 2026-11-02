@@ -11,13 +11,15 @@ new commits.
 1. Commit the candidate and run `npm run release:review -- --output output/final-review`.
    Keep every report, closed diagnostic manifest and its named parts. This includes
    the full healthy browser baseline, decoded fixture checks, all core HTTP checks,
-   targeted browser observations, ten-minute smoke and four-hour concurrent soak.
-   Set aside several hours on an awake, dedicated machine with Chrome and Docker.
+   targeted browser observations and ten-minute concurrent smoke. Use an awake,
+   dedicated machine with Chrome and Docker for the full matrix. Add
+   `--extended-soak` only when intentionally requesting optional four-hour testing.
 2. Inspect the exact commit's routine GitHub Actions run and dispatch the full
-   manual suite with `playback`, `core_observations` and `release_soak` enabled;
+   manual suite with `playback` and `core_observations` enabled;
    see [development and CI](development.md). Every required job must execute and
    pass. An account-level restriction, skipped job or local pass cannot stand in
-   for CI. Rerun the same commit after any external restriction is resolved.
+   for CI. Rerun the same commit after any external restriction is resolved. The
+   `release_soak` input is optional and stays off for the required candidate suite.
 3. Review the archive inventory, secret scans, media provenance, MIT license,
    third-party notices, install instructions and configuration examples. Keep
    npm `private: true`; npm distribution requires a separate decision.

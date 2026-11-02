@@ -149,7 +149,7 @@ alter player recovery or hide decoded-audio/caption requirements.
 
 HTTP targeting, healthy decoded-track evidence, fault playback/recovery, and
 endurance are separate qualifications. These fixture checks do not establish
-recovery from independent-track faults or the four-hour release soak. Apple,
+recovery from independent-track faults or optional four-hour stress testing. Apple,
 Android and additional hardware remain unverified.
 
 ## Regeneration

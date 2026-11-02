@@ -22,11 +22,17 @@ remain required. Repository visibility and npm publication require separate appr
 | Offline AES | Local AES-128 rotation, clear/encrypted transitions, unavailable/wrong key responses; byte integrity and decryption checks. | Three-minute decoded encrypted baseline; automatic wrong-key recovery is unverified. |
 | Access expiry/renewal | Local expiry, old-token denial, renewal restores the same logical media, no diagnostic secrets. | Explicit auth client renews on actual 401 and retries once before delivering to the player. This is not bare-player 401 recovery. |
 | UTC faults | Explicit local UTC GET/HEAD failure, malformed response and bounded skew; other HEAD exclusions remain. | Normal synchronization stays enabled. Playback recovery from every clock fault is unverified. |
-| Concurrent endurance | One browser plus two HTTP viewers per protocol, churn/slow reads/cancel, A/V markers, retention/fairness, memory and drained ownership. | Ten-minute smoke and four-hour soak require actual elapsed time, complete diagnostic parts and the exact candidate. Short development runs cannot qualify them. |
+| Concurrent endurance | One browser plus two HTTP viewers per protocol, churn/slow reads/cancel, A/V markers, retention/fairness, memory and drained ownership. | Required ten-minute smoke needs actual elapsed time, complete diagnostic parts and the exact candidate. Four-hour stress testing is optional and reported separately. Short development runs cannot qualify either duration. |
 
 Named-fault errors remain visible. Unexplained exceptions during healthy playback
 block verification. A documented client limitation is not relabelled as a simulator
 defect or hidden by changing the player retry settings without recording them.
+
+Extended concurrent stress testing has an unresolved aggregate-memory failure
+after 71.3 minutes at `42ed300`; see the
+[retained checkpoint](scenario-roadmap.md#ten-minute-qualification-and-optional-extended-testing--2-november-2026).
+The ten-minute Linux smoke passed independently. No four-hour qualification is
+claimed, and a changed candidate needs fresh required checks.
 
 See [targeted browser observations](browser-scenario-observations.md),
 [endurance](endurance.md) and [publication preparation](publication-preparation.md).

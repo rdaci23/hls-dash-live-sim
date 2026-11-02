@@ -255,9 +255,9 @@ restarts and growing event completion to the optional local tracks fixture.
 [Offline local-service scenarios](docs/local-services.md) cover rotating HLS
 AES-128 keys, authenticated media access/renewal and explicit local UTC faults.
 
-[Endurance verification](docs/endurance.md) provides a ten-minute smoke and a
-four-hour candidate soak with concurrent viewers, independent decoded A/V timing,
-bounded evidence rotation and explicit cleanup checks.
+[Endurance verification](docs/endurance.md) requires a ten-minute candidate smoke
+with concurrent viewers, independent decoded A/V timing, bounded evidence rotation
+and explicit cleanup checks. A four-hour stress test is available by opt-in.
 
 [Targeted browser observations](docs/browser-scenario-observations.md) record payload,
 publication and audio/text fault delivery and HTTP restoration separately from player

@@ -33,7 +33,7 @@ use your existing Chrome installation.
 | --- | --- | --- |
 | `npm run endurance:driver` | Decoded native Chrome startup, CSP origin isolation, main/worker exceptions, console errors and owned-process/protocol cleanup. | Chrome; no Docker; about 30 seconds. |
 | `npm run endurance:smoke` | Ten-minute concurrent HLS/DASH browser plus two HTTP viewers each, drift/RSS/cleanup and complete rotated evidence. | Chrome, no Docker; about ten minutes. |
-| `npm run endurance:release` | Four-hour real-time release-candidate soak, with the same ownership/evidence gates. | Chrome; keep the host awake; cannot shorten release mode. |
+| `npm run endurance:release` | Optional four-hour stress test, with the same ownership/evidence gates. | Chrome; explicit opt-in; keep the host awake; duration cannot be shortened. |
 | `npm run services:verify` | Seven local key/auth/UTC HTTP cases, scope, restoration and redacted exports. | Node; no Docker. |
 | `npm run browser:services` | Three-minute decoded AES baseline and HLS/DASH local-token renewal. | Chrome; no Docker. |
 | `npm run lifecycle:invalid` | Six intentional timestamp/sequence/incompatible-URL checks; controls, HEAD and restoration. | Node, no Docker. |
@@ -112,20 +112,25 @@ Manual dispatch also offers these optional additions, all off by default:
 | --- | --- |
 | `playback` | Full six-case browser playback gate and strict DVR browser matrix. |
 | `core_observations` | Seven rendition/network profiles and nine owned fault browser profiles. |
-| `release_soak` | Actual four-hour concurrent release-candidate soak. |
+| `release_soak` | Optional four-hour concurrent stress test; not required for publication. |
 
-Enable all three for the complete manual candidate suite. With GitHub CLI:
+Enable `playback` and `core_observations` for the complete required manual candidate
+suite. Extended stress testing is separate. With GitHub CLI:
 
 ```sh
-gh workflow run ci.yml --ref main -f playback=true -f core_observations=true -f release_soak=true
+gh workflow run ci.yml --ref main -f playback=true -f core_observations=true
 ```
 
 For focused memory/concurrency verification, select **endurance** scope. This runs
-only the Linux/Node 24 endurance smoke job and, when enabled, the four-hour soak:
+only the Linux/Node 24 endurance smoke job:
 
 ```sh
-gh workflow run ci.yml --ref main -f scope=endurance -f release_soak=true
+gh workflow run ci.yml --ref main -f scope=endurance
 ```
+
+Add `-f release_soak=true` only when intentionally requesting the optional
+four-hour stress test. Local release review similarly requires an explicit
+`--extended-soak`; its default endurance gate is ten minutes.
 
 The run title includes its scope. Playback and core-observation inputs apply to
 full scope; a green endurance run qualifies only those endurance checks. The full

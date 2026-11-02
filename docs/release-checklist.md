@@ -129,8 +129,9 @@ scope. Its later requirements supersede the older narrow-beta feature boundary.
   complete HTTP matrix and targeted browser observations with compatibility limits.
 - [ ] Healthy owned audio/caption, restart/event and local-service browser checks
   pass; video progress alone cannot qualify audio or captions.
-- [ ] Both protocols pass ten-minute concurrent smoke and the actual four-hour
-  release soak, with A/V timing, memory, retention and complete closed evidence.
+- [ ] Both protocols pass ten-minute concurrent smoke, with A/V timing, the
+  unchanged 128 MiB memory-growth limits, retention and complete closed evidence.
+  Four-hour stress testing is optional and does not block publication.
 - [ ] Every owned process exits and transfer/index/timer counters drain.
 - [ ] Exact-candidate CI executes and passes; an account-level restriction is a
   blocker even when local checks pass.

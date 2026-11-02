@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Require ten-minute concurrent endurance evidence for release review. Keep the
+  four-hour stress test optional through `--extended-soak` or manual CI dispatch;
+  preserve the 128 MiB growth limits, complete evidence and cleanup checks.
+
 - Opt-in, explicitly unqualified endurance-driver allocation profiling, with heap
   statistics captured at measurement stop. Profiling cannot qualify either gate.
 
@@ -24,7 +28,7 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 - Streaming validation of long rotated traces, native test-viewer origin isolation,
   separately owned simulator processes and per-process/aggregate RSS gates.
 
-- Ten-minute/concurrent-viewer and four-hour release-soak runners, authored A/V
+- Ten-minute/concurrent-viewer and optional four-hour stress runners, authored A/V
   markers, bounded append-only diagnostic rotation, complete-file validation and
   explicit request/index/source cleanup counters.
 

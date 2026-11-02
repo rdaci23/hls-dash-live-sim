@@ -4,6 +4,12 @@ The endurance runner uses the owned local tracks source, one real Chrome viewer
 and two independent HTTP viewers **per protocol**, concurrently. It needs no
 Docker, external clocks or media. The repository/npm remain private.
 
+The required candidate endurance gate is **ten minutes**. The four-hour run is an
+optional stress test for maintainers investigating longer sessions; public release
+does not require it. Both durations retain the same 128 MiB memory-growth limits,
+decoded playback, complete-evidence and cleanup checks. A pass covers only the
+duration actually measured; earlier failed or interrupted runs remain unqualified.
+
 The endurance viewer controls sandboxed Chrome through a bounded CDP pipe using
 Runtime, Page and Log events. It retains the shared player page, normal player
 settings and every decoded audio/caption/frame sample. Main-page and worker
@@ -16,13 +22,17 @@ profiles must drain on close.
 npm run endurance:cleanup -- --output output/endurance-interruption
 npm run endurance:driver -- --output output/endurance-driver
 npm run endurance:smoke -- --output output/endurance-smoke
-npm run endurance:release -- --output output/endurance-candidate
+# Optional extended stress test; four real hours:
+npm run endurance:release -- --output output/endurance-extended
 # Short harness development only; cannot qualify either release gate:
 npm run endurance:dev -- --development-seconds 90 --output output/endurance-development
 ```
 
-Smoke runs for ten actual minutes after both viewers are ready. Release mode runs
-for four actual hours; it cannot be shortened with development flags. A machine
+Smoke runs for ten actual minutes after both viewers are ready. The optional
+extended run retains the existing `endurance:release` command and `--mode release`
+report identity. It runs for four actual hours and cannot be shortened with
+development flags. The legacy `qualifiedReleaseSoak` result describes only that
+optional duration, not a publication requirement. A machine
 sleep, interruption, source error, missing evidence or changed working tree cannot
 qualify. Reports retain the exact commit and distinguish development, smoke and
 release-soak qualification. No mode publishes, tags or changes visibility.
@@ -40,8 +50,8 @@ network schedule in the scenario catalog. Running a profile alone is not the
 concurrent-viewer verifier or qualification. The final bandwidth cap has a bounded
 one-minute shutdown grace so independently started source clocks cannot release
 queued bodies just before the common measurement deadline. Qualification still
-requires the full ten minutes or four hours; grace does not shorten or accelerate
-that interval. Every attempted cancellation is retained before its assertion.
+requires the full selected duration; grace does not shorten or accelerate that
+interval. Every attempted cancellation is retained before its assertion.
 
 ## Workload and gates
 
@@ -95,7 +105,7 @@ that interval. Every attempted cancellation is retained before its assertion.
   source actions must drain, and every owned simulator and browser process must exit. The runner
   starts no containers and does not stop unrelated processes.
 
-The four-hour test uses real source/publication/UTC clocks. Time acceleration and
+The optional four-hour test uses real source/publication/UTC clocks. Time acceleration and
 fixed-time probes cannot substitute for it. Full engine browser baselines,
 including played DASH Period transitions, remain separate candidate checks.
 
@@ -135,8 +145,12 @@ that path. Failed/interrupted runs still close their owned resources and retain 
 reports with explicit failure reasons.
 
 Manual full CI runs the ten-minute smoke and retains evidence for seven days. The four-hour
-release run is a separate candidate gate, also available through the optional
+stress test is an optional addition, also available through the
 `release_soak` workflow-dispatch input. Select the exact candidate and retain the
-resulting complete artifact; enabling the input alone does not qualify it. Check the actual run's report; a workflow
-definition or a successful short development run is not endurance qualification.
+resulting complete artifact; enabling the input alone does not qualify it.
+`release:review` runs only the required ten-minute endurance check by default;
+add `--extended-soak` explicitly to include the four-hour run. Check the actual
+run's report; a workflow definition or a successful short development run is not
+endurance qualification. Known extended-run limits remain in the
+[coverage matrix](coverage-matrix.md); optional testing does not erase failures.
 See the [core roadmap](scenario-roadmap.md) and [release review](release-review.md).

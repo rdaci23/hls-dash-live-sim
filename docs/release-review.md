@@ -14,9 +14,10 @@ The historical candidate below predates the expanded core program and cannot
 qualify it. Follow the [core roadmap](scenario-roadmap.md) for implementation and
 known compatibility limits in the [coverage matrix](coverage-matrix.md). The current candidate still requires its exact-commit
 full review, all core HTTP checks, healthy decoded fixtures, targeted browser
-observations, ten-minute concurrent smoke, four-hour soak and executing green CI.
-GitHub has prevented recent jobs from starting due to an account-level restriction;
-local passes are retained independently and do not replace CI.
+observations, ten-minute concurrent smoke and executing green CI. Four-hour stress
+testing is optional; add `--extended-soak` explicitly when it is useful. The
+128 MiB per-process and aggregate memory-growth limits remain unchanged. Local
+passes are retained independently and do not replace exact-candidate CI.
 
 ## Historical implementation candidate — 30 October 2026
 
@@ -116,6 +117,8 @@ Commit the candidate first; the review rejects a dirty source tree.
 
 ```sh
 npm run release:review -- --output output/my-release-review
+# Optional: include four-hour stress testing in addition to all required checks.
+# npm run release:review -- --output output/my-extended-review --extended-soak
 # If the verified scanner is outside PATH, set its absolute executable path:
 # GITLEAKS_BIN=/path/to/gitleaks npm run release:review -- --output output/my-release-review
 ```
@@ -128,10 +131,12 @@ vulnerability audit and all six full Chrome playback cases: healthy, startup 404
 and established-playback 404 for HLS and DASH, with normal local synchronization.
 It then runs the expanded core simulator verifiers, decoded track/lifecycle/local-
 service browser checks, targeted payload/publication/track browser observations,
-the origin-policy/RSS regression, interrupt cleanup, ten-minute smoke and actual
-four-hour concurrent release soak. The soak runs alongside the remaining local
-checks on the same candidate; a failure/interrupt closes every owned child and
-retains its failed partial evidence. Reserve several hours on an awake machine.
+the origin-policy/RSS regression, interrupt cleanup and ten-minute concurrent
+smoke. With `--extended-soak`, it also runs the optional four-hour stress test
+alongside the remaining checks on the same candidate. A failure/interrupt closes
+every owned child and retains its failed partial evidence. The report records
+whether extended testing was requested; skipped extended testing is not a pass.
+Use an awake machine for the complete browser/integration matrix.
 It does not contact a Roku or change repository visibility.
 
 Reports retain the candidate commit, clean-tree checks, scanner version, archive

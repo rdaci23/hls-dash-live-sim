@@ -5,6 +5,13 @@ approval after all core work below qualifies. HTTP fault delivery, valid stream
 authoring and browser compatibility are separate outcomes. A documented player
 limitation must never be hidden or presented as a simulator pass.
 
+The endurance policy was revised on 2 November 2026: **ten-minute concurrent
+smoke is required; four-hour stress testing is optional**. Keep the 128 MiB
+per-process and aggregate growth limits, decoded playback, complete evidence and
+cleanup requirements. Normal release review and the required manual CI suite do
+not start the optional run. The historical ledger below retains earlier
+four-hour requirements and failures; none becomes a pass under the revised policy.
+
 | Milestone | Status | Required evidence |
 | --- | --- | --- |
 | 1. Selective rendition outages | HTTP implementation verified; browser observations captured; fallback/re-entry coverage remains partial | HLS high, then HLS/DASH low; healthy alternate media/manifests/init/UTC; publication and same-download restoration; browser compatibility separate. |
@@ -15,8 +22,8 @@ limitation must never be hidden or presented as a simulator pass.
 | 6. Fixtures and independent tracks | Implementation and healthy decoded-track evidence verified; fault observations captured with compatibility limits | Generated HLS fMP4/separate audio, two audio tracks, HLS WebVTT/DASH wvtt, decoded audio/cue evidence, third rung and asymmetric shaping. |
 | 7. Restart/DVR/event completion | Valid restart/event and invalid/DVR HTTP checks pass locally; DVR browser limits retained | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | HTTP implementation and decoded AES/auth-client checks pass locally | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
-| 9. Endurance/concurrency | Ten-minute smoke qualified locally at `93333b4`; final candidate four-hour/CI gates pending | 10-minute CI smoke and four-hour release soak for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. |
-| 10. Final publication review | Pending all gates | Exact-commit CI/browser/soak evidence, history/package/licenses/docs review, support matrix, branch protection and security-reporting preparation. Publication remains a separate approval. |
+| 9. Endurance/concurrency | Ten-minute smoke qualified locally and in CI at `42ed300`; final candidate checks required | Required 10-minute concurrent smoke for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. Four-hour stress testing is optional. |
+| 10. Final publication review | Pending all required gates | Exact-commit CI/browser/smoke evidence, history/package/licenses/docs review, support matrix, branch protection and security-reporting preparation. Publication remains a separate approval. |
 
 Completed foundations: valid HLS/DASH baselines, local UTC, status and sustained
 outages, manifest freeze/resume, shared bandwidth/jitter, media/manifest/init
@@ -202,7 +209,7 @@ recovery. The complete matrix remains part of the exact candidate review.
 The expanded review now includes every core simulator verifier, the healthy
 browser baseline, decoded fixtures/lifecycle/local services, compatibility
 observations, installed-package/history/license checks, ten-minute smoke and
-actual four-hour soak. The [coverage matrix](coverage-matrix.md) and
+optional four-hour stress testing. The [coverage matrix](coverage-matrix.md) and
 [publication preparation](publication-preparation.md) retain the evidence limits
 and remaining cutover settings. No command publishes or changes visibility.
 
@@ -228,8 +235,10 @@ could interrupt the soak's evidence closure. The owner now signals the soak
 coordinator once and lets it close descendants; late children and repeated stops
 have negative/unit checks, and the real repeated-stop test validates complete
 source/viewer files, zero counters and exited PIDs. The earlier partial soak stays
-unqualified. The corrected candidate requires a fresh exact-commit full review
-and four-hour run; no earlier result silently qualifies it.
+unqualified. At that checkpoint, the corrected candidate required a fresh
+exact-commit full review and four-hour run; the current endurance policy above
+supersedes that duration requirement. No earlier result silently qualifies a new
+candidate.
 
 ### Inspection isolation follow-up
 
@@ -240,7 +249,7 @@ same versioned intent. Unsupported peers cannot silently fall back to a playback
 GET. `npm run manifest:preview` retains both-protocol HTTP isolation, cache body
 identity and restoration evidence; UI tests verify the browser path separately.
 HLS/DASH advertised resource kinds also override filename extensions. Final candidate
-qualification must include this change rather than reuse an earlier soak.
+qualification must include this change rather than reuse earlier endurance evidence.
 
 ### Endurance boundary correction
 
@@ -253,3 +262,24 @@ HTTP regression reproduces that completed-body result. The workload now keeps
 the final cap for a bounded one-minute shutdown grace, without changing required
 measurement time or fairness cycles. Cancel attempts are recorded before asserting
 incomplete delivery. A new exact-candidate full run is required.
+
+### Ten-minute qualification and optional extended testing — 2 November 2026
+
+At `42ed300`, the clean local ten-minute concurrent HLS/DASH smoke passed with
+37.1 MiB combined Node growth. The independent Linux/Node 24
+[CI run](https://github.com/rdaci23/hls-dash-live-sim/actions/runs/41470285646)
+also passed the ten-minute smoke, routing, driver-observability and interrupt
+cleanup checks. Linux combined growth was 45.2 MiB; both protocols retained
+complete evidence, decoded A/V and exited owners.
+
+The extended run on that commit failed after 71.3 minutes when conservative
+combined Node growth reached 130.75 MiB against 128 MiB. Each individual process
+remained within its budget, and closed evidence was complete. The aggregate
+long-session limit remains unresolved; the report is failed and provides no
+four-hour qualification. Changing the release policy does not fix that result.
+The run had already finished before the subsequent stop request reached GitHub.
+
+Following maintainer feedback, the release policy requires ten-minute smoke,
+with unchanged memory/evidence/cleanup gates. Four-hour testing stays available
+through explicit opt-in. Fresh candidate checks are still required after the
+policy implementation changes.

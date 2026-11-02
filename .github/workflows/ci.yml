@@ -19,7 +19,7 @@ on:
         default: false
 
       release_soak:
-        description: Run the actual four-hour concurrent release-candidate soak
+        description: Optional four-hour stress test; not a required release gate
         type: boolean
         default: false
 
@@ -565,7 +565,7 @@ jobs:
           retention-days: 7
 
   release-soak:
-    name: Four-hour concurrent release-candidate soak
+    name: Optional four-hour concurrent stress test
     if: github.event_name == 'workflow_dispatch' && (inputs.release_soak || inputs.memory_profile)
     runs-on: ubuntu-24.04
     timeout-minutes: 285

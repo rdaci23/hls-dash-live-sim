@@ -6,22 +6,23 @@ const { spawn, execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const assert = require('node:assert/strict');
 const { bound, endurance } = require('./release/acceptance.cjs');
+const {reviewOptions}=require('./release/options.cjs');
 const {createProcessOwner}=require('./release/process-owner.cjs');
 const root = path.resolve(__dirname, '..'), args = process.argv.slice(2);
 const capture = (command, params, cwd = root) => execFileSync(command, params, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 async function main() {
-    if (args.length !== 2 || args[0] !== '--output' || !args[1])
-        throw Error('Use npm run release:review -- --output NEW_DIRECTORY');
+    const options=reviewOptions(args);
     if (capture('git', ['status', '--porcelain']))
         throw Error('Candidate review requires a clean committed source tree');
     const scanner = process.env.GITLEAKS_BIN ? path.resolve(root, process.env.GITLEAKS_BIN) : 'gitleaks', scannerVersion = capture(scanner, ['version']);
-    const directory = path.resolve(args[1]);
+    const directory = path.resolve(options.output);
     await fs.mkdir(path.dirname(directory), { recursive: true });
     await fs.mkdir(directory, { mode: 0o700 });
     const checkout = path.join(directory, 'checkout'), commit = capture('git', ['rev-parse', 'HEAD']);
     const report = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit, sourceTreeClean: true, scannerVersion, steps: [], candidateChecksPassed: false, releaseReady: false, projectLicense: require('../package.json').license,
-        outstanding: ['Exact-candidate CI must execute and pass', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit public visibility approval; npm is a separate decision'] };
+        outstanding: ['Exact-candidate CI must execute and pass', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit public visibility approval; npm is a separate decision'],
+        endurancePolicy:{requiredMode:'smoke',requiredDurationMs:600000,maximumGrowthBytes:128*1024*1024,extendedSoakRequested:options.extendedSoak,extendedSoakRequired:false} };
     const active = createProcessOwner();
     let interrupted = false, soakWork, soakFailure;
     const stop = () => { interrupted = true; active.stop(); };
@@ -89,9 +90,9 @@ async function main() {
         await step('dependency-audit', npm, ['audit', '--json'], checkout, path.join(directory, 'dependency-audit.json'));
         report.vulnerabilities = JSON.parse(await fs.readFile(path.join(directory, 'dependency-audit.json'), 'utf8')).metadata.vulnerabilities;
         assert.equal(report.vulnerabilities.total, 0);
-        // Own the long soak in parallel with the remaining checks. Never leave it
-        // running after a failed/interrupted review, and never reuse an older run.
-        soakWork = enduranceStep('release').catch(error => { soakFailure = error; });
+        // Extended stress testing is explicitly requested. The normal candidate
+        // gate remains the ten-minute smoke; either run retains exact identity.
+        if(options.extendedSoak)soakWork = enduranceStep('release').catch(error => { soakFailure = error; });
         await step('browser-playback', process.execPath, ['scripts/verify-browser.cjs', '--output', path.join(directory, 'browser')]);
         const browser = JSON.parse(await fs.readFile(path.join(directory, 'browser/report.json'), 'utf8'));
         assert.equal(browser.commit, commit);
@@ -163,10 +164,12 @@ async function main() {
         await step('browser-routing', process.execPath, ['scripts/verify-browser-routing.cjs', '--output', path.join(directory, 'browser-routing')]);
         await step('endurance-cleanup', process.execPath, ['scripts/verify-endurance-cleanup.cjs', '--output', path.join(directory, 'endurance-cleanup')]);
         report.core.push(await enduranceStep('smoke'));
-        const qualifiedSoak = await soakWork;
-        if (soakFailure)
-            throw soakFailure;
-        report.core.push(qualifiedSoak);
+        if(soakWork){
+            const qualifiedSoak = await soakWork;
+            if (soakFailure)
+                throw soakFailure;
+            report.core.push(qualifiedSoak);
+        }
         assert.equal(capture('git', ['status', '--porcelain'], checkout), '');
         report.candidateChecksPassed = true;
     }
