@@ -68,3 +68,37 @@ test('allocation-free verbose reads follow config changes without exposing mutab
   config.persistFaultConfig({ logging: { verbose: false } });
   assert.equal(config.isFaultLoggingVerbose(), false);
 });
+
+for (const protocol of ['hls', 'dash']) test(protocol + ' metadata reads preserve snapshot isolation, primitive fields and exact journal/export events', async t => {
+  const { SessionDiagnostics } = require('../dist/support-tools/session-diagnostics.js');
+  const { read } = require('../scripts/browser/complete-diagnostics.cjs');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'compact-diagnostics-'));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'requests.jsonl');
+  const d = new SessionDiagnostics(protocol, { file, maxEvents: 3, maxFileBytes: 4096, rotateFiles: 4 });
+  const fields = { status: 200, bodyBytes: 0, generation: 0, sourceMediaTimeMs: 0, manifestFreeze: false, url: 'https://private.invalid/private-marker' };
+  for (let i = 0; i < 5; i++) d.record('request.completed', fields);
+  fields.status = 599;
+  const before = d.snapshot();
+  assert.deepEqual(before.events.map(e => e.eventId), [4, 5, 6]);
+  for (const event of before.events) {
+    assert.equal(event.status, 200); assert.equal(event.bodyBytes, 0);
+    assert.equal(event.manifestFreeze, false); assert.equal(event.generation, 0);
+    assert.equal(event.sourceMediaTimeMs, 0); assert.equal(event.url, undefined);
+  }
+  before.events[0].status = 500;
+  assert.equal(d.snapshot().events[0].status, 200);
+  d.close();
+  const metadata = d.metadata();
+  assert.equal(metadata.events, undefined);
+  metadata.rotation.files[0].bytes = 0;
+  assert.ok(d.metadata().rotation.files[0].bytes > 0);
+  const exported = d.exportJsonl().trim().split('\n').map(JSON.parse);
+  assert.deepEqual(exported.slice(1), d.snapshot().events);
+  assert.deepEqual(exported.slice(1).map(e => e.eventId), [5, 6, 7]);
+  assert.ok(!d.exportJsonl().includes('private-marker'));
+  const complete = await read(file, d.metadata());
+  assert.equal(complete.completeFile.complete, true);
+  assert.equal(complete.completeFile.eventCount, 7);
+  assert.deepEqual(complete.events.slice(-3), exported.slice(1));
+});

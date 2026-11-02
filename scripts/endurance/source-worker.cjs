@@ -3,16 +3,15 @@ const { startTrackFixture } = require('../../dist/support-tools/track-fixture-se
 let session, closing, timer, started, baseline, peak = 0, samples = 0, breach = false;
 const limit = 128 * 1024 * 1024;
 let warmup = 60000;
-function memory() { const rss = process.memoryUsage().rss; peak = Math.max(peak, rss, process.resourceUsage().maxRSS * 1024); if (started !== undefined) {
+function memory() { const usage = process.memoryUsage(), rss = usage.rss; peak = Math.max(peak, rss, process.resourceUsage().maxRSS * 1024); if (started !== undefined) {
     if (baseline === undefined && performance.now() - started >= warmup)
         baseline = rss;
     if (baseline !== undefined && peak > baseline + limit)
         breach = true;
-} samples++; return { rssBytes: rss, warmBaselineBytes: baseline, peakBytes: peak, maximumGrowthBytes: limit, samples, breach }; }
+} samples++; return { rssBytes: rss, heapUsedBytes: usage.heapUsed, heapTotalBytes: usage.heapTotal, externalBytes: usage.external, arrayBufferBytes: usage.arrayBuffers, warmBaselineBytes: baseline, peakBytes: peak, maximumGrowthBytes: limit, samples, breach }; }
 function stats() { return { pid: process.pid, memory: memory(), network: session?.networkOwnership(), resources: session?.resourceOwnership(), source: session?.sourceOwnership(), scenario: session?.scenario?.report(), runId: session?.runs?.runId, samplerTimers: timer ? 1 : 0 }; }
-function close() { return closing ??= (async () => { clearInterval(timer); timer = undefined; await session?.close(); const result = stats(); if (session?.diagnostics) {
-    const { events, ...metadata } = session.diagnostics.snapshot();
-    result.diagnostics = metadata;
+function close() { return closing ??= (async () => { clearInterval(timer); timer = undefined; await session?.close(); const result = stats(); result.memory.heapSpaces = require('node:v8').getHeapSpaceStatistics().map(s => ({name:s.space_name,totalBytes:s.space_size,usedBytes:s.space_used_size,physicalBytes:s.physical_space_size})); if (session?.diagnostics) {
+    result.diagnostics = session.diagnostics.metadata();
 } return result; })(); }
 process.on('SIGINT', () => { });
 process.on('SIGTERM', () => { });

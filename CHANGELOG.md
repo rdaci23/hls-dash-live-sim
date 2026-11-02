@@ -107,6 +107,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Bound HLS/DASH origin request lifetimes with native HTTP reads and explicit
+  deadline/listener cleanup, retaining redirect allowlists, decompression limits,
+  cancellation and exact response bytes. Endurance reports include heap/Buffer
+  observations alongside the unchanged 128 MiB RSS gates.
+
 - Reduce memory growth during repeated live-manifest refreshes and diagnostic
   recording. HLS stages index changes without copying retained history; DASH
   reuses one validated parse. Retention, safety checks and the shared 128 MiB

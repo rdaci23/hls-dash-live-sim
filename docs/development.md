@@ -98,7 +98,7 @@ runs do not execute the platform matrix, package smoke, browser/integration jobs
 or endurance smoke.
 
 Run the broader checks explicitly from **Actions → CI → Run workflow**, selecting
-the candidate branch or tag. Every manual dispatch runs the six Linux/macOS
+the candidate branch or tag and the default **full** scope. Full dispatches run the six Linux/macOS
 Node 22/24/26 matrix checks, including notices, Roku compilation, HLS HTTP
 scenarios and production package installation. Separate jobs run Chrome control
 UI, pinned DASH integration, payload/transport and HTTP policy checks, independent
@@ -118,6 +118,17 @@ Enable all three for the complete manual candidate suite. With GitHub CLI:
 ```sh
 gh workflow run ci.yml --ref main -f playback=true -f core_observations=true -f release_soak=true
 ```
+
+For focused memory/concurrency verification, select **endurance** scope. This runs
+only the Linux/Node 24 endurance smoke job and, when enabled, the four-hour soak:
+
+```sh
+gh workflow run ci.yml --ref main -f scope=endurance -f release_soak=true
+```
+
+The run title includes its scope. Playback and core-observation inputs apply to
+full scope; a green endurance run qualifies only those endurance checks. The full
+candidate still needs the complete full-scope suite and local release review.
 
 Select a stable candidate and confirm the run's actual commit. Only executed,
 passing jobs qualify; disabled or skipped checks provide no verification. Reports,

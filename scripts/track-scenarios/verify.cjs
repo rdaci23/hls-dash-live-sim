@@ -3,7 +3,7 @@ const{variantEntries,attributes,mediaSegments}=require('../../dist/support-tools
 const{catalog}=require('../resource-scenarios/verify.cjs');
 const{read:raw}=require('../transport-scenarios/verify.cjs');
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),hash=body=>createHash('sha256').update(body).digest('hex');
-async function read(url,options){const r=await fetch(url,{signal:AbortSignal.timeout(6000),...options}),body=Buffer.from(await r.arrayBuffer());return{status:r.status,body,sha256:hash(body),headers:r.headers,requestId:r.headers.get('x-sim-request-id')};}
+async function read(url,options){const r=await raw(url,{method:options?.method,signal:options?.signal});assert.ok(r.complete,'Track verification requires a complete HTTP response');const body=r.bytes,headers=new Headers();for(const[name,value]of Object.entries(r.headers))if(value!==undefined)headers.set(name,Array.isArray(value)?value.join(', '):value);return{status:r.status,body,sha256:hash(body),headers,requestId:headers.get('x-sim-request-id')};}
 async function tracks(session,protocol){
  const root=await read(session.url);assert.equal(root.status,200);if(protocol==='dash')return (await catalog(root.body.toString(),session.url,protocol)).map(r=>({...r,manifest:new URL(session.url)}));
  const children=variantEntries(root.body.toString()).map((v,i)=>({uri:v.uri,track:'video:'+i}));let audio=0,text=0;

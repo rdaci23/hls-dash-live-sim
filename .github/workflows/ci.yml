@@ -1,4 +1,5 @@
 name: CI
+run-name: CI / ${{ github.event_name == 'workflow_dispatch' && inputs.scope || 'routine' }} / ${{ github.ref_name }}
 
 on:
   push:
@@ -6,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      scope:
+        description: Manual verification scope; endurance does not qualify the full candidate
+        type: choice
+        options: [full, endurance]
+        default: full
+
       playback:
         description: Run the full six-case browser playback gate
         type: boolean
@@ -49,7 +56,7 @@ jobs:
 
   checks:
     name: Checks / ${{ matrix.os }} / Node ${{ matrix.node }}
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
@@ -76,7 +83,7 @@ jobs:
 
   control-ui:
     name: Chrome control UI
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -93,7 +100,7 @@ jobs:
 
   dash-engine:
     name: DASH engine integration
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -214,7 +221,7 @@ jobs:
 
   http-policy:
     name: HTTP policy and safe response headers
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -280,7 +287,7 @@ jobs:
 
   local-services:
     name: Offline keys, access renewal and UTC
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -308,7 +315,7 @@ jobs:
 
   owned-lifecycle:
     name: Owned lifecycle and DVR
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -343,7 +350,7 @@ jobs:
 
   independent-tracks:
     name: Owned independent audio and captions
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -371,7 +378,7 @@ jobs:
 
   hls-abr:
     name: HLS automatic ABR recovery
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -396,7 +403,7 @@ jobs:
 
   sustained-outage:
     name: Sustained HLS and DASH outage recovery
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -426,7 +433,7 @@ jobs:
 
   dash-abr:
     name: DASH automatic ABR switching
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -456,7 +463,7 @@ jobs:
 
   browser-playback:
     name: Full browser playback gate
-    if: github.event_name == 'workflow_dispatch' && inputs.playback
+    if: github.event_name == 'workflow_dispatch' && inputs.playback && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -486,7 +493,7 @@ jobs:
 
   core-browser-observations:
     name: Core browser observation / ${{ matrix.case }}
-    if: github.event_name == 'workflow_dispatch' && inputs.core_observations
+    if: github.event_name == 'workflow_dispatch' && inputs.core_observations && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     strategy:
@@ -522,7 +529,7 @@ jobs:
 
   scenario-browser-observations:
     name: Owned browser fault observation / ${{ matrix.kind }}
-    if: github.event_name == 'workflow_dispatch' && inputs.core_observations
+    if: github.event_name == 'workflow_dispatch' && inputs.core_observations && inputs.scope != 'endurance'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     strategy:

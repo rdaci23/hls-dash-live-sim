@@ -55,6 +55,10 @@ that interval. Every attempted cancellation is retained before its assertion.
   Ordinary Node allocation/GC settings apply. Live index refreshes stage only the
   advertised changes, DASH metadata and indexing share one validated XML parse,
   and diagnostic recording reuses its field tables and reads verbosity directly.
+  Origin reads use bounded native HTTP streams and release their deadline timers
+  and parent-cancellation listeners when complete. HTTP track probes use the
+  existing bounded native viewer rather than retaining Fetch timeout graphs;
+  metadata-only reads avoid copying event windows during owner shutdown.
   These reduce transient allocation while preserving retention and complete logs;
   the warm-up, workload and 128 MiB individual/shared limits remain the same.
 - Resource indexes, pending work and transfer ownership are sampled. After close,

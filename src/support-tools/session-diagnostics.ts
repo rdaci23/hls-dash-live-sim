@@ -405,15 +405,8 @@ export class SessionDiagnostics {
     } else if (this.fd !== undefined && event === "diagnostics.file_limit")
       this.fileWrite(line);
   }
-  snapshot() {
-    const events =
-      this.events.length < this.capacity
-        ? this.events
-        : [
-            ...this.events.slice(this.offset),
-            ...this.events.slice(0, this.offset),
-          ];
-    return structuredClone({
+  metadata() {
+    return {
       schemaVersion: 1,
       sessionId: this.sessionId,
       protocol: this.protocol,
@@ -423,8 +416,13 @@ export class SessionDiagnostics {
       fileLimitReached: this.fileLimitReached||!!this.rotation?.limited,
       fileWriteFailed: this.fileWriteFailed||!!this.rotation?.failed,
       ...(this.rotation?{rotation:this.rotation.snapshot()}:{}),
-      events,
-    });
+    };
+  }
+  snapshot() {
+    const events = this.events.length < this.capacity ? this.events : [
+      ...this.events.slice(this.offset), ...this.events.slice(0, this.offset),
+    ];
+    return structuredClone({ ...this.metadata(), events });
   }
   exportJsonl(): string {
     const { events, ...metadata } = this.snapshot();

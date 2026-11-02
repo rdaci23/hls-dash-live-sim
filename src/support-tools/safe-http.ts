@@ -1,4 +1,8 @@
 import http from "node:http";
+import https from "node:https";
+import zlib from "node:zlib";
+import type { Readable } from "node:stream";
+import { RequestDeadline } from "./request-deadline.js";
 import net from "node:net";
 import fs from "node:fs";
 import os from "node:os";
@@ -127,88 +131,108 @@ export interface RemoteResponse {
   body: Buffer;
   url: string;
 }
+/** Buffer a bounded origin response without retaining Fetch/AbortSignal weak graphs. */
+function readOrigin(
+  url: string,
+  method: "GET" | "HEAD",
+  headers: Record<string, string>,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer }> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    let response: http.IncomingMessage, reader: Readable, settled = false;
+    const streams: Readable[] = [], chunks: Buffer[] = [];
+    let size = 0, encodedSize = 0;
+    const request = (url.startsWith("https:") ? https : http).request(url, { method, headers }, res => {
+      response = res;
+      const status = res.statusCode;
+      res.on("error", fail);
+      if ([301, 302, 303, 307, 308].includes(status)) {
+        finish(Buffer.alloc(0));
+        res.destroy(); // Redirect bodies cannot hold a connection or outlive the deadline.
+        return;
+      }
+      reader = res;
+      const encoding = String(res.headers["content-encoding"] ?? "identity").toLowerCase();
+      const encodings = encoding.split(",").map(value => value.trim());
+      if (method !== "HEAD" && ![204, 205, 304].includes(status) && encodings.every(value => ["identity", "gzip", "x-gzip", "deflate", "br"].includes(value))) {
+        for (const value of encodings.reverse()) {
+          const decoder = value === "gzip" || value === "x-gzip" ? zlib.createGunzip() : value === "deflate" ? zlib.createUnzip() : value === "br" ? zlib.createBrotliDecompress() : undefined;
+          if (decoder) { streams.push(decoder); decoder.on("error", fail); reader = reader.pipe(decoder); }
+        }
+      }
+      if (reader !== res) res.on("data", chunk => {
+        encodedSize += chunk.length;
+        if (encodedSize > maxBytes) fail(new HttpError(502, "Origin response exceeds the size limit"));
+      });
+      reader.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > maxBytes) fail(new HttpError(502, "Origin response exceeds the size limit"));
+        else chunks.push(chunk);
+      });
+      reader.once("end", () => {
+        if (!res.complete) fail(new HttpError(502, "Incomplete origin response"));
+        else finish(Buffer.concat(chunks, size));
+      });
+    });
+    function finish(body: Buffer) {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", aborted);
+      resolve({status: response.statusCode, headers: response.headers, body});
+    }
+    function fail(error: Error) {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", aborted);
+      request.destroy(); response?.destroy();
+      for (const stream of streams) stream.destroy();
+      chunks.length = 0;
+      reject(error);
+    }
+    function aborted() { fail(signal.reason); }
+    request.on("error", fail);
+    if (signal.aborted) aborted();
+    else { signal.addEventListener("abort", aborted, {once: true}); request.end(); }
+  });
+}
+
 export async function fetchRemote(
   value: string,
   policy: OriginPolicy,
   options: { range?: string; maxBytes?: number; signal?: AbortSignal; method?: "GET" | "HEAD"; manifestPreview?: boolean } = {},
 ): Promise<RemoteResponse> {
   let url = value;
-  const signal = (
-    AbortSignal as typeof AbortSignal & {
-      any(signals: AbortSignal[]): AbortSignal;
-    }
-  ).any([
-    AbortSignal.timeout(10000),
-    ...(options.signal ? [options.signal] : []),
-  ]);
-  for (let redirects = 0; redirects <= 5; redirects++) {
-    policy.check(url);
-    const response = await fetch(url, {
-      redirect: "manual",
-      method: options.method ?? "GET",
-      signal,
-      headers: {
+  const deadline = new RequestDeadline(10000, options.signal);
+  try {
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      policy.check(url);
+      const response = await readOrigin(url, options.method ?? "GET", {
         ...policy.headers(url),
         "Accept-Encoding": "identity",
         ...(options.manifestPreview ? {"X-Sim-Manifest-Preview":"baseline-v1"} : {}),
-        ...(options.range ? { Range: options.range } : {}),
-      },
-    });
-    if ([301, 302, 303, 307, 308].includes(response.status)) {
-      await response.body?.cancel();
-      const location = response.headers.get("location");
-      if (!location || redirects === 5)
-        throw new HttpError(502, "Invalid or excessive origin redirects");
-      url = new URL(location, url).href;
-      continue;
+        ...(options.range ? {Range: options.range} : {}),
+      }, options.maxBytes ?? 64 * 1024 * 1024, deadline.signal);
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.location;
+        if (!location || redirects === 5) throw new HttpError(502, "Invalid or excessive origin redirects");
+        url = new URL(location, url).href;
+        continue;
+      }
+      const headers: Record<string, string> = {};
+      for (const key of ["content-type", "content-range", "accept-ranges", "etag", "last-modified", "cache-control", "date", "retry-after", "www-authenticate", "age", "expires", "vary"]) {
+        const header = response.headers[key];
+        if (header) headers[key] = Array.isArray(header) ? header.join(", ") : header;
+      }
+      if (options.method === "HEAD" && /^\d+$/.test(response.headers["content-length"] ?? "")) headers["content-length"] = response.headers["content-length"];
+      if (response.headers["content-encoding"] && String(response.headers["content-encoding"]).toLowerCase() !== "identity") {
+        delete headers.etag; delete headers["last-modified"]; delete headers["content-length"];
+      }
+      return {status: response.status, headers, body: response.body, url};
     }
-    const chunks: Buffer[] = [];
-    let size = 0;
-    const reader = response.body?.getReader();
-    try {
-      if (reader)
-        while (true) {
-          const next = await reader.read();
-          if (next.done) break;
-          size += next.value.byteLength;
-          if (size > (options.maxBytes ?? 64 * 1024 * 1024))
-            throw new HttpError(502, "Origin response exceeds the size limit");
-          chunks.push(Buffer.from(next.value));
-        }
-    } catch (error) {
-      await reader?.cancel().catch(() => {});
-      throw error;
-    }
-    const headers: Record<string, string> = {};
-    for (const key of [
-      "content-type",
-      "content-range",
-      "accept-ranges",
-      "etag",
-      "last-modified",
-      "cache-control",
-      "date",
-      "retry-after",
-      "www-authenticate",
-      "age",
-      "expires",
-      "vary",
-    ]) {
-      const header = response.headers.get(key);
-      if (header) headers[key] = header;
-    }
-    if (options.method === "HEAD" && /^\d+$/.test(response.headers.get("content-length") ?? "")) headers["content-length"] = response.headers.get("content-length");
-    if (response.headers.get("content-encoding") && response.headers.get("content-encoding").toLowerCase() !== "identity") {
-      delete headers.etag; delete headers["last-modified"];delete headers["content-length"];
-    }
-    return {
-      status: response.status,
-      headers,
-      body: Buffer.concat(chunks),
-      url,
-    };
-  }
-  throw new HttpError(502, "Too many origin redirects");
+    throw new HttpError(502, "Too many origin redirects");
+  } finally { deadline.close(); }
 }
 
 export async function listen(
