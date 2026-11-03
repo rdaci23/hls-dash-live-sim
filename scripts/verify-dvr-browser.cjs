@@ -2,7 +2,7 @@ const fs = require('node:fs/promises'), path = require('node:path'), http = requ
 const { execFileSync } = require('node:child_process'), { randomUUID, createHash } = require('node:crypto');
 const { tracks } = require('./track-scenarios/verify.cjs'), { fragment, initialization } = require('./dash-abr/fixture.cjs');
 const { open } = require('./browser/owned-player.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs');
-const { KINDS, evaluateCase, evaluateSuite } = require('./browser/dvr-acceptance.cjs');
+const { KINDS, evaluateCase, evaluateSuite, read } = require('./browser/dvr-acceptance.cjs');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms)), root = path.resolve(__dirname, '..');
 const definitions = {
     'pause-and-seek': null,
@@ -149,10 +149,12 @@ async function main() {
         }
     } catch (error) { runError = error.message; }
     finally { identity.workingTreeModified ||= dirty() || capture('rev-parse', 'HEAD') !== commit; process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); }
-    const report = evaluateSuite({ ...identity, checks }, { releaseCheck: args.releaseCheck, expectedCommit: commit }); report.error = runError; report.outcomes = outcomes.map(r => ({ caseId: r.protocol + '-' + r.kind, passed: r.passed, playerRecoveryVerified: r.playerRecoveryVerified, error: r.error }));
+    let report = evaluateSuite({ ...identity, checks }, { releaseCheck: args.releaseCheck, expectedCommit: commit }); report.error = runError; report.outcomes = outcomes.map(r => ({ caseId: r.protocol + '-' + r.kind, passed: r.passed, playerRecoveryVerified: r.playerRecoveryVerified, error: r.error }));
     if (runError) { report.accepted = false; report.releaseCheckPassed = false; report.failures.push(runError); }
     await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
-    const full = args.protocol === 'both' && args.kind === 'all'; if (args.releaseCheck ? !report.accepted : runError || !checks.length || checks.some(c => !c.passed)) process.exitCode = 1;
+    const full = args.protocol === 'both' && args.kind === 'all';
+    if(full){const {outcomes,error}=report;report=await read(directory,{releaseCheck:args.releaseCheck,expectedCommit:commit});Object.assign(report,{outcomes,error});await fs.writeFile(path.join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});}
+    if (args.releaseCheck ? !report.accepted : full ? !report.passed : runError || !checks.length || checks.some(c => !c.passed)) process.exitCode = 1;
     console.log('dvr-browser ' + (args.releaseCheck ? 'release-check' : 'strict') + ' ' + ((args.releaseCheck ? report.accepted : !process.exitCode) ? 'PASS' : 'FAIL') + (full ? '' : ' (partial suite; release completeness not qualified)') + ': ' + path.join(directory, 'report.json'));
     return report;
 }

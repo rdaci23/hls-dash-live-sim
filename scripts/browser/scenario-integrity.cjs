@@ -27,10 +27,22 @@ function expectedConsole(event,responses,kind){
  return !!url&&Number.isFinite(event.epochMs)&&responses.some(r=>r.url===url&&r.faultIds&&r.requestId&&Number.isFinite(r.receivedEpochMs)&&Math.abs(event.epochMs-r.receivedEpochMs)<=5000&&
   (status?Number(status)===r.status&&r.status>=400:kind==='framing'&&r.fault==='scenario.transport'&&/ERR_CONTENT_LENGTH_MISMATCH/.test(event.message??'')));
 }
+function expectedStaleConsole(event,input,player,used){
+ if(input.kind!=='manifest-rollback'||!player.passed||!Number.isFinite(event.epochMs))return;
+ const url=resourceUrl(event.location?.url),status=event.message==='Failed to load resource: the server responded with a status of 404 (Not Found)'?404:event.message==='Failed to load resource: the server responded with a status of 410 (Gone)'?410:undefined;
+ if(!url||!status)return;
+ for(const known of player.expectedFaultErrors){
+  if(known.signature!=='advertised-stale-media-unavailable'||resourceUrl(known.error.url??known.error.frag?.url)!==url||known.error.requestId&&known.error.requestId!==known.failedRequestId)continue;
+  const manifest=input.affectedBrowserResponses.find(r=>r.requestId===known.faultRequestId&&r.faultIds===known.faultIds&&r.fault==='scenario.cache'&&r.resource==='manifest');
+  if(!manifest)continue;
+  const response=input.browserResponses.find(r=>r.requestId===known.failedRequestId&&!used.has(r.requestId)&&r.method==='GET'&&r.url===url&&r.status===status&&!r.faultIds&&typeof r.requestId==='string'&&!!r.requestId&&typeof r.requestResourceId==='string'&&!!r.requestResourceId&&Number.isFinite(r.receivedEpochMs)&&event.epochMs>=r.receivedEpochMs-250&&event.epochMs-r.receivedEpochMs<=5000);
+  if(response)return{event,requestId:response.requestId,status,faultRequestId:known.faultRequestId,faultIds:known.faultIds};
+ }
+}
 function assess(input){
  const{metrics,auditDropped,error,responseDropped,healthyLeadIn,healthyMetrics,restored,playerVersion,browserVersion}=input;
  const audit=Array.isArray(input.audit)?input.audit:[],responseErrors=Array.isArray(input.responseErrors)?input.responseErrors:[],responses=Array.isArray(input.affectedBrowserResponses)?input.affectedBrowserResponses:[],startup=input.kind==='wrong-track-init';
- const failures=[],knownExceptions=[],expectedNetworkConsole=[];
+ const failures=[],knownExceptions=[],expectedNetworkConsole=[],expectedStaleMediaConsole=[],usedStaleRequests=new Set();
  if(error)failures.push(error);
  if(!['hls','dash'].includes(input.protocol)||metrics?.protocol!==input.protocol||!require('./scenario-observations.cjs').kinds.includes(input.kind)||input.startup!==startup)failures.push('Scenario protocol/startup identity mismatch');
  if(!Array.isArray(input.audit)||!Array.isArray(input.responseErrors)||!Array.isArray(input.affectedBrowserResponses))failures.push('Browser audit/response evidence missing');
@@ -42,6 +54,7 @@ function assess(input){
  if(!restoredControls(restored))failures.push('Independent HTTP restoration not verified');
  const endMs=startup?15000:50000;
  if(!Number.isFinite(restored?.atMs)||restored.atMs<endMs||[restored?.manifest,...restored?.controls??[]].some(c=>!Number.isFinite(c?.completedEpochMs)||!Number.isFinite(c?.scenarioElapsedMs)||c.scenarioElapsedMs<endMs))failures.push('HTTP restoration phase/timestamps missing');
+ const player=assessPlayer(input);
  for(const event of audit){
   if(!event||typeof event.kind!=='string'){failures.push('Invalid browser audit record');continue;}
   if(event.contextUnavailable||!Number.isFinite(event.epochMs))failures.push('Browser audit context/timestamp missing');
@@ -49,11 +62,12 @@ function assess(input){
    const known=knownException(event,input);if(known)knownExceptions.push(known);else failures.push('Unexplained browser exception: '+(event.message??'missing exception detail'));
   }else if(['external','route-error','crash'].includes(event.kind))failures.push('Browser '+event.kind+' violates observation integrity');
   else if(event.kind==='console'&&event.level==='error'){
-   if(expectedConsole(event,responses,input.kind))expectedNetworkConsole.push(event);else failures.push('Unexplained browser console error: '+(event.message??'missing console detail'));
+   const stale=expectedStaleConsole(event,input,player,usedStaleRequests);
+   if(expectedConsole(event,responses,input.kind)||stale){expectedNetworkConsole.push(event);if(stale){usedStaleRequests.add(stale.requestId);expectedStaleMediaConsole.push(stale);}}else failures.push('Unexplained browser console error: '+(event.message??'missing console detail'));
   }else failures.push('Unsupported browser audit record');
  }
- const player=assessPlayer(input);failures.push(...player.failures);
- return{passed:!failures.length,integrityPassed:!failures.length,failures:[...new Set(failures)],knownExceptions,expectedNetworkConsole,player};
+ failures.push(...player.failures);
+ return{passed:!failures.length,integrityPassed:!failures.length,failures:[...new Set(failures)],knownExceptions,expectedNetworkConsole,expectedStaleMediaConsole,player};
 }
 async function read(directory,{expectedCommit}={}){
  const bounded=async file=>{const stat=await fs.stat(file);if(stat.size<1||stat.size>16*1024*1024)throw Error('Scenario evidence file exceeds verification bound');return fs.readFile(file);};
@@ -84,6 +98,7 @@ async function read(directory,{expectedCommit}={}){
    for(const control of [raw.report.restored?.manifest,...raw.report.restored?.controls??[]]){const done=verified.events.find(e=>e.event==='request.completed'&&e.requestId===control?.requestId),completed=Date.parse(done?.timestamp);if(!requestStarted(control)||!done||done.status!==200||done.bodyBytes!==control.bytes||!Number.isFinite(completed)||Math.abs(control.completedEpochMs-completed)>2000||completed<startEpochMs+endMs||Math.abs(control.scenarioElapsedMs-(completed-startEpochMs))>2000)throw Error('Restoration probe does not match closed source diagnostics');}
    const result=assess({...raw.report,metrics:raw.metrics,healthyMetrics:raw.healthyMetrics,audit:raw.audit,auditDropped:raw.auditDropped,responseErrors:raw.responseErrors,responseDropped:raw.responseDropped,browserResponses:raw.responses,affectedBrowserResponses:correlated});
    for(const expected of result.player.expectedFaultErrors??[]){if(expected.failedRequestId){const response=raw.responses.find(r=>r.requestId===expected.failedRequestId),done=verified.events.find(e=>e.event==='request.completed'&&e.requestId===expected.failedRequestId);if(!response||!done||!requestStarted(response)||![404,410].includes(done.status)||done.status!==response.status)throw Error('Stale-media failure does not match closed source evidence');}}
+   for(const expected of result.expectedStaleMediaConsole){const response=raw.responses.find(r=>r.requestId===expected.requestId),done=verified.events.find(e=>e.event==='request.completed'&&e.requestId===expected.requestId),completed=Date.parse(done?.timestamp);if(!response||!done||!requestStarted(response)||![404,410].includes(done.status)||done.status!==expected.status||done.status!==response.status||!Number.isFinite(completed)||Math.abs(response.receivedEpochMs-completed)>2000)throw Error('Stale-media console error does not match closed source evidence');}
    if(raw.report.protocol!==entry.protocol||raw.report.kind!==entry.kind)failures.push(key+' scenario identity mismatch');
    if(!result.passed)failures.push(...result.failures);
    cases.push({protocol:entry.protocol,kind:entry.kind,...result,browserRecoveryVerified:raw.report.browserRecoveryVerified});

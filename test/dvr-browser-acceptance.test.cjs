@@ -109,3 +109,17 @@ test('read validates actual evidence bytes and suite identities instead of trust
     await fs.appendFile(path.join(directory, 'dash-join-during-outage/raw.json'), ' '); result = await read(directory, { releaseCheck: true }); assert.equal(result.checks.find(c => c.caseId === 'dash-join-during-outage').releaseCheckPassed, false);
     checks[5].caseId = checks[0].caseId; await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify({ commit, workingTreeModified: false, checks })); result = await read(directory, { releaseCheck: true }); assert.ok(result.failures.some(e => e.includes('six unique')));
 });
+
+test('the DVR CLI reopens saved evidence and rejects an in-memory green result with missing case files',async t=>{
+ const vm=require('node:vm'),{createRequire}=require('node:module'),file=path.resolve(__dirname,'../scripts/verify-dvr-browser.cjs'),realRequire=createRequire(file);
+ const parent=await fs.mkdtemp(path.join(os.tmpdir(),'dvr-cli-policy-')),directory=path.join(parent,'evidence');t.after(()=>fs.rm(parent,{recursive:true,force:true}));
+ for(const releaseCheck of [true,false]){
+ const options={protocol:'both',kind:'all',output:directory+(releaseCheck?'release':'strict'),releaseCheck},processMock={argv:['node',file],once(){},removeListener(){}};
+ const args={option(){return this;},strict(){return this;},parseSync(){return options;}};
+ const module={exports:{}},requireMock=name=>name==='yargs/yargs'?()=>args:name==='node:child_process'?{execFileSync:(_cmd,params)=>params[0]==='rev-parse'?commit+'\n':''}:name==='./browser/dvr-acceptance.cjs'?{...realRequire(name),KINDS:[],evaluateSuite:()=>({commit,workingTreeModified:false,accepted:true,passed:true,releaseCheckPassed:true,checks:[]})}:realRequire(name);
+ vm.runInNewContext(await fs.readFile(file,'utf8'),{require:requireMock,module,__dirname:path.dirname(file),process:processMock,console:{log(){}},AbortController,AbortSignal,URL,Buffer,performance,setTimeout,clearTimeout});
+ const report=await module.exports.main();
+ assert.equal(report.accepted,false);assert.equal(report.passed,false);assert.equal(processMock.exitCode,1);assert.ok(report.failures.some(f=>f.includes('six unique')));
+ assert.equal(JSON.parse(await fs.readFile(path.join(options.output,'report.json'),'utf8')).accepted,false);
+ }
+});

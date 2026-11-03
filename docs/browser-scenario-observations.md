@@ -16,6 +16,11 @@ A new output directory, Chrome and a build are required. No Docker, external
 media, clock, keys or accounts are used. HLS uses hls.js and DASH uses dash.js;
 reports retain exact player/browser versions and retry settings.
 
+Ordinary playback uses passive network auditing so the harness preserves native
+browser cache behavior. Explicit cache-bypass requests remain real bypasses; the
+verifier never strips them to manufacture an edge-cache hit. Authentication-client
+interception remains limited to its separate access-renewal tests.
+
 The matrix includes malformed playlists/MPDs, damaged media, wrong-track init,
 Content-Length framing failure, fresh/newer/stale manifest rollback, rendition lag,
 audio/text outages and late captions. Init corruption is a startup observation;
@@ -41,6 +46,9 @@ timestamps, scenario position and stacks; missing/truncated audits, unexpected
 external requests and unexplained errors fail the observation. Raw and source
 file hashes, candidate identity, restoration phases and cleanup are rechecked by
 local release review rather than trusting a stored green flag.
+Failed recovery waits retain their actual deadline, last probe and final snapshot
+timings. Bounded evidence-collection overhead cannot be counted as a player
+recovery, and an unexplained overrun still fails verification.
 Wrong/stale initialization and broader transport/cache combinations retain the
 [HTTP-only limits](payload-transport-scenarios.md) outside this specific matrix;
 this runner does not establish recovery for every supported configuration.

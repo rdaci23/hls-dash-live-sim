@@ -79,11 +79,9 @@ async function verify(session, protocol, kind, signal, dir) {
                 restored.browser = { firstDecodedAtMs: decoded.elapsedMs, continuedToMs: last.elapsedMs, mediaTime: last.mediaTime };
             }
             catch (e) {
-                recoveryError = e.message;
+                recoveryError = e.message;restored.recoveryWait=e.waitTiming;
             }
-        metrics = await ui.snapshot();
-        assert.equal(metrics.dropped, 0);
-        assert.deepEqual(responseErrors, [], 'Browser response evidence failed');
+
     }
     catch (e) {
         error = e.message;
@@ -105,4 +103,12 @@ async function verify(session, protocol, kind, signal, dir) {
     if (!report.passed){const failure=Error(report.error);failure.result=report;throw failure;}
     return report;
 }
-require('./owned-scenarios/runner.cjs').run('scenario-browser', kinds, definition, verify, () => ({ scenarioStart: 'manual', controlToken: randomUUID() })).catch(e => { console.error(e.message); process.exitCode = 1; });
+require('./owned-scenarios/runner.cjs').run('scenario-browser', kinds, definition, verify, () => ({ scenarioStart: 'manual', controlToken: randomUUID() }), async (directory, options) => {
+    const qualification = await require('./browser/scenario-integrity.cjs').read(directory, options);
+    const actual = qualification.cases.map(r => r.protocol + '-' + r.kind), expected = options.expectedCases;
+    if (!expected.length || actual.length !== expected.length || new Set(actual).size !== expected.length || expected.some(id => !actual.includes(id))) {
+        qualification.passed = false;
+        qualification.failures.push('Scenario observations do not match the requested fixed case inventory');
+    }
+    return qualification;
+}).catch(e => { console.error(e.message); process.exitCode = 1; });

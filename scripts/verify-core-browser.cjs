@@ -11,9 +11,9 @@ const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { startLivesim2, DEFAULT_IMAGE } = require('../dist/support-tools/dash-sim-runner.js');
 const { read: readCompleteDiagnostics } = require('./browser/complete-diagnostics.cjs');
 const { evaluate, healthy, GATES } = require('./browser/core-acceptance.cjs');
-const { qualify, rawManifest } = require('./browser/core-policy.cjs');
+const { qualify, qualifyDirectory, rawManifest } = require('./browser/core-policy.cjs');
 const root = path.resolve(__dirname, '..');
-const CASES = ['hls-high', 'hls-low', 'dash-low', 'hls-starvation', 'dash-starvation', 'hls-oscillation', 'dash-oscillation'];
+const { CASES } = require('./browser/core-cases.cjs');
 async function port() { const s = http.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const p = s.address().port; await new Promise(resolve => s.close(resolve)); return p; }
 async function run(caseId, directory, signal, requireContinuation = false) {
   const [protocol, profile] = caseId.split('-');
@@ -111,9 +111,28 @@ async function run(caseId, directory, signal, requireContinuation = false) {
 async function main() {
   const args = require('yargs/yargs')(process.argv.slice(2)).option('case', { choices: [...CASES, 'all'], default: 'all' }).option('output', { type: 'string', default: 'output/core-browser-' + Date.now() }).option('require-continuation', { type: 'boolean', default: false }).strict().parseSync();
   const directory = path.resolve(args.output); await fs.mkdir(path.dirname(directory), { recursive: true }); await fs.mkdir(directory, { mode: 0o700 });
+  const capture = (...params) => execFileSync('git', params, { cwd: root, encoding: 'utf8' }).trim(), commit = capture('rev-parse', 'HEAD');
+  let workingTreeModified = !!capture('status', '--porcelain');
+  const sourceChanged = () => !!capture('status', '--porcelain') || capture('rev-parse', 'HEAD') !== commit;
   const abort = new AbortController(), stop = () => abort.abort(); process.once('SIGINT', stop); process.once('SIGTERM', stop);
-  const checks = [];
-  try { for (const caseId of args.case === 'all' ? CASES : [args.case]) { const report = await run(caseId, path.join(directory, caseId), abort.signal, args['require-continuation']); checks.push(report); if (!report.passed) process.exitCode = 1; } }
-  finally { process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop); await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify({ schemaVersion: 1, scope: 'Browser observations; independent simulator HTTP verification and full healthy gate required', checks, releaseReady: false }, null, 2) + '\n', { mode: 0o600 }); }
+  const checks = []; let executionError;
+  try { for (const caseId of args.case === 'all' ? CASES : [args.case]) {
+    const caseDirectory = path.join(directory, caseId), report = await run(caseId, caseDirectory, abort.signal, args['require-continuation']);
+    workingTreeModified ||= sourceChanged(); report.workingTreeModified ||= workingTreeModified;
+    await fs.writeFile(path.join(caseDirectory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
+    const qualification = await qualifyDirectory(caseDirectory, { commit, caseId, requireContinuation: args['require-continuation'] });
+    report.qualification = { passed: qualification.passed, failures: qualification.failures, classification: qualification.classification };
+    report.passed = qualification.passed; report.failures = qualification.failures;
+    await fs.writeFile(path.join(caseDirectory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
+    checks.push(report); if (!report.passed) process.exitCode = 1;
+  } } catch (error) { executionError = error.message; process.exitCode = 1; throw error; }
+  finally {
+    workingTreeModified ||= sourceChanged();
+    const passed = !executionError && !workingTreeModified && checks.length === (args.case === 'all' ? CASES.length : 1) && checks.every(r => r.passed);
+    if (!passed) process.exitCode = 1;
+    process.removeListener('SIGINT', stop); process.removeListener('SIGTERM', stop);
+    await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify({ schemaVersion: 1, commit, workingTreeModified, passed, error: executionError, scope: 'Browser observations; independent simulator HTTP verification and full healthy gate required', checks, releaseReady: false }, null, 2) + '\n', { mode: 0o600 });
+  }
 }
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
+module.exports = { run, main };

@@ -48,6 +48,22 @@ function validFault(response, input) {
     if (kind === 'rendition-lag') return response.fault === 'scenario.publication' && response.resource === 'manifest' && response.track === 'video:0' && response.status === 200 && validManifest(response, protocol);
     return false;
 }
+function failedWaitBound(input) {
+    const { metrics, restored, faultWindowBrowser: window } = input, wait = restored?.recoveryWait, probe = wait?.lastProbe, snapshot = metrics?.snapshotTiming, start = restored?.recoveryStartedAtMs;
+    const invalid = reason => ({ verified: false, reason });
+    if (input.startup || input.browserRecoveryVerified !== false || input.recoveryError !== 'automatic decoded restoration timed out') return invalid('Exact failed decoded-recovery outcome missing');
+    if (!finite(start) || !finite(window?.toMs) || start < window.toMs || !finite(metrics?.startEpochMs) || !finite(metrics.elapsedMs) || !finite(restored?.epochMs)) return invalid('Recovery start/restoration clock missing');
+    if (!wait || wait.schemaVersion !== 1 || wait.label !== 'automatic decoded restoration' || wait.timeoutMs !== 15000 || wait.pollIntervalMs !== 100 || wait.probeTimeoutMs !== 1000 || ![wait.startedEpochMs, wait.deadlineEpochMs, wait.endedEpochMs, wait.elapsedMs].every(finite)) return invalid('Measured recovery wait missing or unsupported');
+    if (wait.deadlineEpochMs !== wait.startedEpochMs + 15000 || wait.endedEpochMs < wait.deadlineEpochMs || Math.abs(wait.elapsedMs - (wait.endedEpochMs - wait.startedEpochMs)) > 1 || Math.abs(metrics.startEpochMs + start - wait.startedEpochMs) > 250 || wait.startedEpochMs < restored.epochMs - 10) return invalid('Recovery deadline or source clock mismatch');
+    if (!probe || ![probe.startedEpochMs, probe.endedEpochMs, probe.elapsedMs].every(finite) || probe.startedEpochMs < wait.startedEpochMs || probe.startedEpochMs >= wait.deadlineEpochMs || probe.endedEpochMs < probe.startedEpochMs || probe.endedEpochMs > wait.endedEpochMs || probe.elapsedMs < 0 || probe.elapsedMs > 1000 || Math.abs(probe.elapsedMs - (probe.endedEpochMs - probe.startedEpochMs)) > 1) return invalid('Last recovery RPC is missing or unbounded');
+    const overrun = wait.endedEpochMs - wait.deadlineEpochMs;
+    if (overrun > probe.elapsedMs + 25 || overrun > 25 && (probe.endedEpochMs < wait.deadlineEpochMs || wait.endedEpochMs - probe.endedEpochMs > 25)) return invalid('Recovery wait overrun is not explained by the last bounded RPC');
+    if (!snapshot || snapshot.probeTimeoutMs !== 1000 || ![snapshot.requestedEpochMs, snapshot.completedEpochMs].every(finite) || snapshot.requestedEpochMs < wait.endedEpochMs || snapshot.requestedEpochMs > wait.endedEpochMs + 250 || snapshot.completedEpochMs < snapshot.requestedEpochMs || snapshot.completedEpochMs - snapshot.requestedEpochMs > 1000) return invalid('Final recovery snapshot is missing or unbounded');
+    if (snapshot.elapsedMs !== undefined && (!finite(snapshot.elapsedMs) || snapshot.elapsedMs < 0 || snapshot.elapsedMs > 1000 || Math.abs(snapshot.elapsedMs - (snapshot.completedEpochMs - snapshot.requestedEpochMs)) > 1)) return invalid('Final snapshot duration contradicts its measured RPC');
+    const sampleEpoch = metrics.startEpochMs + metrics.elapsedMs;
+    if (sampleEpoch < snapshot.requestedEpochMs - 10 || sampleEpoch > snapshot.completedEpochMs + 10) return invalid('Final player sample is outside its measured snapshot RPC');
+    return { verified: true, fromMs: start, toMs: metrics.elapsedMs, waitStartedEpochMs: wait.startedEpochMs, waitEndedEpochMs: wait.endedEpochMs, finalSnapshot: snapshot };
+}
 function assessPlayer(input) {
     const { protocol, kind, metrics, healthyMetrics, faultWindowBrowser: window, restored } = input, failures = [], expectedFaultErrors = [], expectedCancellations = [], unexplainedErrors = [], expectedFaultGaps = [], unexplainedGaps = [];
     const startup = kind === 'wrong-track-init', versions = { hls: '1.7.3', dash: '5.2.1' };
@@ -61,15 +77,10 @@ function assessPlayer(input) {
     if (!faults.length) failures.push('No independently identified named fault response reached the player');
     const decodedAt = restored?.decodedAtMs ?? restored?.browser?.firstDecodedAtMs;
     if (decodedAt !== undefined && (!finite(decodedAt) || !finite(metrics?.elapsedMs) || decodedAt < (window?.toMs ?? Infinity) || decodedAt > metrics.elapsedMs)) failures.push('Decoded-resume clock is invalid');
-    let end = finite(decodedAt) ? decodedAt : Math.min(metrics?.elapsedMs ?? 0, (window?.toMs ?? 0) + 15000);
-    const recoveryStartedAt = restored?.recoveryStartedAtMs;
-    if (!finite(decodedAt) && recoveryStartedAt !== undefined) {
-        // The real wait starts after the independent restoration probes. Its
-        // measured start is tied to those probes, rather than extending every
-        // named fault window. 250 ms covers the helper's 100 ms polling/snapshot.
-        const duration = (metrics?.elapsedMs ?? NaN) - recoveryStartedAt;
-        const measuredTimeout = !startup && input.browserRecoveryVerified === false && input.recoveryError === 'automatic decoded restoration timed out' && finite(recoveryStartedAt) && recoveryStartedAt >= window?.toMs && finite(restored?.epochMs) && finite(metrics?.startEpochMs) && Math.abs(metrics.startEpochMs + recoveryStartedAt - restored.epochMs) <= 250 && duration >= 15000 && duration <= 15250;
-        if (measuredTimeout) end = metrics.elapsedMs; else failures.push('Failed recovery observation is not bounded by its measured restoration wait');
+    let end = finite(decodedAt) ? decodedAt : Math.min(metrics?.elapsedMs ?? 0, (window?.toMs ?? 0) + 15000), recoveryObservation;
+    if (!startup && !finite(decodedAt)) {
+        recoveryObservation = failedWaitBound(input);
+        if (recoveryObservation.verified) end = recoveryObservation.toMs; else failures.push('Failed recovery observation is not bounded: ' + recoveryObservation.reason);
     }
     const inWindow = at => finite(at) && at >= window?.fromMs && at <= end;
     const epoch = error => (metrics?.startEpochMs ?? NaN) + error.atMs, near = (response, error) => finite(response.receivedEpochMs) && response.receivedEpochMs <= epoch(error) + 250 && epoch(error) - response.receivedEpochMs <= 5000;
@@ -124,6 +135,6 @@ function assessPlayer(input) {
     }
     if (unexplainedGaps.length) failures.push('Unexplained rendered gap before fault, after resume or without named resource evidence');
     const passed = failures.length === 0, recovery = !startup && input.browserRecoveryVerified === true && finite(decodedAt) && finite(restored?.browser?.continuedToMs) && restored.browser.continuedToMs - decodedAt >= 60000;
-    return { passed, integrityPassed: passed, failures: [...new Set(failures)], expectedFaultErrors, expectedCancellations, unexplainedErrors, expectedFaultGaps, unexplainedGaps, decodedAtMs: decodedAt, browserRecoveryVerified: passed && recovery, compatibilityPassed: passed && recovery, compatibility: !passed ? 'integrity-failed' : recovery ? 'decoded-recovery-verified' : 'recovery-not-verified' };
+    return { passed, integrityPassed: passed, failures: [...new Set(failures)], expectedFaultErrors, expectedCancellations, unexplainedErrors, expectedFaultGaps, unexplainedGaps, recoveryObservation, decodedAtMs: decodedAt, browserRecoveryVerified: passed && recovery, compatibilityPassed: passed && recovery, compatibility: !passed ? 'integrity-failed' : recovery ? 'decoded-recovery-verified' : 'recovery-not-verified' };
 }
-module.exports = { assessPlayer, advertisedMedia, validFault, MALFORMED, DEMUX, WRONG_INIT };
+module.exports = { assessPlayer, failedWaitBound, advertisedMedia, validFault, MALFORMED, DEMUX, WRONG_INIT };

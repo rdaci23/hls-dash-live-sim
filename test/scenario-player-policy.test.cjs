@@ -56,14 +56,51 @@ test('long gaps require named fault evidence, stay inside the measured fault/rec
     const unrelatedText = input('dash', 'text-outage'); unrelatedText.metrics.gaps.push({ from: 40000, to: 52000 }); assert.equal(assessPlayer(unrelatedText).passed, false, 'text fault alone does not prove why video stopped');
     const open = input(); open.metrics.lastFrameMs = 118000; assert.equal(assessPlayer(open).passed, false);
     const failed = input(); failed.browserRecoveryVerified = false; failed.recoveryError = 'automatic decoded restoration timed out'; delete failed.restored.browser; failed.metrics.elapsedMs = 65000; failed.metrics.lastFrameMs = 42000;
+    Object.assign(failed.restored, { recoveryStartedAtMs: 50000, epochMs: epoch + 49998, recoveryWait: { schemaVersion: 1, label: 'automatic decoded restoration', timeoutMs: 15000, startedEpochMs: epoch + 50000, deadlineEpochMs: epoch + 65000, endedEpochMs: epoch + 65000, elapsedMs: 15000, lastProbe: { startedEpochMs: epoch + 64900, endedEpochMs: epoch + 64901, elapsedMs: 1 }, pollIntervalMs: 100, probeTimeoutMs: 1000 } });
+    failed.metrics.snapshotTiming = { requestedEpochMs: epoch + 65000, completedEpochMs: epoch + 65002, probeTimeoutMs: 1000 };
     const result = healthy(failed); assert.equal(result.compatibilityPassed, false); assert.equal(result.browserRecoveryVerified, false); assert.equal(result.compatibility, 'recovery-not-verified');
 });
 test('an exactly measured failed recovery wait includes HTTP-probe overhead and bounded polling without claiming recovery', () => {
     const value = input('dash', 'malformed-manifest'); value.browserRecoveryVerified = false; value.recoveryError = 'automatic decoded restoration timed out'; delete value.restored.browser;
-    Object.assign(value.restored, { recoveryStartedAtMs: 50733, epochMs: epoch + 50730 }); Object.assign(value.metrics, { elapsedMs: 65883, lastFrameMs: 40398.8 });
+    Object.assign(value.restored, { recoveryStartedAtMs: 50733, epochMs: epoch + 50730, recoveryWait: { schemaVersion: 1, label: 'automatic decoded restoration', timeoutMs: 15000, startedEpochMs: epoch + 50733, deadlineEpochMs: epoch + 65733, endedEpochMs: epoch + 65775, elapsedMs: 15042, lastProbe: { startedEpochMs: epoch + 65700, endedEpochMs: epoch + 65770, elapsedMs: 70 }, pollIntervalMs: 100, probeTimeoutMs: 1000 } }); Object.assign(value.metrics, { elapsedMs: 65883, lastFrameMs: 40398.8, snapshotTiming: { requestedEpochMs: epoch + 65870, completedEpochMs: epoch + 65895, probeTimeoutMs: 1000 } });
     value.metrics.errors.push(error(value, { code: 31, message: 'Must have @mediaPresentationDuration on MPD or an explicit @duration on the last period.' }));
     const result = assessPlayer(value); assert.equal(result.passed, true, result.failures.join('; ')); assert.equal(result.compatibilityPassed, false); assert.equal(result.browserRecoveryVerified, false);
     for (const edit of [x => delete x.restored.recoveryStartedAtMs, x => x.restored.recoveryStartedAtMs += 1000, x => x.restored.epochMs += 1000, x => x.metrics.elapsedMs = 66700, x => x.recoveryError = 'other timed out', x => x.browserRecoveryVerified = true, x => x.restored.recoveryStartedAtMs = 49900, x => x.restored.decodedAtMs = 60000, x => x.metrics.errors.push({ kind: 'video', atMs: 65000, code: 2, message: 'unrelated failure' })]) { const changed = structuredClone(value); edit(changed); assert.equal(assessPlayer(changed).passed, false); }
+});
+test('a final unrecovered sample can follow a deadline-crossing bounded RPC when the wait and final snapshot are independently measured', () => {
+    const value = input('dash', 'malformed-manifest'); value.browserRecoveryVerified = false; value.recoveryError = 'automatic decoded restoration timed out'; delete value.restored.browser;
+    Object.assign(value.restored, { recoveryStartedAtMs: 50733, epochMs: epoch + 50730, recoveryWait: { schemaVersion: 1, label: 'automatic decoded restoration', timeoutMs: 15000, startedEpochMs: epoch + 50733, deadlineEpochMs: epoch + 65733, endedEpochMs: epoch + 66075, elapsedMs: 15342, lastProbe: { startedEpochMs: epoch + 65180, endedEpochMs: epoch + 66070, elapsedMs: 890 }, pollIntervalMs: 100, probeTimeoutMs: 1000 } });
+    Object.assign(value.metrics, { elapsedMs: 66087.4, lastFrameMs: 40398.8, snapshotTiming: { requestedEpochMs: epoch + 66077, completedEpochMs: epoch + 66095, probeTimeoutMs: 1000 } });
+    value.metrics.errors.push(error(value, { code: 31, message: 'Must have @mediaPresentationDuration on MPD or an explicit @duration on the last period.' }));
+    const result = assessPlayer(value); assert.equal(result.passed, true, result.failures.join('; ')); assert.equal(result.compatibilityPassed, false);
+    for (const edit of [
+        x => delete x.restored.recoveryWait,
+        x => x.restored.recoveryWait.schemaVersion = 2,
+        x => x.restored.recoveryWait.label = 'other wait',
+        x => x.restored.recoveryWait.timeoutMs++,
+        x => x.restored.recoveryWait.deadlineEpochMs++,
+        x => x.restored.recoveryWait.pollIntervalMs = 200,
+        x => x.restored.recoveryWait.probeTimeoutMs = 2000,
+        x => delete x.restored.recoveryWait.elapsedMs,
+        x => x.restored.recoveryWait.elapsedMs += 2,
+        x => x.restored.recoveryWait.endedEpochMs = x.restored.recoveryWait.deadlineEpochMs - 1,
+        x => delete x.restored.recoveryWait.lastProbe,
+        x => x.restored.recoveryWait.lastProbe.startedEpochMs = x.restored.recoveryWait.deadlineEpochMs,
+        x => x.restored.recoveryWait.lastProbe.endedEpochMs = x.restored.recoveryWait.endedEpochMs + 1,
+        x => x.restored.recoveryWait.lastProbe.elapsedMs = 1001,
+        x => x.restored.recoveryWait.lastProbe.elapsedMs += 2,
+        x => { const w = x.restored.recoveryWait; Object.assign(w, { endedEpochMs: epoch + 66900, elapsedMs: 16167 }); },
+        x => delete x.metrics.snapshotTiming,
+        x => x.metrics.snapshotTiming.probeTimeoutMs = 2000,
+        x => x.metrics.snapshotTiming.requestedEpochMs = x.restored.recoveryWait.endedEpochMs - 1,
+        x => x.metrics.snapshotTiming.requestedEpochMs = x.restored.recoveryWait.endedEpochMs + 251,
+        x => x.metrics.snapshotTiming.completedEpochMs = x.metrics.snapshotTiming.requestedEpochMs + 1001,
+        x => x.metrics.snapshotTiming.completedEpochMs = x.metrics.snapshotTiming.requestedEpochMs - 1,
+        x => x.metrics.snapshotTiming.elapsedMs = 1001,
+        x => x.metrics.snapshotTiming.elapsedMs = NaN,
+        x => x.metrics.snapshotTiming.elapsedMs = 500,
+        x => x.metrics.elapsedMs = 67000,
+    ]) { const changed = structuredClone(value); edit(changed); assert.equal(assessPlayer(changed).passed, false, String(edit)); }
 });
 test('only explicit causal subtitle cancellation proof can exempt an aborted request', () => {
     const value = input(), proof = { kind: 'subtitle-cancel', id: 1, switchId: 1, targetTrackId: 0, loadId: 1, sn: 9, level: 0, atMs: 200 };
