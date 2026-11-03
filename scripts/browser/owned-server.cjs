@@ -10,6 +10,7 @@ async function serve(session, protocol, options = {}) {
     }
     const files = { '/': path.join(root, 'scripts/track-browser/player.html'), '/metrics.js': path.join(root, 'scripts/track-browser/metrics.js'),
         '/caption-clock.js': path.join(root, 'scripts/track-browser/caption-clock.js'), '/cancellation.js': path.join(root, 'scripts/track-browser/cancellation.js'),
+        '/hls-causality.js':path.join(root,'scripts/track-browser/hls-causality.js'), '/dash-causality.js':path.join(root,'scripts/track-browser/dash-causality.js'),
         '/player.js': path.join(root, 'node_modules', protocol === 'hls' ? 'hls.js/dist/hls.min.js' : 'dashjs/dist/modern/umd/dash.all.debug.js') };
     const source = new URL(session.url).origin;
     const server = http.createServer(async (req, res) => {
@@ -18,7 +19,7 @@ async function serve(session, protocol, options = {}) {
             res.setHeader('Cache-Control', 'no-store');
             if (p === '/redirect-probe' && redirect) { res.writeHead(302,{Location:redirect}); return res.end(); }
             if (p === '/') res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self' " + source + "; media-src 'self' blob: data: " + source + "; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'");
-            if (p === '/config') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ protocol, url: session.url, markerProbe: options.markerProbe === true })); }
+            if (p === '/config') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ protocol, url: session.url, markerProbe: options.markerProbe === true, causalProbe: options.causalProbe === true })); }
             if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
             if (!Object.hasOwn(files, p)) { res.writeHead(404); return res.end(); }
             res.setHeader('Content-Type', p.endsWith('.js') ? 'text/javascript' : 'text/html');

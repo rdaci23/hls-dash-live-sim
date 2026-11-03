@@ -127,6 +127,7 @@ async function main() {
             ['hls-abr', 'verify-hls-abr.cjs'],
             ['dash-abr', 'verify-dash-abr.cjs'],
             ['tracks-browser', 'verify-track-browser.cjs'],
+            ['caption-controls','verify-caption-controls.cjs'],
             ['lifecycle-browser', 'verify-lifecycle-browser.cjs'],
             ['services-browser', 'verify-service-browser.cjs'],
             ['scenario-browser', 'verify-scenario-browser.cjs']

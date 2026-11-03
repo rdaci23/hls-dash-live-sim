@@ -84,10 +84,47 @@ wrong-initialization message. Unknown console output remains blocking. Re-readin
 retained evidence recomputes the observation rather than feeding old classification
 flags back into the classifier. Original reports and raw outcomes stay intact.
 
-Caption faults do not establish audio/video failure or recovery. The current
-HLS late-caption trace includes a fatal subtitle 404 followed by an audio abort
-and stopped rendering; its exact cancellation cause is not captured. A DASH
-text-outage trace also contains a rendered-video stall without independently
-identified audio/video failure. These remain unqualified player observations
-until explained by direct causal evidence; healthy HTTP restoration alone cannot
-qualify their playback behavior.
+Caption faults do not establish audio/video server failure. Caption investigations
+record four independent AV checkpoints (before, during, stalled interval and
+after), comparing advertised source/proxy initialization and media hashes,
+fMP4 timing, publication and clocks. Every proxy request is rebound to closed
+source diagnostics. The source handle is readonly, Node-only and limited to the
+owned local fixture; it is not a browser or controller fetch endpoint.
+
+With the pinned hls.js 1.7.3, an unavailable subtitle 404 can become fatal when
+there is no alternate subtitle group. Its native error dispatch calls `stopLoad`
+for all loaders. A fresh dispatch/stop identity and true-to-false loading state
+prove this player shutdown; an audio abort additionally requires its exact
+fragment, loader attempt and retained stats identity. The simulator can restore
+HTTP resources while the stopped player remains unrecovered. Checks never
+restart the player to claim recovery.
+
+With pinned dash.js 5.2.1, failed fragmented text can blacklist the shared
+service location. Global URL-resolution failure reaches the registered audio
+and video schedule controllers, which abort requests and clear scheduling.
+Captured dispatch ancestry, request/service-location identity and the pinned
+native handlers identify this player effect. A/V samples must demonstrate the
+buffer drain and continued sampling; later recovery still requires decoded
+A/V, scheduled captions and a healthy 60-second continuation.
+
+These mechanisms qualify only with fresh causal identities, exact player
+versions, intact wire proofs and a complete observer lifecycle. Timestamp
+coincidence, a generic text error, old classification flags or a missing probe
+cannot explain a rendered gap. Historical traces lacking causal evidence stay
+unqualified. Diagnostic RPCs have a measured three-second bound; playback
+startup, recovery deadlines and stall limits are unchanged. Disposal and final
+snapshot timings are retained separately, not granted an unmeasured grace.
+
+Run the counterfactual controls with:
+
+```sh
+npm run browser:caption-controls -- --output output/caption-controls
+```
+
+Healthy controls require three minutes with decoded audio and scheduled active
+and empty caption cues. Disabled-caption controls select text off before the
+unchanged fault window, verify that the HTTP caption fault is active and require
+healthy A/V throughout. They are diagnosis controls, not recovery or text-support
+claims. Neither control changes retry settings or intervenes during recovery.
+Full manual CI and local release review retain these controls; routine CI remains
+docs, types and unit tests on Linux/Node 24.

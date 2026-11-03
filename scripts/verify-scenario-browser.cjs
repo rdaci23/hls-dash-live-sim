@@ -1,21 +1,23 @@
 // Compatibility observations: simulator delivery/restoration and player recovery are separate results.
 const fs = require('node:fs/promises'), path = require('node:path'), assert = require('node:assert/strict'), { randomUUID } = require('node:crypto');
 const { createHash } = require('node:crypto'), { XMLValidator } = require('fast-xml-parser'), { resourceUrl } = require('./browser/audit.cjs'), { assess } = require('./browser/scenario-integrity.cjs');
+const { createWireProbe }=require('./browser/caption-wire-probes.cjs');
 const { open } = require('./browser/owned-player.cjs'), { kinds, definition, correlate } = require('./browser/scenario-observations.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs');
 async function verify(session, protocol, kind, signal, dir) {
-    const startup = kind === 'wrong-track-init', responses = [], pending = new Set();
-    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser;
+    const captionCase=['text-outage','late-captions'].includes(kind),startup = kind === 'wrong-track-init', responses = [], pending = new Set();
+    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser,wireProbe,wireJob,captionWire,causalFinish;const wireErrors=[];
     const responseErrors = [];
     const origin = new URL(session.url).origin, window = startup ? 15000 : 50000;
     try {
         const advertised = await tracks(session, protocol),manifestUrls=new Set([session.url,...advertised.map(r=>r.manifest)].filter(Boolean).map(String).map(resourceUrl));
+        if(captionCase)wireProbe=createWireProbe(session,protocol);
         // Advertised audio init is the explicit donor. Never infer a resource from its filename.
         if (startup) {
             const audio = advertised.find(r => r.track === 'audio:0');
             await session.runs.action('start', { runId: session.runs.runId });
             assert.equal((await fetch(audio.init)).status, 200);
         }
-        ui = await open(session, protocol, signal, { onResponse: response => {
+        ui = await open(session, protocol, signal, { causalProbe:captionCase,onResponse: response => {
                 try {
                 if (responsesClosing || new URL(response.url()).origin !== origin)
                     return;
@@ -41,6 +43,7 @@ async function verify(session, protocol, kind, signal, dir) {
             await session.runs.action('start', { runId: session.runs.runId });await anchor();
             healthy = await ui.wait(m => session.scenario.report().elapsedMs >= 30000 && m.mediaTime - first.mediaTime >= 29 && languageEvidence(m, first.elapsedMs, 'en').verified, 33000, '30-second decoded healthy lead-in');
             assert.ok(!healthy.errors.some(e => !expectedCancellation(e, healthy.events)) && !healthy.gaps.some(g => g.to - g.from > 4000) && !ui.audit.length, 'Lead-in contains unexplained playback errors');
+            if(captionCase){assert.equal(healthy.causalityDropped,0,'Causal observer lost evidence');await wireProbe.capture('before');}
             console.log(protocol+' '+kind+': decoded healthy lead-in verified');
         }
         // No pause, seek, reload, rendition change or player restart after the fault starts.
@@ -48,7 +51,9 @@ async function verify(session, protocol, kind, signal, dir) {
             signal.throwIfAborted();
             await new Promise(r => setTimeout(r, 100));
         } };
+        if(captionCase)wireJob=(async()=>{for(const[phase,atMs]of[['during',37000],['stall',47000]]){await wait(()=>session.scenario.report().elapsedMs>=atMs);try{await wireProbe.capture(phase);}catch(e){wireErrors.push(e.message);}}})().catch(e=>wireErrors.push(e.message));
         await wait(() => session.scenario.report().elapsedMs >= window + 250);
+        await wireJob;
         await Promise.all([...pending]);
         observed = correlate(responses, session.diagnostics.snapshot().events);
         console.log(protocol+' '+kind+': '+observed.length+' correlated browser fault responses');
@@ -67,6 +72,7 @@ async function verify(session, protocol, kind, signal, dir) {
         const manifestText=manifestBody.toString('utf8'),valid=protocol==='hls'?manifestText.startsWith('#EXTM3U'):XMLValidator.validate(manifestText)===true&&/<MPD(?:\s|>)/.test(manifestText)&&/<AdaptationSet(?:\s|>)/.test(manifestText);
         assert.equal(valid,true,'Restored manifest must be a valid control');
         restored = { atMs: session.scenario.report().elapsedMs,epochMs:Date.now(),manifest:{status:response.status,requestResourceId:session.diagnostics.resourceId(new URL(session.url).pathname+new URL(session.url).search),completedEpochMs:Date.now(),scenarioElapsedMs:session.scenario.report().elapsedMs,bytes:manifestBody.length,bodyText:manifestText,valid,requestId:response.headers.get('x-sim-request-id'),sha256:createHash('sha256').update(manifestBody).digest('hex')}, controls };
+        if(captionCase){await wireProbe.capture('after');captionWire=wireProbe.finish();assert.equal(wireErrors.length,0,'Wire probe failed');assert.equal(captionWire.passed,true,captionWire.errors.join('; '));}
         if (startup)
             recoveryError = 'Startup initialization observation: decoded recovery is not qualified by this check';
         else
@@ -88,9 +94,12 @@ async function verify(session, protocol, kind, signal, dir) {
         error = e.message;
     }
     finally {
+        await wireJob;
+        if(wireProbe)captionWire=wireProbe.finish();
         if (ui) {
+            if(captionCase)try{causalFinish=await ui.finishCausalProbe();}catch(e){error||='Causal observer teardown failed: '+e.message;}
             try {
-                metrics = await ui.snapshot();
+                metrics = await ui.snapshot();if(captionCase)metrics.causalCompletion=causalFinish;
             }
             catch { }
             await Promise.allSettled([...pending]);responsesClosing=true;await ui.close();
@@ -98,8 +107,8 @@ async function verify(session, protocol, kind, signal, dir) {
         await Promise.allSettled([...pending]);
     }
     const healthyLeadIn=healthy&&{frames:healthy.frames,mediaTime:healthy.mediaTime,elapsedMs:healthy.elapsedMs,fromMs:first.elapsedMs,durationMs:healthy.elapsedMs-first.elapsedMs,decodedVerified:languageEvidence(healthy,first.elapsedMs,'en').verified};
-    const integrity=assess({protocol,kind,metrics,faultWindowBrowser,clockAnchor,browserResponses:responses,audit:ui?.audit??[],auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,error,restored,startup,healthyLeadIn,healthyMetrics:healthy,browserRecoveryVerified:!!restored?.browser,recoveryError,affectedBrowserResponses:observed,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion});
-    const report = { protocol, kind, faultWindowBrowser,clockAnchor,passed: !error&&integrity.passed, error:error??(!integrity.passed?integrity.failures.join('; '):undefined), observationCaptured: !error,integrity, simulatorRestorationVerified: !!restored, browserRecoveryVerified: integrity.passed&&integrity.player.browserRecoveryVerified, recoveryError, startup, healthyLeadIn, affectedBrowserResponses: observed, restored, browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, releaseReady: false };
+    const integrity=assess({protocol,kind,metrics,faultWindowBrowser,clockAnchor,browserResponses:responses,audit:ui?.audit??[],auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,error,restored,startup,healthyLeadIn,healthyMetrics:healthy,captionWire,browserRecoveryVerified:!!restored?.browser,recoveryError,affectedBrowserResponses:observed,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion});
+    const report = { protocol, kind,captionWire,simulatorIsolationVerified:captionCase?captionWire?.passed:undefined, faultWindowBrowser,clockAnchor,passed: !error&&integrity.passed, error:error??(!integrity.passed?integrity.failures.join('; '):undefined), observationCaptured: !error,integrity, simulatorRestorationVerified: !!restored, browserRecoveryVerified: integrity.passed&&integrity.player.browserRecoveryVerified, recoveryError, startup, healthyLeadIn, affectedBrowserResponses: observed, restored, browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, releaseReady: false };
     await fs.writeFile(path.join(dir, 'raw.json'), JSON.stringify({ metrics,healthyMetrics:healthy, audit: ui?.audit,auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,responses,diagnosticMetadata:{...session.diagnostics.snapshot(),events:undefined}, report }, null, 2) + '\n', { mode: 0o600 });
     if (!report.passed){const failure=Error(report.error);failure.result=report;throw failure;}
     return report;

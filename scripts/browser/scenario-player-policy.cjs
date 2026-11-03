@@ -1,6 +1,8 @@
 const { createHash } = require('node:crypto'), { XMLParser, XMLValidator } = require('fast-xml-parser');
 const { resourceUrl } = require('./audit.cjs'), { expectedCancellation } = require('../track-browser/acceptance.cjs');
 const { kinds } = require('./scenario-observations.cjs');
+const { classifyCaption } = require('./caption-player-cause.cjs');
+const { isDeepStrictEqual } = require('node:util');
 const MALFORMED = { hls: '#EXTM3U\n#EXT-X-TARGETDURATION:invalid\n#EXTINF:invalid,\n', dash: '<?xml version="1.0"?><MPD><Period' };
 const DEMUX = 'PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: RunSegmentParserLoop: stream parsing failed. append_window_start=0 append_window_end=inf';
 const WRONG_INIT = 'PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: audio object type 0x40 does not match what is specified in the mimetype.';
@@ -53,16 +55,22 @@ function validFault(response, input) {
 }
 function failedWaitBound(input) {
     const { metrics, restored, faultWindowBrowser: window } = input, wait = restored?.recoveryWait, probe = wait?.lastProbe, snapshot = metrics?.snapshotTiming, start = restored?.recoveryStartedAtMs;
-    const invalid = reason => ({ verified: false, reason });
+    const invalid = reason => ({ verified: false, reason }),probeBudget=wait?.probeTimeoutMs;
+    if(!(metrics?.causalProbe===true?[1000,3000].includes(probeBudget):probeBudget===1000))return invalid('Unsupported telemetry budget');
     if (input.startup || input.browserRecoveryVerified !== false || input.recoveryError !== 'automatic decoded restoration timed out') return invalid('Exact failed decoded-recovery outcome missing');
     if (!finite(start) || !finite(window?.toMs) || start < window.toMs || !finite(metrics?.startEpochMs) || !finite(metrics.elapsedMs) || !finite(restored?.epochMs)) return invalid('Recovery start/restoration clock missing');
-    if (!wait || wait.schemaVersion !== 1 || wait.label !== 'automatic decoded restoration' || wait.timeoutMs !== 15000 || wait.pollIntervalMs !== 100 || wait.probeTimeoutMs !== 1000 || ![wait.startedEpochMs, wait.deadlineEpochMs, wait.endedEpochMs, wait.elapsedMs].every(finite)) return invalid('Measured recovery wait missing or unsupported');
+    if (!wait || wait.schemaVersion !== 1 || wait.label !== 'automatic decoded restoration' || wait.timeoutMs !== 15000 || wait.pollIntervalMs !== 100 || wait.probeTimeoutMs !== probeBudget || ![wait.startedEpochMs, wait.deadlineEpochMs, wait.endedEpochMs, wait.elapsedMs].every(finite)) return invalid('Measured recovery wait missing or unsupported');
     if (wait.deadlineEpochMs !== wait.startedEpochMs + 15000 || wait.endedEpochMs < wait.deadlineEpochMs || Math.abs(wait.elapsedMs - (wait.endedEpochMs - wait.startedEpochMs)) > 1 || Math.abs(metrics.startEpochMs + start - wait.startedEpochMs) > 250 || wait.startedEpochMs < restored.epochMs - 10) return invalid('Recovery deadline or source clock mismatch');
-    if (!probe || ![probe.startedEpochMs, probe.endedEpochMs, probe.elapsedMs].every(finite) || probe.startedEpochMs < wait.startedEpochMs || probe.startedEpochMs >= wait.deadlineEpochMs || probe.endedEpochMs < probe.startedEpochMs || probe.endedEpochMs > wait.endedEpochMs || probe.elapsedMs < 0 || probe.elapsedMs > 1000 || Math.abs(probe.elapsedMs - (probe.endedEpochMs - probe.startedEpochMs)) > 1) return invalid('Last recovery RPC is missing or unbounded');
+    if (!probe || ![probe.startedEpochMs, probe.endedEpochMs, probe.elapsedMs].every(finite) || probe.startedEpochMs < wait.startedEpochMs || probe.startedEpochMs >= wait.deadlineEpochMs || probe.endedEpochMs < probe.startedEpochMs || probe.endedEpochMs > wait.endedEpochMs || probe.elapsedMs < 0 || probe.elapsedMs > probeBudget || Math.abs(probe.elapsedMs - (probe.endedEpochMs - probe.startedEpochMs)) > 1) return invalid('Last recovery RPC is missing or unbounded');
     const overrun = wait.endedEpochMs - wait.deadlineEpochMs;
     if (overrun > probe.elapsedMs + 25 || overrun > 25 && (probe.endedEpochMs < wait.deadlineEpochMs || wait.endedEpochMs - probe.endedEpochMs > 25)) return invalid('Recovery wait overrun is not explained by the last bounded RPC');
-    if (!snapshot || snapshot.probeTimeoutMs !== 1000 || ![snapshot.requestedEpochMs, snapshot.completedEpochMs].every(finite) || snapshot.requestedEpochMs < wait.endedEpochMs || snapshot.requestedEpochMs > wait.endedEpochMs + 250 || snapshot.completedEpochMs < snapshot.requestedEpochMs || snapshot.completedEpochMs - snapshot.requestedEpochMs > 1000) return invalid('Final recovery snapshot is missing or unbounded');
-    if (snapshot.elapsedMs !== undefined && (!finite(snapshot.elapsedMs) || snapshot.elapsedMs < 0 || snapshot.elapsedMs > 1000 || Math.abs(snapshot.elapsedMs - (snapshot.completedEpochMs - snapshot.requestedEpochMs)) > 1)) return invalid('Final snapshot duration contradicts its measured RPC');
+    const finish=metrics.causalCompletion?.snapshotTiming;
+    if(finish){
+        if(!require('./causal-completion.cjs').validateCausalCompletion(metrics).passed||finish.probeTimeoutMs!==probeBudget||finish.requestedEpochMs<wait.endedEpochMs||finish.requestedEpochMs>wait.endedEpochMs+250)return invalid('Recovery observer disposal is not measured or follows an unbounded gap');
+    }
+    const snapshotAfter=finish?.completedEpochMs??wait.endedEpochMs;
+    if (!snapshot || snapshot.probeTimeoutMs !== probeBudget || ![snapshot.requestedEpochMs, snapshot.completedEpochMs].every(finite) || snapshot.requestedEpochMs < snapshotAfter || snapshot.requestedEpochMs > snapshotAfter + 250 || snapshot.completedEpochMs < snapshot.requestedEpochMs || snapshot.completedEpochMs - snapshot.requestedEpochMs > probeBudget) return invalid('Final recovery snapshot is missing or unbounded');
+    if (snapshot.elapsedMs !== undefined && (!finite(snapshot.elapsedMs) || snapshot.elapsedMs < 0 || snapshot.elapsedMs > probeBudget || Math.abs(snapshot.elapsedMs - (snapshot.completedEpochMs - snapshot.requestedEpochMs)) > 1)) return invalid('Final snapshot duration contradicts its measured RPC');
     const sampleEpoch = metrics.startEpochMs + metrics.elapsedMs;
     if (sampleEpoch < snapshot.requestedEpochMs - 10 || sampleEpoch > snapshot.completedEpochMs + 10) return invalid('Final player sample is outside its measured snapshot RPC');
     return { verified: true, fromMs: start, toMs: metrics.elapsedMs, waitStartedEpochMs: wait.startedEpochMs, waitEndedEpochMs: wait.endedEpochMs, finalSnapshot: snapshot };
@@ -144,7 +152,10 @@ function assessPlayer(input) {
         if (error.subtitleCancellation && expectedCancellation(error, [...list(healthyMetrics?.events), ...list(metrics?.events)])) { expectedCancellations.push(error); continue; }
         const known = primary(error); if (known) expectedFaultErrors.push(known); else pending.push(error);
     }
+    const captionOutcome = ['text-outage', 'late-captions'].includes(kind) ? classifyCaption(input, { faults, primaryErrors: expectedFaultErrors }) : undefined;
     for (const error of pending) {
+        const captionError = captionOutcome?.verified && captionOutcome.expectedErrors.find(known => isDeepStrictEqual(known.error, error));
+        if (captionError) { expectedFaultErrors.push(captionError); continue; }
         const cause = expectedFaultErrors.find(known => known.error.atMs <= error.atMs && ['video', 'audio', 'manifest-av'].includes(known.trackKind));
         if (protocol === 'hls' && error.kind === 'hls' && error.type === 'mediaError' && error.fatal === false && error.details === 'bufferStalledError' && /^Playback stalling at @-?\d+(?:\.\d+)? due to low buffer \(/.test(error.message ?? '') && inWindow(error.atMs) && (!finite(decodedAt) || error.atMs < decodedAt) && cause) expectedFaultErrors.push({ error, signature: 'underflow-after-identified-fault', trackKind: cause.trackKind, faultRequestId: cause.faultRequestId, faultIds: cause.faultIds });
         else unexplainedErrors.push(error);
@@ -155,6 +166,8 @@ function assessPlayer(input) {
     for (const gap of gaps.values()) {
         if (!finite(gap.from) || !finite(gap.to) || gap.to < gap.from) { unexplainedGaps.push(gap); continue; }
         if (gap.to - gap.from <= 4000) continue;
+        const captionGap = captionOutcome?.verified && captionOutcome.expectedGaps.find(known => isDeepStrictEqual(known.gap, gap));
+        if (captionGap) { expectedFaultGaps.push(captionGap); continue; }
         const cause = staleFailures.find(r => ['video', 'audio'].includes(r.trackKind) && r.browserCompletedAtMs <= gap.from + 250) ?? expectedFaultErrors.find(known => known.error.atMs <= gap.from + 250 && ['video', 'audio', 'manifest-av'].includes(known.trackKind)) ?? faults.find(r => ['video:0', 'video:1', 'audio:0'].includes(r.track) && r.resource === 'media' && r.receivedEpochMs <= (metrics?.startEpochMs ?? 0) + gap.from + 250);
         if (inWindow(gap.from) && gap.to <= end && cause) expectedFaultGaps.push({ gap, faultRequestId: cause.faultRequestId ?? cause.requestId, faultIds: cause.faultIds, ...(cause.browserCompletedAtMs !== undefined ? { failedRequestId: cause.requestId } : {}) }); else unexplainedGaps.push(gap);
     }
@@ -166,6 +179,6 @@ function assessPlayer(input) {
     }
     if (startup && (input.browserRecoveryVerified !== false || input.recoveryError !== undefined && input.recoveryError !== 'Startup initialization observation: decoded recovery is not qualified by this check')) failures.push('Unexpected startup recovery outcome');
     const passed = failures.length === 0, recovery = !startup && input.browserRecoveryVerified === true && completeContinuation && input.recoveryError === undefined;
-    return { passed, integrityPassed: passed, failures: [...new Set(failures)], expectedFaultErrors, expectedCancellations, unexplainedErrors, expectedFaultGaps, unexplainedGaps, staleMediaFailures: staleFailures, recoveryObservation, decodedAtMs: decodedAt, browserRecoveryVerified: passed && recovery, compatibilityPassed: passed && recovery, compatibility: !passed ? 'integrity-failed' : recovery ? 'decoded-recovery-verified' : 'recovery-not-verified' };
+    return { passed, integrityPassed: passed, failures: [...new Set(failures)], expectedFaultErrors, expectedCancellations, unexplainedErrors, expectedFaultGaps, unexplainedGaps, staleMediaFailures: staleFailures, recoveryObservation, captionOutcome, decodedAtMs: decodedAt, browserRecoveryVerified: passed && recovery, compatibilityPassed: passed && recovery, compatibility: !passed ? 'integrity-failed' : recovery ? 'decoded-recovery-verified' : 'recovery-not-verified' };
 }
 module.exports = { assessPlayer, staleMediaFailures, failedWaitBound, advertisedMedia, advertisedResources, validFault, MALFORMED, DEMUX, WRONG_INIT };

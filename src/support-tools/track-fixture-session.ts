@@ -11,8 +11,12 @@ export interface TrackFixtureOptions extends HLSStartOptions {
   videoRenditions?: number;
   hlsAes?:boolean;
 }
+/** Node-only ownership handle for independent source/proxy integrity checks. */
+export interface OwnedTrackFixtureSession extends HlsSession {
+  readonly fixtureManifestUrl: string;
+}
 /** Local fixture origin ownership is separate from the externally bound adapter. */
-export async function startTrackFixture(options: TrackFixtureOptions): Promise<HlsSession> {
+export async function startTrackFixture(options: TrackFixtureOptions): Promise<OwnedTrackFixtureSession> {
   const port = portNumber(options.port ?? (options.protocol === 'hls' ? 8899 : 8888)), host = bindHost(options.host ?? '127.0.0.1');
   validateScenarioStart(options.scenarioStart, options.controlToken);
   if (options.manifestUrl || options.source || options.vodroot || options.preserveManifest || options.proxy === false || options.authToken || options.authHeader || options.authFile || options.allowedOrigins?.length)
@@ -50,7 +54,9 @@ export async function startTrackFixture(options: TrackFixtureOptions): Promise<H
       console.info('Owned DASH track fixture ready: ' + session.url);
     }
     options.signal?.throwIfAborted();
-    return { url: session.url,sourceOwnership:()=>publisher.ownership(), networkOwnership: session.networkOwnership,resourceOwnership:session.resourceOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
+    const owned: OwnedTrackFixtureSession = { url: session.url, fixtureManifestUrl: origin.url + (options.protocol === 'hls' ? '/hls/master.m3u8' : '/dash/manifest.mpd'),sourceOwnership:()=>publisher.ownership(), networkOwnership: session.networkOwnership,resourceOwnership:session.resourceOwnership, diagnostics: session.diagnostics, get scenario() { return session.scenario; }, get runs() { return session.runs; }, close };
+    Object.defineProperty(owned, 'fixtureManifestUrl', { value: origin.url + (options.protocol === 'hls' ? '/hls/master.m3u8' : '/dash/manifest.mpd'), enumerable: false, writable: false });
+    return owned;
   }
   catch (error) {
     await close();

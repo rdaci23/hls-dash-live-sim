@@ -4,6 +4,35 @@ const{XMLValidator}=require('fast-xml-parser'),{languageEvidence}=require('../tr
 const{assessPlayer}=require('./scenario-player-policy.cjs');
 const MALFORMED_MPD='<?xml version="1.0"?><MPD><Period';
 const sha=body=>createHash('sha256').update(body).digest('hex');
+const captionCase=kind=>['text-outage','late-captions'].includes(kind);
+function bindCaptionWire(raw,verified,startEpochMs){
+ const proof=raw.report.captionWire;
+ const qualified=require('./caption-wire-probes.cjs').validateWireEvidence(proof,{requireDuring:true});
+ if(!qualified.passed||proof?.protocol!==raw.report.protocol)throw Error('Caption AV wire proof: '+(qualified.failures.join('; ')||'protocol mismatch'));
+ const observationEnd=raw.metrics?.startEpochMs+raw.metrics?.elapsedMs;
+ if(!Number.isFinite(observationEnd)||observationEnd<startEpochMs)throw Error('Caption observation clock missing');
+ const byId=new Map();for(const event of verified.events){if(!event.requestId)continue;const entries=byId.get(event.requestId)??[];entries.push(event);byId.set(event.requestId,entries);}
+ const clock=(object,start,end)=>{
+  if(![object.startedEpochMs,object.completedEpochMs,object.scenarioElapsedMs,object.completedScenarioElapsedMs].every(Number.isFinite)||object.startedEpochMs<start||object.completedEpochMs<object.startedEpochMs||object.completedEpochMs>end||Math.abs(object.scenarioElapsedMs-(object.startedEpochMs-startEpochMs))>2000||Math.abs(object.completedScenarioElapsedMs-(object.completedEpochMs-startEpochMs))>2000)throw Error('Caption AV probe phase/scenario clock missing or mismatched');
+ };
+ for(const checkpoint of proof.checkpoints){
+  const lower=checkpoint.phase==='before'?29000:checkpoint.phase==='during'?35000:checkpoint.phase==='stall'?40000:50000;
+  const upper=checkpoint.phase==='after'?observationEnd:startEpochMs+(checkpoint.phase==='before'?35000:50000);
+  clock(checkpoint,startEpochMs+lower,upper);
+  if(checkpoint.phase!=='after'&&checkpoint.completedEpochMs>=upper)throw Error('Caption AV probe extends outside its named phase');
+  const logical=new Map();
+  for(const track of checkpoint.tracks)for(const kind of ['init','media']){
+   const id=track[kind].proxy.requestId;if(logical.has(id))throw Error('Caption AV logical request identity reused');logical.set(id,{trackId:track.trackId,targetKind:kind});
+  }
+  for(const probe of checkpoint.requests){
+   clock(probe,checkpoint.startedEpochMs,checkpoint.completedEpochMs);
+   if(probe.side!=='proxy')continue;
+   const events=byId.get(probe.requestId)??[],starts=events.filter(e=>e.event==='request.started'),ends=events.filter(e=>e.event==='request.completed');
+   const begin=starts[0],done=ends[0],began=Date.parse(begin?.timestamp),completed=Date.parse(done?.timestamp),binding=logical.get(probe.requestId);
+   if(starts.length!==1||ends.length!==1||events.some(e=>['fault.applied','request.aborted','request.cancelled'].includes(e.event))||!Number.isFinite(began)||!Number.isFinite(completed)||completed<began||began<startEpochMs+lower||completed>upper||checkpoint.phase!=='after'&&completed>=upper||begin.method!==probe.method||done.method!==probe.method||begin.resourceId!==probe.requestResourceId||begin.sessionId!==probe.sessionId||done.sessionId!==probe.sessionId||done.runId!==probe.runId||done.status!==probe.status||done.bodyBytes!==probe.bytes||Math.abs(began-probe.startedEpochMs)>2000||Math.abs(completed-probe.completedEpochMs)>2000||binding&&(done.trackId!==binding.trackId||done.targetKind!==binding.targetKind))throw Error('Caption AV probe does not match closed source wire/logical evidence');
+  }
+ }
+}
 function restoredControls(restored){
  const body=restored?.manifest?.bodyText;
  const valid=typeof body==='string'&&(body.startsWith('#EXTM3U')||XMLValidator.validate(body)===true&&/<MPD(?:\s|>)/.test(body)&&/<AdaptationSet(?:\s|>)/.test(body));
@@ -79,6 +108,7 @@ function assess(input){
  if(!restoredControls(restored))failures.push('Independent HTTP restoration not verified');
  const endMs=startup?15000:50000;
  if(!Number.isFinite(restored?.atMs)||restored.atMs<endMs||[restored?.manifest,...restored?.controls??[]].some(c=>!Number.isFinite(c?.completedEpochMs)||!Number.isFinite(c?.scenarioElapsedMs)||c.scenarioElapsedMs<endMs))failures.push('HTTP restoration phase/timestamps missing');
+ if(captionCase(input.kind)||input.captionWire!==undefined){const wire=require('./caption-wire-probes.cjs').validateWireEvidence(input.captionWire,{requireDuring:true});if(!wire.passed)failures.push(...wire.failures.map(f=>'Caption AV wire proof: '+f));if(input.captionWire?.protocol!==input.protocol)failures.push('Caption AV wire proof: protocol mismatch');if(metrics?.causalProbe!==true||metrics?.causalProbeCompleted!==true||metrics?.causalityDropped!==0)failures.push('Caption causal observation missing, incomplete or truncated');}
  const player=assessPlayer(input);
  for(const event of audit){
   if(!event||typeof event.kind!=='string'){failures.push('Invalid browser audit record');continue;}
@@ -121,6 +151,7 @@ async function read(directory,{expectedCommit}={}){
    for(const response of correlated){const done=verified.events.find(e=>(e.event==='request.completed'||entry.kind==='framing'&&e.event==='request.aborted')&&e.requestId===response.requestId),completed=Date.parse(done?.timestamp),framed=done?.event!=='request.aborted'||entry.kind==='framing'&&done.expectedBytes>done.bodyBytes&&done.bodyBytes>=0;
     if(!requestStarted(response)||response.method!=='GET'||!done||!framed||done.status!==response.status||response.bytes!==undefined&&response.bytes!==done.bodyBytes||!Number.isFinite(completed)||Math.abs(response.receivedEpochMs-completed)>2000||Math.abs(response.scenarioElapsedMs-(completed-startEpochMs))>2000)throw Error('Scenario wire evidence does not match closed source diagnostics');}
    for(const control of [raw.report.restored?.manifest,...raw.report.restored?.controls??[]]){const done=verified.events.find(e=>e.event==='request.completed'&&e.requestId===control?.requestId),completed=Date.parse(done?.timestamp);if(!requestStarted(control)||!done||done.status!==200||done.bodyBytes!==control.bytes||!Number.isFinite(completed)||Math.abs(control.completedEpochMs-completed)>2000||completed<startEpochMs+endMs||Math.abs(control.scenarioElapsedMs-(completed-startEpochMs))>2000)throw Error('Restoration probe does not match closed source diagnostics');}
+   if(captionCase(entry.kind)||raw.report.captionWire!==undefined)bindCaptionWire(raw,verified,startEpochMs);
    const result=assess({...raw.report,error:raw.report.observationCaptured===true?undefined:raw.report.error,browserRecoveryVerified:!!raw.report.restored?.browser,metrics:raw.metrics,healthyMetrics:raw.healthyMetrics,audit:raw.audit,auditDropped:raw.auditDropped,responseErrors:raw.responseErrors,responseDropped:raw.responseDropped,browserResponses:raw.responses,affectedBrowserResponses:correlated});
    for(const failure of result.player.staleMediaFailures){const response=raw.responses.find(r=>r.requestId===failure.requestId),done=verified.events.find(e=>e.event==='request.completed'&&e.requestId===failure.requestId),completed=Date.parse(done?.timestamp);if(!response||!done||!requestStarted(response)||done.method!=='GET'||![404,410].includes(done.status)||done.status!==failure.status||done.status!==response.status||done.bodyBytes!==failure.bytes||done.bodyBytes!==response.bytes||!Number.isFinite(completed)||Math.abs(failure.completedEpochMs-completed)>2000||Math.abs(response.scenarioElapsedMs-(response.receivedEpochMs-startEpochMs))>2000)throw Error('Completed stale-media failure does not match closed source wire evidence');}
    for(const expected of result.player.expectedFaultErrors??[]){if(expected.failedRequestId){const response=raw.responses.find(r=>r.requestId===expected.failedRequestId),done=verified.events.find(e=>e.event==='request.completed'&&e.requestId===expected.failedRequestId);if(!response||!done||!requestStarted(response)||![404,410].includes(done.status)||done.status!==response.status)throw Error('Stale-media failure does not match closed source evidence');}}

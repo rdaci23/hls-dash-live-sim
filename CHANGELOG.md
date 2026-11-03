@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Independent caption-fault causal traces, source/proxy AV byte and timing
+  controls, and healthy/disabled-caption browser controls. Native fatal-loader
+  shutdown and shared service-location blacklisting remain explicit player
+  outcomes; HTTP restoration is separate from decoded recovery.
+
 - Session-scoped authenticated controls with revision conflicts, private manual
   settings, explicit manual/scenario mode transitions and retained bounded test
   history. Existing automatic CLI and legacy shared-file workflows remain separate.

@@ -55,6 +55,99 @@ test('rollback retry and independent audio console failures use their own comple
 test('missing audit fields, forged startup mode and empty evidence markers fail closed',()=>{
  for(const edit of [x=>delete x.audit,x=>delete x.auditDropped,x=>delete x.responseErrors,x=>delete x.responseDropped,x=>x.auditDropped='0',x=>x.responseDropped=false,x=>x.startup=true,x=>x.metrics.protocol='hls',x=>x.audit.push(null),x=>delete x.healthyLeadIn.durationMs]){const value=input();edit(value);assert.equal(assess(value).passed,false);}
 });
+test('caption cases cannot omit the independent AV and completed causal proof',()=>{
+ for(const kind of ['text-outage','late-captions']){
+  const value=input();Object.assign(value,{kind,audit:[]});Object.assign(value.affectedBrowserResponses[0],{resource:'media',track:'text:0',fault:kind==='text-outage'?'scenario.status':'scenario.publication',status:kind==='text-outage'?503:404});
+  assert.equal(assess(value).passed,false,'missing '+kind+' AV proof must fail');
+  assert.ok(assess(value).failures.some(f=>f.includes('Caption AV wire proof')));
+ }
+});
+
+// Synthetic closed-source fixture exercises persistence binding, not playback.
+function captionWireInput(){
+ const value=input();Object.assign(value,{kind:'text-outage',audit:[]});Object.assign(value.metrics,{causalProbe:true,causalProbeCompleted:true,causalityDropped:0});
+ Object.assign(value.affectedBrowserResponses[0],{resource:'media',track:'text:0',fault:'scenario.status',status:503,method:'GET',requestResourceId:'fault-resource'});
+ const origin={source:'http://127.0.0.1:21001',proxy:'http://127.0.0.1:21002'},empty=sha(Buffer.alloc(0));
+ const bounds={captureMs:8000,requestMs:1500,manifestBytes:131072,objectBytes:2097152,captureBytes:16777216,requests:40,checkpoints:8};
+ value.captionWire={schemaVersion:1,protocol:'dash',bounds,passed:true,errors:[],checkpoints:[]};
+ for(const[phase,atMs]of [['before',30000],['during',37000],['stall',44000],['after',51000]]){
+  const checkpoint={phase,startedEpochMs:65000+atMs,scenarioElapsedMs:atMs,passed:true,requests:[],tracks:[]};let n=0;
+  function request(side,kind,url){const started=checkpoint.startedEpochMs+n++,head=kind==='utc',id=phase+'-'+side+'-'+n;
+   const r={probeRequestId:'probe-'+id,side,kind,method:head?'HEAD':'GET',startedEpochMs:started,completedEpochMs:started+1,elapsedMs:1,scenarioElapsedMs:started-65000,completedScenarioElapsedMs:started+1-65000,url,status:200,requestId:side==='proxy'?'request-'+id:null,sessionId:side==='proxy'?'policy-session':null,runId:side==='proxy'?'policy-run':null,faultIds:null,dateEpochMs:Math.floor(started/1000)*1000,bytes:head?0:200,sha256:head?empty:'a'.repeat(64)};
+   if(side==='proxy')r.resourceId=r.requestResourceId='resource-'+id;checkpoint.requests.push(r);return r;
+  }
+  for(const side of ['source','proxy']){
+   const root=request(side,'manifest',origin[side]+'/root'),utc=request(side,'utc',origin[side]+'/utc');
+   checkpoint[side]={manifest:root,clock:{availabilityStartTimeMs:65000,publishTimeMs:root.startedEpochMs,utcUrl:utc.url,utc},advertisedTracks:[]};
+  }
+  const sequence=Math.floor(atMs/2000),timeTicks=String((sequence-1)*2000),publishedAtMs=65000+Number(timeTicks);
+  for(const trackId of ['video:0','video:1','audio:0','audio:1']){
+   const kind=trackId.split(':')[0],width=kind==='video'?(trackId==='video:0'?320:640):0,height=width?width*9/16:0;
+   const descriptor={kind,representationId:trackId,language:kind==='audio'?(trackId==='audio:0'?'en':'ro'):'',codec:kind==='video'?'avc1.42c01f':'mp4a.40.2',bandwidth:180000,width,height};
+   const track={trackId,descriptor,logical:'owned:'+sequence,sequence,publishedAtMs,durationSeconds:2,sourceLatest:'owned:'+sequence,proxyLatest:'owned:'+sequence,initialization:{trackId:1,timescale:1000,width,height},timing:{sequence,timeTicks,durationTicks:2000,samples:48,randomAccess:true},epochMs:65000,init:{},media:{}};
+   for(const side of ['source','proxy']){
+    const init=origin[side]+'/asset?track='+encodeURIComponent(trackId)+'&kind=init',media=origin[side]+'/asset?track='+encodeURIComponent(trackId)+'&kind=media&n='+sequence;
+    checkpoint[side].advertisedTracks.push({trackId,descriptor,manifestProbeRequestId:checkpoint[side].manifest.probeRequestId,segments:[{logical:track.logical,periodId:'owned',periodStartSeconds:0,presentationTimeOffsetTicks:0,sequence,timeTicks,timescale:1000,durationTicks:2000,durationSeconds:2,publishedAtMs,init,media}]});
+    track.init[side]=request(side,'init',init);track.media[side]=request(side,'media',media);
+   }
+   checkpoint.tracks.push(track);
+  }
+  Object.assign(checkpoint,{completedEpochMs:checkpoint.startedEpochMs+n,completedScenarioElapsedMs:atMs+n,elapsedMs:n,totalBytes:checkpoint.requests.reduce((sum,r)=>sum+r.bytes,0)});value.captionWire.checkpoints.push(checkpoint);
+ }
+ return value;
+}
+test('caption persistence binds all phase clocks and AV logical resources to closed source evidence',async()=>{
+ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{validate}=require('../scripts/browser/complete-diagnostics.cjs'),{read}=require('../scripts/browser/scenario-integrity.cjs'),{validateWireEvidence}=require('../scripts/browser/caption-wire-probes.cjs');
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'caption-wire-policy-')),dir=path.join(directory,'dash-text-outage'),commit='b'.repeat(40);await fs.mkdir(dir);
+ const cleanup={network:{activeBodies:0,bufferedBytes:0,pendingGrants:0,pendingTimers:0},source:{lifecycleActions:0,serviceActions:0,sourceFiles:0,sourceTimelines:0,activeRequests:0,pendingWork:0}};
+ async function write(edit=()=>{}){
+  const value=captionWireInput();assert.equal(validateWireEvidence(value.captionWire,{requireDuring:true}).passed,true);
+  Object.assign(value.restored.manifest,{requestResourceId:'manifest-resource'});Object.assign(value.restored.controls[0],{requestResourceId:'media-resource'});
+  const base={sessionId:'policy-session',protocol:'dash'},events=[{event:'session.started',timestamp:new Date(64000).toISOString()},{event:'scenario.started',timestamp:new Date(65000).toISOString()}];
+  const add=(event,time,fields)=>events.push({event,timestamp:new Date(time).toISOString(),...fields});
+  for(const response of [value.affectedBrowserResponses[0],value.restored.manifest,...value.restored.controls]){
+   const when=response.receivedEpochMs??response.completedEpochMs;add('request.started',when-1,{requestId:response.requestId,method:'GET',resourceId:response.requestResourceId});
+   if(response.faultIds)add('fault.applied',when,{requestId:response.requestId,faultId:response.faultIds,fault:response.fault,trackId:response.track,targetKind:response.resource});
+   add('request.completed',when,{requestId:response.requestId,method:'GET',status:response.status,bodyBytes:response.bytes});
+  }
+  for(const c of value.captionWire.checkpoints)for(const probe of c.requests.filter(r=>r.side==='proxy')){
+   const binding=c.tracks.flatMap(track=>['init','media'].map(kind=>({trackId:track.trackId,targetKind:kind,requestId:track[kind].proxy.requestId}))).find(b=>b.requestId===probe.requestId);
+   add('request.started',probe.startedEpochMs,{requestId:probe.requestId,method:probe.method,resourceId:probe.requestResourceId});
+   add('request.completed',probe.completedEpochMs,{requestId:probe.requestId,method:probe.method,status:probe.status,bodyBytes:probe.bytes,runId:probe.runId,trackId:binding?.trackId??'root',targetKind:binding?.targetKind??probe.kind});
+  }
+  const entry={protocol:'dash',kind:'text-outage',passed:true,cleanup:structuredClone(cleanup)};
+  edit({value,entry,events});events.sort((a,b)=>Date.parse(a.timestamp)-Date.parse(b.timestamp));add('session.closed',130651,{});
+  const completed=events.map((e,i)=>({...base,eventId:i+1,...e})),metadata={...base,fileEnabled:true,eventsRecorded:completed.length,droppedEvents:0,fileLimitReached:false,fileWriteFailed:false};
+  const raw={metrics:value.metrics,healthyMetrics:value.healthyMetrics,audit:value.audit,auditDropped:0,responseErrors:[],responseDropped:0,responses:value.affectedBrowserResponses,diagnosticMetadata:metadata,report:{...value,passed:true}};
+  const log=Buffer.from(completed.map(e=>JSON.stringify(e)).join('\n')+'\n'),bytes=Buffer.from(JSON.stringify(raw)+'\n');entry.diagnosticFile=validate(log,metadata).completeFile;entry.evidence={raw:{bytes:bytes.length,sha256:sha(bytes)}};
+  await fs.writeFile(path.join(dir,'requests.jsonl'),log);await fs.writeFile(path.join(dir,'raw.json'),bytes);await fs.writeFile(path.join(directory,'report.json'),JSON.stringify({commit,workingTreeModified:false,checks:[entry]}));
+  return read(directory,{expectedCommit:commit});
+ }
+ try{
+  let result=await write();assert.equal(result.passed,true,result.failures.join('; '));
+  const mutations={
+   'missing caption proof':({value})=>delete value.captionWire,
+   'missing scenario clock':({value})=>delete value.captionWire.checkpoints[1].requests[0].scenarioElapsedMs,
+   'missing completed scenario clock':({value})=>delete value.captionWire.checkpoints[1].requests[0].completedScenarioElapsedMs,
+   'nonfinite checkpoint clock':({value})=>{value.captionWire.checkpoints[1].scenarioElapsedMs=null;},
+   'before phase too early':({value})=>{const c=value.captionWire.checkpoints[0];c.startedEpochMs-=2000;c.scenarioElapsedMs-=2000;c.elapsedMs+=2000;},
+   'before phase extends into fault':({value})=>{const c=value.captionWire.checkpoints[0];c.completedEpochMs+=6000;c.completedScenarioElapsedMs+=6000;c.elapsedMs+=6000;},
+   'during phase outside fault':({value})=>{const c=value.captionWire.checkpoints[1];c.startedEpochMs-=3000;c.scenarioElapsedMs-=3000;c.elapsedMs+=3000;},
+   'stall phase before stall window':({value})=>{const c=value.captionWire.checkpoints[2];c.startedEpochMs-=5000;c.scenarioElapsedMs-=5000;c.elapsedMs+=5000;},
+   'after phase starts before restoration':({value})=>{const c=value.captionWire.checkpoints[3];c.startedEpochMs-=2000;c.scenarioElapsedMs-=2000;c.elapsedMs+=2000;},
+   'after phase beyond observation':({value})=>{value.metrics.elapsedMs=51010;value.metrics.lastFrameMs=51000;},
+   'closed request timestamp missing':({events})=>{events.find(e=>e.event==='request.completed'&&e.targetKind==='media').timestamp='invalid';},
+   'AV track identity':({events})=>{events.find(e=>e.event==='request.completed'&&e.targetKind==='media').trackId='text:0';},
+   'AV target kind':({events})=>{events.find(e=>e.event==='request.completed'&&e.targetKind==='init').targetKind='media';},
+   'fault leaked to AV':({events})=>{const done=events.find(e=>e.event==='request.completed'&&e.targetKind==='media');events.push({event:'fault.applied',timestamp:done.timestamp,requestId:done.requestId,faultId:'leaked',fault:'scenario.status'});},
+   'fault leaked to manifest':({value,events})=>{const p=value.captionWire.checkpoints[0].proxy.manifest;events.push({event:'fault.applied',timestamp:new Date(p.startedEpochMs).toISOString(),requestId:p.requestId,faultId:'leaked',fault:'scenario.status'});},
+   'fault leaked to UTC':({value,events})=>{const p=value.captionWire.checkpoints[0].proxy.clock.utc;events.push({event:'fault.applied',timestamp:new Date(p.startedEpochMs).toISOString(),requestId:p.requestId,faultId:'leaked',fault:'scenario.status'});},
+   'duplicate completed request':({events})=>{events.push({...events.find(e=>e.event==='request.completed'&&e.targetKind==='media')});},
+   'cancelled probe':({events})=>{const p=events.find(e=>e.event==='request.completed'&&e.targetKind==='media');events.push({...p,event:'request.cancelled'});},
+  };
+  const green=[];for(const[label,edit]of Object.entries(mutations)){result=await write(edit);if(result.passed)green.push(label);else assert.ok(result.failures.some(f=>f.includes('Caption')),label+' must fail at caption persistence binding');}assert.deepEqual(green,[],'Corrupted caption wire evidence remained green');
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
 test('directory qualification recomputes fixed evidence and rejects loss, missing cleanup and relabeled pre-fault restoration',async()=>{
  const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{validate}=require('../scripts/browser/complete-diagnostics.cjs'),{read}=require('../scripts/browser/scenario-integrity.cjs');
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'scenario-policy-')),dir=path.join(directory,'dash-malformed-manifest'),commit='a'.repeat(40);await fs.mkdir(dir);
