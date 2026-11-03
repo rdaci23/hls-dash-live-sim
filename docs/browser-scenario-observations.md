@@ -132,5 +132,7 @@ and empty caption cues. Disabled-caption controls select text off before the
 unchanged fault window, verify that the HTTP caption fault is active and require
 healthy A/V throughout. They are diagnosis controls, not recovery or text-support
 claims. Neither control changes retry settings or intervenes during recovery.
+Disabled-caption controls allow the shared DASH MPD to refresh. Dedicated text
+playlists and text initialization/media downloads remain excluded.
 Full manual CI and local release review retain these controls; routine CI remains
 docs, types and unit tests on Linux/Node 24.

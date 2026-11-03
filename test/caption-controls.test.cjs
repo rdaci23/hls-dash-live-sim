@@ -71,6 +71,18 @@ for(const protocol of ['hls','dash'])test(protocol+' disabled control requires a
  const input=fixture(protocol,'text-disabled');
  for(const edit of [x=>x.definition={version:1,rules:[]},x=>x.textProbe.status=200,x=>x.textProbe.url='http://127.0.0.1:8000/unadvertised',x=>x.textProbe.faultIds='different',x=>x.scenarioStartBrowserMs+=1000,x=>x.healthyMetrics.audio=[],x=>x.metrics.captions=[],x=>x.metrics.audio.filter(a=>a.atMs>35000&&a.atMs<45000).forEach(a=>a.rms=0),x=>x.metrics.captions[0].tracks=[{mode:'showing'}],x=>x.browserRequests.push({atMs:40000,url:x.advertisedText[0].media}),x=>{if(protocol==='hls')x.metrics.events.push({kind:'hls-frag-loading',atMs:40000,fragment:{type:'subtitle'}});else x.metrics.dashCausality.push({kind:'dash-causality',eventType:'fragmentLoadingStarted',phase:'dispatch-start',atMs:40000,request:{mediaType:'text'}});},x=>{x.closedEvents.push({event:'request.started',requestId:'browser-text',timestamp:new Date(epoch+40000).toISOString()},{event:'request.completed',requestId:'browser-text',trackId:'text:1'});x.browserResponses.push({requestId:'browser-text',url:'http://127.0.0.1:8000/opaque-text-resource',status:200});}]){const changed=structuredClone(input);edit(changed);assert.equal(assessControl(changed).passed,false,'negative '+edit.toString());}
 });
+test('disabled DASH captions allow shared advertised AV MPD reloads but reject text resources',()=>{
+ const input=fixture('dash','text-disabled'),root=input.wire.checkpoints[1].proxy.manifest.url;
+ input.advertisedText[0].manifest=root;input.advertisedText[0].init='http://127.0.0.1:8000/advertised-caption-init';
+ input.browserRequests.push(...Array.from({length:15},(_,i)=>({atMs:35400+i*1000,url:root,method:'GET'})));
+ assert.deepEqual(assessControl(input).failures,[],'the shared root MPD remains required by AV playback');
+ for(const target of ['media','init','dedicated-manifest']){
+  const changed=structuredClone(input),url=target==='dedicated-manifest'?'http://127.0.0.1:8000/dedicated-text-playlist':changed.advertisedText[0][target];
+  if(target==='dedicated-manifest')changed.advertisedText[0].manifest=url;
+  changed.browserRequests.push({atMs:40000,url,method:'GET'});assert.equal(assessControl(changed).passed,false,target);
+ }
+ const hls=fixture('hls','text-disabled');hls.browserRequests.push({atMs:40000,url:hls.advertisedText[0].manifest,method:'GET'});assert.equal(assessControl(hls).passed,false,'a dedicated HLS text playlist is still a text request');
+});
 test('missing metrics/evidence fail closed without preventing retention of a failed report',()=>{
  const x=fixture('hls','healthy-captions');delete x.metrics;assert.equal(assessControl(x).passed,false);
 });

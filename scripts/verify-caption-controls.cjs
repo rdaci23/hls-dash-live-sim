@@ -78,7 +78,10 @@ function assessControl(input){
   const applied=(closedEvents??[]).find(e=>e.event==='fault.applied'&&e.requestId===textProbe?.requestId&&e.trackId==='text:0'&&e.targetKind==='media'&&e.status===status&&e.fault===(protocol==='hls'?'scenario.publication':'scenario.status')&&textProbe?.faultIds?.split(',').includes(e.faultId));need(!!applied,'Text control fault identity missing');
   const inWindow=at=>Number.isFinite(at)&&at>=faultWindowBrowser?.fromMs&&at<faultWindowBrowser?.toMs;
   const causalText=causal.filter(e=>inWindow(e.atMs)&&(protocol==='hls'?e.fragment?.type==='subtitle':e.request?.mediaType==='text'));
-  const textUrls=new Set((advertisedText??[]).flatMap(t=>[t.media,t.init,t.manifest].filter(Boolean)).map(resourceUrl));
+  // A DASH root MPD advertises AV and text together. Its independent AV wire
+  // proof identifies the shared manifest; dedicated text playlists still count.
+  const sharedManifest=protocol==='dash'?resourceUrl(wire?.checkpoints?.[0]?.proxy?.manifest?.url):undefined;
+  const textUrls=new Set((advertisedText??[]).flatMap(t=>[t.media,t.init,...(sharedManifest&&resourceUrl(t.manifest)===sharedManifest?[]:[t.manifest])].filter(Boolean)).map(resourceUrl));
   const advertisedRequests=(browserRequests??[]).filter(r=>inWindow(r.atMs)&&textUrls.has(resourceUrl(r.url)));
   const closedText=(browserResponses??[]).filter(r=>{const tagged=(closedEvents??[]).find(e=>e.requestId===r.requestId&&/^text:/.test(e.trackId));const start=(closedEvents??[]).find(e=>e.event==='request.started'&&e.requestId===r.requestId);return tagged&&start&&inWindow(Date.parse(start.timestamp)-m.startEpochMs);});
   need(causalText.length===0&&advertisedRequests.length===0&&closedText.length===0,'Browser requested text during the disabled-caption fault');
