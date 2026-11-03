@@ -31,6 +31,28 @@ function classify({ metrics, audit, scenario, diagnostics, injectionMs, auditSta
       Math.abs(epoch + s.terminalAtMs - failed.epochMs) <= 1000 && inside(failed.epochMs - epoch, s) && events.some(e => e.requestId === s.requestId && e.event === 'fault.cancelled' && e.faultId === s.faultId && e.reason === 'client_disconnect'));
     return candidates.length === 1 ? [{ kind: 'constrained-transfer-client-cancellation', ...candidates[0], failed }] : [];
   });
+
+  // A shared session limiter changes active bodies at each recorded profile
+  // transition. Keep the request's original fault identity and prove that the
+  // constrained profile began before that same GET body completed.
+  const activeTransitions = [];
+  for (const response of responses) {
+    const own = byRequest.get(response.requestId) || [], started = own.find(e => e.event === 'request.started'), terminal = own.find(e => e.event === 'request.completed');
+    const selected = own.find(e => e.event === 'fault.selected' && e.fault === 'response.bandwidth' && e.networkScope !== 'track' && e.bandwidthKbps > 0 && ids(response.faultIds).includes(e.faultId));
+    if (!selected || started?.method !== 'GET' || terminal?.method !== 'GET' || ![200, 206].includes(response.status) || terminal.status !== response.status || !(terminal.bodyBytes > 0) ||
+      selected.targetKind !== 'media' || !/^video(?::|$)/.test(selected.trackId || '') || terminal.targetKind !== 'media' || terminal.trackId !== selected.trackId ||
+      !Number.isFinite(at(started)) || !Number.isFinite(at(selected)) || !Number.isFinite(at(terminal)) || at(started) > at(selected) || at(selected) >= at(terminal)) continue;
+    const original = (scenario?.timeline || []).find(p => p.phaseId === selected.phaseId && p.network?.bandwidthKbps === selected.bandwidthKbps);
+    if (!original || !selected.scenarioId || !own.some(e => e.event === 'fault.applied' && e.faultId === selected.faultId && e.scenarioId === selected.scenarioId)) continue;
+    for (const phase of phases) {
+      const profile = events.find(e => e.event === 'scenario.profile' && e.scenarioId === selected.scenarioId && e.phaseId === phase.phaseId && e.bandwidthKbps === phase.network.bandwidthKbps &&
+        Number.isFinite(at(e)) && Math.abs(at(e) - injectionMs - phase.afterMs) <= 250 && at(e) > at(selected) && at(e) < at(terminal));
+      if (!profile || phase.phaseId === selected.phaseId) continue;
+      activeTransitions.push({ requestId: response.requestId, url: response.url, status: response.status, faultId: selected.faultId, phaseId: phase.phaseId,
+        originalPhaseId: selected.phaseId, profileTransition: true, selectedAtMs: at(selected), terminalAtMs: at(terminal), terminal,
+        fromMs: at(profile), toMs: injectionMs + phase.beforeMs });
+    }
+  }
   function lowBuffer(waiting) {
     if (!waiting || !Number.isFinite(waiting.atMs) || !Number.isFinite(waiting.mediaTime) || !Number.isFinite(waiting.bufferSeconds) || waiting.bufferSeconds < 0 || waiting.bufferSeconds > 0.5 ||
       waiting.paused !== false || waiting.seeking !== false || ![1, 2].includes(waiting.readyState) || !Array.isArray(waiting.ranges) || !Array.isArray(waiting.requests)) return false;
@@ -47,7 +69,7 @@ function classify({ metrics, audit, scenario, diagnostics, injectionMs, auditSta
       r.start <= waiting.mediaTime + 0.5 && r.end > waiting.mediaTime).flatMap(r => [
       ...wireStatus.filter(s => r.requestId === s.requestId && r.status === s.status && Number.isFinite(r.failedAtMs ?? r.completedAtMs) && (r.failedAtMs ?? r.completedAtMs) <= waiting.atMs + 1 &&
         s.url === r.url && inside(waiting.atMs, s) && s.atMs <= waiting.atMs + 1 && !superseded(s)),
-      ...shaped.filter(s => s.url === r.url && (!r.requestId || r.requestId === s.requestId) && s.selectedAtMs >= r.atMs - 250 && inside(waiting.atMs, s) &&
+      ...[...shaped, ...activeTransitions].filter(s => (!s.profileTransition || waiting.atMs >= s.fromMs && waiting.atMs <= s.toMs) && s.url === r.url && (!r.requestId || r.requestId === s.requestId) && s.selectedAtMs >= r.atMs - 250 && inside(waiting.atMs, s) &&
         s.selectedAtMs <= waiting.atMs + 1 && s.terminalAtMs + 1 >= waiting.atMs && !superseded(s))
     ]);
   }

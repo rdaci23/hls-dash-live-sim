@@ -131,7 +131,11 @@ function assessPlayer(input) {
             const url = errorUrl(error), failed = staleFailures.filter(r => r.url === url && (!text(error.requestId) || r.requestId === error.requestId) && near({ receivedEpochMs: r.completedEpochMs }, error)).sort((a, b) => Math.abs(epoch(error) - a.completedEpochMs) - Math.abs(epoch(error) - b.completedEpochMs))[0];
             if (failed && (protocol === 'dash' && error.kind === 'dash' && error.code === 27 && error.message === url + ' is not available' || protocol === 'hls' && error.kind === 'hls' && error.type === 'networkError' && error.details === 'fragLoadError' && error.status === failed.status && error.message === 'HTTP Error ' + failed.status + (failed.status === 404 ? ' Not Found' : ' Gone'))) return { error, signature: 'advertised-stale-media-unavailable', trackKind: failed.trackKind, faultRequestId: failed.faultRequestId, faultIds: failed.faultIds, failedRequestId: failed.requestId };
         }
-        if (response) return { error, signature: protocol + '-' + kind, faultRequestId: response.requestId, faultIds: response.faultIds };
+        if (response) {
+            const declaredKind = /^(video|audio|text):\d+$/.exec(response.track ?? '')?.[1];
+            const trackKind = declaredKind ?? (protocol === 'dash' && kind === 'malformed-manifest' && response.track === 'root' && response.resource === 'manifest' && response.fault === 'scenario.payload' && response.bodyText === MALFORMED.dash ? 'manifest-av' : undefined);
+            return { error, signature: protocol + '-' + kind, trackKind, faultRequestId: response.requestId, faultIds: response.faultIds };
+        }
     }
     const unique = new Map(); for (const error of [...list(healthyMetrics?.errors), ...list(metrics?.errors)]) unique.set(JSON.stringify(error), error);
     const allErrors = [...unique.values()].sort((a, b) => a.atMs - b.atMs), pending = [];
@@ -141,7 +145,7 @@ function assessPlayer(input) {
         const known = primary(error); if (known) expectedFaultErrors.push(known); else pending.push(error);
     }
     for (const error of pending) {
-        const cause = expectedFaultErrors.find(known => known.error.atMs <= error.atMs && (kind !== 'manifest-rollback' || ['video', 'audio'].includes(known.trackKind)));
+        const cause = expectedFaultErrors.find(known => known.error.atMs <= error.atMs && ['video', 'audio', 'manifest-av'].includes(known.trackKind));
         if (protocol === 'hls' && error.kind === 'hls' && error.type === 'mediaError' && error.fatal === false && error.details === 'bufferStalledError' && /^Playback stalling at @-?\d+(?:\.\d+)? due to low buffer \(/.test(error.message ?? '') && inWindow(error.atMs) && (!finite(decodedAt) || error.atMs < decodedAt) && cause) expectedFaultErrors.push({ error, signature: 'underflow-after-identified-fault', trackKind: cause.trackKind, faultRequestId: cause.faultRequestId, faultIds: cause.faultIds });
         else unexplainedErrors.push(error);
     }
@@ -151,7 +155,7 @@ function assessPlayer(input) {
     for (const gap of gaps.values()) {
         if (!finite(gap.from) || !finite(gap.to) || gap.to < gap.from) { unexplainedGaps.push(gap); continue; }
         if (gap.to - gap.from <= 4000) continue;
-        const cause = staleFailures.find(r => ['video', 'audio'].includes(r.trackKind) && r.browserCompletedAtMs <= gap.from + 250) ?? expectedFaultErrors.find(known => known.error.atMs <= gap.from + 250 && (kind !== 'manifest-rollback' || ['video', 'audio'].includes(known.trackKind))) ?? faults.find(r => ['video:0', 'video:1', 'audio:0'].includes(r.track) && r.resource === 'media' && r.receivedEpochMs <= (metrics?.startEpochMs ?? 0) + gap.from + 250);
+        const cause = staleFailures.find(r => ['video', 'audio'].includes(r.trackKind) && r.browserCompletedAtMs <= gap.from + 250) ?? expectedFaultErrors.find(known => known.error.atMs <= gap.from + 250 && ['video', 'audio', 'manifest-av'].includes(known.trackKind)) ?? faults.find(r => ['video:0', 'video:1', 'audio:0'].includes(r.track) && r.resource === 'media' && r.receivedEpochMs <= (metrics?.startEpochMs ?? 0) + gap.from + 250);
         if (inWindow(gap.from) && gap.to <= end && cause) expectedFaultGaps.push({ gap, faultRequestId: cause.faultRequestId ?? cause.requestId, faultIds: cause.faultIds, ...(cause.browserCompletedAtMs !== undefined ? { failedRequestId: cause.requestId } : {}) }); else unexplainedGaps.push(gap);
     }
     if (unexplainedGaps.length) failures.push('Unexplained rendered gap before fault, after resume or without named resource evidence');

@@ -109,7 +109,7 @@ test('only explicit causal subtitle cancellation proof can exempt an aborted req
     assert.equal(healthy(value).expectedCancellations.length, 1); for (const edit of [x => delete x.metrics.errors[0].subtitleCancellation, x => x.metrics.errors[0].subtitleCancellation = null, x => x.metrics.events.pop()]) { const changed = structuredClone(value); edit(changed); assert.equal(assessPlayer(changed).passed, false); }
 });
 test('secondary underflow requires an identified primary fault; a known signature cannot cross the decoded-resume boundary', () => {
-    const value = input('hls', 'late-captions'); value.metrics.errors.push(error(value, { type: 'networkError', details: 'fragLoadError', message: 'HTTP Error 404 Not Found' }));
+    const value = input('hls', 'audio-outage'); value.metrics.errors.push(error(value, { type: 'networkError', details: 'fragLoadError', message: 'HTTP Error 503 Service Unavailable' }));
     const stalled = { kind: 'hls', atMs: 41000, type: 'mediaError', details: 'bufferStalledError', fatal: false, message: 'Playback stalling at @46.015999 due to low buffer ({"len":0})' }; value.metrics.errors.push(stalled); assert.equal(healthy(value).expectedFaultErrors.length, 2);
     const unrelated = structuredClone(value); unrelated.metrics.errors.shift(); assert.equal(assessPlayer(unrelated).passed, false);
     const afterResume = structuredClone(value); afterResume.metrics.errors[1].atMs = 61000; assert.equal(assessPlayer(afterResume).passed, false);
@@ -149,4 +149,21 @@ test('media kinds come from advertised track metadata and ambiguous MP4 or confl
     assert.deepEqual(advertisedResources(manifest,'dash').map(r=>r.trackKind),['video','audio','text',undefined]);assert.deepEqual(advertisedMedia(manifest,'dash'),advertisedResources(manifest,'dash').map(r=>r.url));
     body(manifest,'<MPD><Period><AdaptationSet contentType="text"><Representation id="r" mimeType="video/mp4"><SegmentTemplate media="opaque-$Number$"><SegmentTimeline><S t="0" d="2"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>');assert.equal(advertisedResources(manifest,'dash')[0].trackKind,undefined);
     const hls=input('hls','manifest-rollback');assert.equal(advertisedResources(hls.affectedBrowserResponses[0],'hls')[0].trackKind,'video');
+});
+
+test('text faults retain their exact native HTTP errors but do not explain video gaps or underflow',()=>{
+    for(const protocol of ['hls','dash'])for(const kind of ['text-outage','late-captions']){
+        const value=input(protocol,kind),r=value.affectedBrowserResponses[0];
+        value.metrics.errors=[error(value,protocol==='hls'?{type:'networkError',details:'fragLoadError',message:r.status===503?'HTTP Error 503 Service Unavailable':'HTTP Error 404 Not Found'}:{code:27,message:r.url+' is not available'})];
+        assert.equal(healthy(value).expectedFaultErrors[0].trackKind,'text');
+        const gap=structuredClone(value);gap.metrics.gaps=[{from:40000,to:45001}];assert.equal(assessPlayer(gap).passed,false);
+        if(protocol==='hls'){const stalled=structuredClone(value);stalled.metrics.errors.push({kind:'hls',atMs:41000,type:'mediaError',details:'bufferStalledError',fatal:false,message:'Playback stalling at @46.015999 due to low buffer ({"len":0})'});assert.equal(assessPlayer(stalled).passed,false);}
+    }
+});
+test('named malformed AV manifests and audio faults retain explicit AV gap causes',()=>{
+    for(const [protocol,kind,signature,trackKind]of [
+        ['hls','audio-outage',{type:'networkError',details:'fragLoadError',message:'HTTP Error 503 Service Unavailable'},'audio'],
+        ['hls','malformed-manifest',{type:'networkError',details:'levelParsingError',message:'Missing Target Duration'},'video'],
+        ['dash','malformed-manifest',{code:31,message:'Must have @mediaPresentationDuration on MPD or an explicit @duration on the last period.'},'manifest-av']
+    ]){const value=input(protocol,kind);value.metrics.errors=[error(value,signature)];value.metrics.gaps=[{from:40000,to:45001}];const result=healthy(value);assert.equal(result.expectedFaultErrors[0].trackKind,trackKind);assert.equal(result.expectedFaultGaps.length,1);}
 });
