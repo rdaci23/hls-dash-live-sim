@@ -23,7 +23,8 @@ segments stay downloadable if requested directly within normal retention.
 
 DASH changes only the selected Representation's effective SegmentTemplate. It
 keeps the original inherited timeline for other video/audio representations,
-without changing numbering, timescale, PTO, initialization or UTC. This first
+without changing numbering, timescale, PTO, initialization or UTC. Rewritten
+MPDs retain explicit XML boolean attribute values and must remain well-formed. This first
 implementation requires **one dynamic Period**, finite nonnegative repeats, and
 more complete segments than the configured lag. Multi-Period lag, VOD, negative
 repeats and ambiguous/absent aliases reject explicitly. Use a one-Period test

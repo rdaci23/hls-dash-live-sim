@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict'), { createHash } = require('node:crypto');
-const { XMLParser } = require('fast-xml-parser');
+const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const { variantEntries, mediaSegments } = require('../../dist/support-tools/hls-playlist.js');
 const { parseDuration } = require('../../dist/support-tools/mpd.js');
 const hash = b => createHash('sha256').update(b).digest('hex');
@@ -15,6 +15,7 @@ async function snapshot(session, protocol) {
       tracks.push({ track: 'video:' + i, manifest: child, url, segments: segments.map((s, index) => ({ url: new URL(s.uri, url), availableAtMs: dates[index] + s.duration * 1000, position: sequence + index, endSeconds: (dates[index] + s.duration * 1000) / 1000 })) });
     }
   } else {
+    assert.equal(XMLValidator.validate(root.body.toString()), true, 'DASH publication MPD must be well-formed XML');
     const mpd = new XMLParser({ ignoreAttributes: false, parseTagValue: false, parseAttributeValue: false }).parse(root.body.toString()).MPD, counts = new Map();
     for (const p of list(mpd.Period)) for (const a of list(p.AdaptationSet)) for (const r of list(a.Representation)) {
       const type = a['@_contentType'], track = type + ':' + (counts.get(type) || 0); counts.set(type, (counts.get(type) || 0) + 1);

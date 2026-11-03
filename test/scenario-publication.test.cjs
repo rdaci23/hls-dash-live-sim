@@ -3,7 +3,7 @@ const { parseScenario } = require('../dist/support-tools/scenario.js');
 const { ScenarioPublication, lagHls, lagDash } = require('../dist/support-tools/scenario-publication.js');
 const { DashScenarioIndex } = require('../dist/support-tools/dash-scenario-index.js');
 const { LiveHlsTimeline } = require('../dist/support-tools/live-hls.js');
-const { XMLParser } = require('fast-xml-parser');
+const { XMLParser, XMLValidator } = require('fast-xml-parser');
 const lag = { kind: 'rendition-lag', track: 'video:0', afterMs: 100, beforeMs: 1000, segments: 1 };
 function trace() { const c = [], events = []; return { logical() { }, runEffect() { }, select() { return { prepare() { } } }, record(event, fields) { events.push({ event, ...fields }) }, onOutcome(fn) { c.push(fn) }, finish(status, body) { for (const f of c) f({ outcome: 'completed', status, bodyBytes: Buffer.byteLength(body) }) }, events }; }
 const playlist = Buffer.from('#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:20\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:2,\none.m4s\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI="new-init.mp4"\n#EXTINF:2,\ntwo.m4s\n#EXT-X-PROGRAM-DATE-TIME:2026-01-01T00:00:04.000Z\n#EXTINF:2,\nthree.m4s\n');
@@ -41,4 +41,17 @@ test('lag qualification needs delivered before/during/after bodies rather than o
   let t = trace(); p.bind(resource, t, 'GET'); p.transform(t, 0, 200, playlist, {}); t.finish(200, playlist);
   t = trace(); p.bind(resource, t, 'GET'); const response = p.transform(t, 200, 200, playlist, { ETag: '"origin"', 'Content-Length': '100' }); assert.equal(response.headers.ETag, undefined); assert.equal(response.headers['Content-Length'], undefined); assert.equal(p.report().applied, 0); t.finish(200, response.body);
   t = trace(); p.bind(resource, t, 'GET'); p.transform(t, 1100, 200, playlist, {}); t.finish(200, playlist); assert.equal(p.report().result, 'passed'); assert.ok(!JSON.stringify(p.report()).includes('child')); p.close();
+});
+
+test('DASH rendition lag preserves explicit true/false XML attributes and changes only the selected timeline',()=>{
+  for(const alignment of ['true','false']){
+    const control=mpd('availabilityTimeComplete="'+alignment+'"').toString().replace('contentType="video"','contentType="video" segmentAlignment="'+alignment+'" bitstreamSwitching="'+(alignment==='true'?'false':'true')+'"'),input=Buffer.from(control),index=new DashScenarioIndex();
+    assert.equal(XMLValidator.validate(control),true);index.observe(control,'http://127.0.0.1/manifest.mpd');
+    const output=lagDash(input,1,'video:0',index.manifestBindings()).toString();assert.equal(XMLValidator.validate(output),true);
+    const parsed=new XMLParser({ignoreAttributes:false,parseAttributeValue:false}).parse(output).MPD.Period.AdaptationSet;
+    assert.equal(parsed['@_segmentAlignment'],alignment);assert.equal(parsed['@_bitstreamSwitching'],alignment==='true'?'false':'true');
+    assert.equal(parsed.SegmentTemplate['@_availabilityTimeComplete'],alignment);assert.equal(parsed.Representation[0].SegmentTemplate['@_availabilityTimeComplete'],alignment);
+    assert.equal(parsed.SegmentTemplate.SegmentTimeline.S['@_r'],'2');assert.equal(parsed.Representation[0].SegmentTemplate.SegmentTimeline.S['@_r'],'1');assert.equal(parsed.Representation[1].SegmentTemplate,undefined);
+    assert.match(output,new RegExp('segmentAlignment="'+alignment+'"'));assert.equal(input.toString(),control);
+  }
 });

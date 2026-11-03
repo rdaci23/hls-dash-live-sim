@@ -123,6 +123,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Preserve explicit XML boolean values in DASH rendition-lag manifests. Reject
+  malformed publication MPDs in HTTP verification before checking their timelines.
+
 - Release checks fail on unexplained late browser errors and incomplete evidence.
   CI and local review share independent core/scenario verification and an explicit
   DVR compatibility classifier; known limitations retain failed recovery results.

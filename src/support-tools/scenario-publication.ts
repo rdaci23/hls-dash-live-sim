@@ -48,7 +48,7 @@ export function lagDash(body: Buffer, count: number, track: string, bindings: Re
     template.SegmentTimeline.S = entries; r.SegmentTemplate = template; selected++;
   }
   if (selected !== 1) throw new HttpError(422, 'Lag target must identify exactly one advertised Representation');
-  return Buffer.from(new XMLBuilder({ ignoreAttributes: false, format: true, suppressEmptyNode: false }).build(root));
+  return Buffer.from(new XMLBuilder({ ignoreAttributes: false, format: true, suppressEmptyNode: false, suppressBooleanAttributes: false }).build(root));
 }
 interface Context { resource: LogicalMedia; bindings?: ReadonlyMap<string, string>; }
 /** Publication uses advertised timing and aliases. It never changes stream/UTC clocks. */
