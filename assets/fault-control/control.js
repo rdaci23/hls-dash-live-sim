@@ -236,6 +236,47 @@
   const selectedPreset = () => state.presets.find(p => p.id === $('scenario-preset').value);
   function targetDescription(target) { if (!target) return 'Matching requests'; const track = state.labels.get(target.track) || (target.track === 'root' ? 'root manifest' : target.track === 'any' ? 'any matching track' : String(target.track || 'matching resources')); const resource = target.resource || 'media'; return track + (target.track === 'root' ? '' : ' · ' + resource) + (target.segment === 'next' ? ' · next matching request' : ''); }
   function presetDescription(preset) { return preset ? (preset.expectedEffect || '') + (preset.targets?.length ? ' Target: ' + preset.targets.map(targetDescription).join('; ') + '.' : '') : ''; }
+  const statusRetryRule = rule => rule.expectRetry === true && rule.kind !== 'outage' && !rule.transport && !rule.payload && Number(rule.status) >= 400;
+  const retryQuotaDelivered = rule => Number(rule.maxApplications) > 0 && Number(rule.applied) >= Number(rule.maxApplications);
+  const awaitingRetry = (rule, report) => statusRetryRule(rule) && retryQuotaDelivered(rule) && !rule.recovered && rule.result === 'pending' && report?.state === 'running';
+  const otherScenarioEffects = scenario => !!(scenario?.timeline?.length || scenario?.http || scenario?.cache || scenario?.publication || scenario?.lifecycle || scenario?.services);
+  function originalResource(rule) {
+    const resource = rule.target?.resource || 'media', track = rule.target?.track || '';
+    return resource === 'manifest' ? 'original manifest request' : resource === 'init' ? 'original initialization segment' : resource === 'key' ? 'original key request' : resource === 'utc' ? 'original UTC request' : /^video(?::|$)/.test(track) ? 'original video segment' : /^audio(?::|$)/.test(track) ? 'original audio segment' : /^text(?::|$)/.test(track) ? 'original caption segment' : 'original media segment';
+  }
+  function ruleProgress(rule, report, archived = false) {
+    const applied = Number(rule.applied) || 0, selected = Number(rule.selected) || 0, maximum = Number(rule.maxApplications) || 0;
+    const target = targetDescription({ ...rule.target, segment: undefined });
+    const action = rule.payload ? 'Payload fault' : rule.transport ? 'Transport fault' : 'HTTP ' + rule.status;
+    const terminal = archived || ['passed', 'failed', 'incomplete', 'stopped'].includes(report?.state) || ['failed', 'incomplete'].includes(rule.result);
+    let detail;
+    if (rule.kind === 'outage') detail = action + ' outage · ' + applied + ' responses delivered' + (selected > applied ? '; response selected, delivery pending' : '') + (rule.result === 'pending' && !terminal ? '; outage rule pending' : '; ' + rule.result);
+    else if (statusRetryRule(rule) && rule.recovered === true && rule.result === 'passed') detail = action + ' delivered · successful retry of the ' + originalResource(rule) + ' verified';
+    else if (terminal) detail = action + ' · ' + applied + (maximum ? ' of ' + maximum : '') + ' responses delivered; ' + (statusRetryRule(rule) ? 'successful retry of the ' + originalResource(rule) + ' not verified' : 'result: ' + rule.result);
+    else if (awaitingRetry(rule, report)) detail = action + ' delivered; awaiting a successful retry of the ' + originalResource(rule);
+    else if (selected > applied) detail = (applied ? action + ' delivered ' + applied + ' of ' + maximum + '; ' : action + ' response selected; ') + 'delivery pending' + (maximum > applied ? '; ' + (maximum - applied) + ' fault response' + (maximum - applied === 1 ? ' remains' : 's remain') + ', including selected responses' : '');
+    else if (applied && maximum > applied) detail = action + ' delivered ' + applied + ' of ' + maximum + '; ' + (maximum - applied) + ' fault response' + (maximum - applied === 1 ? ' remains' : 's remain');
+    else if (applied) detail = action + ' delivered ' + applied + (maximum ? ' of ' + maximum : '') + (rule.result === 'passed' ? '; delivery verified' : '; result pending');
+    else detail = 'Waiting to deliver ' + action;
+    const prefix = archived ? 'Stopped test · ' : rule.result === 'incomplete' || report?.state === 'incomplete' ? 'Incomplete · ' : rule.result === 'failed' ? 'Failed · ' : '';
+    return target + ' — ' + prefix + detail + '.';
+  }
+  function retryProgress(report) {
+    const rules = report?.scenario?.rules || [], pending = rules.filter(rule => awaitingRetry(rule, report));
+    if (!pending.length) return '';
+    const first = pending[0], remainder = rules.some(rule => rule.result === 'pending' && !awaitingRetry(rule, report)) || otherScenarioEffects(report.scenario);
+    return ruleProgress(first, report) + (pending.length > 1 ? ' ' + pending.length + ' original-resource retries remain unverified.' : '') + (remainder ? ' Other scenario actions may still be active or pending.' : '');
+  }
+  function renderRuleResults(report) {
+    const archived = !report?.scenario && report?.state === 'idle' ? report.previousRuns?.at(-1) : null;
+    const result = archived?.scenario ? { state: archived.scenario.result, scenario: archived.scenario } : report;
+    const rules = result?.scenario?.rules || [];
+    $('scenario-results-panel').hidden = !rules.length;
+    $('scenario-results-heading').textContent = archived ? 'Previous test · simulator results' : 'Simulator results';
+    $('scenario-rule-results').replaceChildren(...rules.map(rule => { const item = document.createElement('li'); item.textContent = ruleProgress(rule, result, !!archived); return item; }));
+    const videoRetry = rules.some(rule => statusRetryRule(rule) && (rule.target?.resource || 'media') === 'media' && /^video(?::|$)/.test(rule.target?.track || ''));
+    $('scenario-retry-guidance').textContent = rules.some(statusRetryRule) ? 'A verified retry means the original resource and byte range returned a nonempty HTTP 200/206 response. It does not establish playback recovery.' + (videoRetry ? ' Playback may continue from buffered video or rendition fallback (switching quality). Check the player separately; only a successful retry of the original segment completes this rule.' : '') : 'These results describe simulator delivery. Check playback separately in your player.';
+  }
   function renderCatalog() {
     const categories = [...new Set(state.presets.map(category))].sort(), currentCategory = $('scenario-category').value;
     const categoryKey = categories.join('|');
@@ -251,16 +292,28 @@
   function triggerDescription(report) {
     if (!report) return 'Prepare a test, then Start when your player is ready.';
     if (report.state === 'armed') return 'Ready. Start when your player is ready.';
-    if (['passed', 'failed', 'stopped'].includes(report.state)) return 'Test ended. Evidence describes simulator delivery; check recovery in your player.';
+    if (['passed', 'failed', 'incomplete', 'stopped'].includes(report.state)) return 'Test ended. Evidence describes simulator delivery; check recovery in your player.';
     const next = report.nextTrigger;
     const phases = report.scenario?.timeline || [], phase = phases.find(p => p.phaseId === next?.phaseId);
     if (phase) { const effects = []; if (phase.network?.bandwidthKbps) effects.push(phase.network.bandwidthKbps + ' kbps shared bandwidth'); if (phase.network?.jitterMs) effects.push('0–' + phase.network.jitterMs + ' ms jitter'); if (phase.manifestFreeze) effects.push('manifest frozen'); const remaining = Math.max(0, phase.beforeMs - Number(next.elapsedMs || 0)); return (effects.length ? effects.join(', ') : 'Healthy delivery') + '. Next phase in about ' + Math.ceil(remaining / 1000) + ' seconds.'; }
+    const retry = retryProgress(report); if (retry) return retry;
+    const pendingDelivery = report.scenario?.rules?.find(rule => rule.result === 'pending' && (rule.selected > rule.applied || rule.applied > 0));
+    if (pendingDelivery) return ruleProgress(pendingDelivery, report);
     if (next?.pendingRules?.length) { const first = next.pendingRules[0], wait = Math.max(0, Number(first.afterMs || 0) - Number(next.elapsedMs || 0)); return (wait > 0 ? 'In about ' + Math.ceil(wait / 1000) + ' seconds: ' : 'Waiting for ') + targetDescription(first.target) + '.'; }
     return report.state === 'running' ? 'Running. Waiting for matching requests or the next phase.' : 'Prepare a test, then Start when your player is ready.';
   }
   function renderEffects() {
     const cfg = state.control?.settings || {}, lines = [], faults = state.health?.faults;
-    if (state.control?.controlled && state.control.mode === 'scenario') { if (run()?.state === 'running') lines.push('Scenario running · ' + (state.presets.find(p => p.id === run()?.presetId)?.name || 'test in progress')); else lines.push('No faults active.'); }
+    if (state.control?.controlled && state.control.mode === 'scenario') {
+      const report = run(), rules = report?.scenario?.rules || [];
+      if (report?.state === 'running') {
+        const observed = rules.filter(rule => rule.result === 'pending' && (rule.selected > 0 || rule.applied > 0));
+        for (const rule of observed.slice(0, 3)) lines.push(ruleProgress(rule, report));
+        if (observed.length > 3) lines.push((observed.length - 3) + ' more rules with observed delivery. See Simulator results.');
+        if (otherScenarioEffects(report.scenario) || !observed.length) lines.push('Scenario running · ' + (state.presets.find(p => p.id === report.presetId)?.name || 'test in progress'));
+        if (rules.length && rules.every(rule => statusRetryRule(rule) && retryQuotaDelivered(rule)) && !otherScenarioEffects(report.scenario)) lines.push('Planned fault responses delivered. No further fault responses are planned in this run.');
+      } else lines.push('No faults active.');
+    }
     else {
       const names = { malformed: 'Malformed media', forbidden: 'Media HTTP 403', missing: 'Media HTTP 404' };
       for (const [key, name] of Object.entries(names)) if (cfg.segment?.[key] && cfg.segment[key] !== 'off') { const observed = faults?.rules?.find(r => r.fault === 'segment.' + key); lines.push(name + ' · ' + cfg.segment[key] + (observed?.state ? ' · ' + observed.state : '')); }
@@ -274,7 +327,7 @@
     }
     if (!lines.length) lines.push('No faults active.');
     $('active-faults').replaceChildren(...lines.map(line => { const li = document.createElement('li'); li.textContent = line; return li; }));
-    $('current-run').textContent = run()?.state === 'running' ? triggerDescription(run()) : '';
+    $('current-run').textContent = run()?.state === 'running' ? retryProgress(run()) || triggerDescription(run()) : '';
   }
   function render() {
     const control = state.control, report = run(), auth = writable(), working = busy(), manual = isManual(), recovery = !!control?.recoveryRequired;
@@ -300,7 +353,8 @@
     $('scenario-arm').disabled = !auth || working || !control?.capabilities?.scenario || !selected?.enabled || report?.state === 'running' || recovery; $('scenario-arm').textContent = control?.mode === 'manual' ? 'Stop manual faults and prepare test' : armed ? 'Prepare again' : 'Prepare test';
     $('scenario-start').disabled = !auth || working || control?.mode !== 'scenario' || !control?.controlled || !armed || report?.presetId !== selected?.id || recovery;
     $('scenario-reset').disabled = !auth || working || control?.mode !== 'scenario' || !active && !recovery; $('scenario-export').disabled = !state.url || working || !report;
-    message('scenario-status', !state.url ? 'Connect a stream to see compatible scenarios.' : !control?.capabilities?.scenario ? 'Scenario control is unavailable for this session. Inspection remains available.' : report ? 'Test ' + report.state + '. Status updates automatically.' : 'Choose a compatible scenario, then prepare it.');
+    message('scenario-status', !state.url ? 'Connect a stream to see compatible scenarios.' : !control?.capabilities?.scenario ? 'Scenario control is unavailable for this session. Inspection remains available.' : report ? 'Test ' + report.state + '. ' + (retryProgress(report) || 'Status updates automatically.') : 'Choose a compatible scenario, then prepare it.');
+    renderRuleResults(report);
     $('raw-state').textContent = control ? JSON.stringify(control, null, 2) : 'No session connected.';
     $('curl-example').textContent = state.url ? 'curl -X POST ' + JSON.stringify(new URL('/session-control/apply', state.url).href) + ' -H "Authorization: Bearer $HLS_DASH_CONTROL_TOKEN" -H "X-Sim-Session-Id: $HLS_DASH_SESSION_ID" -H "Content-Type: application/json" --data \'{"revision":' + (control?.revision || 0) + ',"settings":' + JSON.stringify(state.dirty ? (() => { try { return collect(); } catch { return {}; } })() : control?.settings || {}) + '}\'' : 'Connect a simulator to see its session API command.';
   }

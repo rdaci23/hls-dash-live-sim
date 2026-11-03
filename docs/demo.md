@@ -17,9 +17,10 @@ uses generated local media, Node and a browser; no external account or device.
    ```
 
    The helper fetches the playlist and downloads the same segment twice. Expect
-   404 then 200 with nonempty media. The scenario result updates automatically;
-   inspect matched attempts and request/fault IDs under Advanced or download test
-   evidence. **Stop test** retains the result and leaves publication/UTC running.
+   404 then 200 with nonempty media. This satisfies the original-resource retry
+   assertion. The scenario result updates automatically; inspect matched attempts
+   and request/fault IDs under Advanced, then download test evidence promptly.
+   **Stop test** retains the result and leaves publication/UTC running.
 3. Open **Manifest**. HLS choices use advertised resolution/language labels.
    Refresh the baseline preview to see a new live sequence. **Copy original** or
    **Download original** exports the selected snapshot without another request.
@@ -34,9 +35,16 @@ uses generated local media, Node and a browser; no external account or device.
    Import only prepares a draft; **Apply settings** is always explicit. If another
    window changes the session, reload or explicitly reapply your preserved draft.
 
-The helper proves HTTP delivery and retry, not rendered recovery. A player may
-already have buffered enough video to avoid a visible stall. The simulator's
-evidence and player recovery must be assessed separately.
+The helper proves HTTP delivery and retry, not rendered recovery. Your player
+may continue through buffered media or choose another rendition after a 404.
+The retry preset still requires a completed, nonempty 200/206 download of the
+original resource, track and byte range. Until that succeeds, the retry assertion
+stays pending, including while a request is in flight. If no matching retry
+occurs, **Stop test** retains an incomplete result even while playback
+advances. A failed or cancelled retry can instead fail the assertion. The control
+API does not identify the player's fallback strategy; use player-side evidence
+for that. Check diagnostic drop counters when exporting, since the bounded
+event window can lose older request details.
 
 ![Connected stream and session-scoped controls](images/control-demo.png)
 

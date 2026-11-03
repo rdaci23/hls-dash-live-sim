@@ -58,6 +58,17 @@ Manual faults and Scenarios is explicit and stops the prior test first. The UI
 never seeks or restarts the external player. A cancelled response remains a
 cancelled/incomplete observation, rather than becoming a delivered-fault pass.
 
+**Simulator results** distinguishes the completed failure from verified
+retry success. For **One video 404 and retry**, a new GET after the 404 must
+complete with nonempty 200/206 media for the original resource, track and byte
+range. An in-flight retry is still pending. Playback may continue using its
+buffer or another rendition without making that retry; if none occurs, the
+rule stays pending and **Stop test** retains an incomplete result. A failed or
+cancelled retry can fail the assertion. Other rules and timeline requirements
+keep their own outcomes. The control API reports simulator delivery and matching
+requests; identifying player fallback or rendered recovery requires player-side
+evidence.
+
 The Manifest tab displays a stable [baseline preview](manifest-preview.md), not
 the last faulted playback response. Refreshing or selecting another playlist is
 inert; actual playback URLs still exercise frozen/malformed/status responses.
@@ -66,10 +77,11 @@ Copy/download use the original snapshot text even with display formatting.
 Evidence includes current/previous scenario reports, bounded manual settings
 changes/results and the existing redacted diagnostic window. Up to ten previous
 scenario results and ten manual tests are retained. Manual changes are bounded
-to 32 per test, with explicit drop counters. Export before those limits when a
-complete sequence is needed; inspect diagnostic drop counters too. This snapshot
-does not replace complete rotated-file endurance evidence. Simulator delivery
-and player playback/recovery remain separate results.
+to 32 per test, with explicit drop counters. Export promptly after a test when a
+complete sequence is needed; older request events can leave the diagnostic
+window before their run summary is removed. Inspect diagnostic drop counters
+too. This snapshot does not replace complete rotated-file endurance evidence.
+Simulator delivery and player playback/recovery remain separate results.
 
 ## Scoped API
 

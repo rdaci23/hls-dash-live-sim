@@ -46,6 +46,18 @@ or always settings report `enabled`, which does not mean a particular request wa
 faulted. HLS key rules still require an encrypted origin. Scenario sessions show
 the scenario result instead of claiming manual faults apply.
 
+For retry scenarios, a delivered fault and a successful retry are separate
+observations. **One video 404 and retry** requires the completed 404 to be
+followed by a new GET that completes with nonempty 200/206 media for the same
+resource, track and byte range. A different rendition's successful request does
+not qualify. The player may continue playing through its buffer, switch
+renditions or skip the failed fragment. The rule remains pending until retry
+completion; if no matching retry occurs, **Stop test** retains an incomplete
+result. A failed or cancelled retry can instead fail the assertion. The control
+API establishes simulator delivery and matching requests; player traces are
+needed to identify fallback or rendered recovery. Verifying one retry does not
+complete other rules or timeline requirements in the same run.
+
 Visible-page status polling observes health and scoped state without consuming
 faults. Drafts remain intact; a conflicting revision requires explicit reload or
 reapply. Session changes disable writes and never replay a previous test. Tabs
@@ -109,6 +121,10 @@ response's `X-Sim-Fault-Ids` header and the stream server's recorded fault event
 Use `X-Sim-Request-Id` to find the exact request. Both protocols support redacted
 JSONL capture with `--diagnostics-file` and recent-history export at `/diagnostics`
 on the stream port. See [event meanings, redaction and limits](diagnostics.md).
+
+Export evidence promptly after a test and inspect its diagnostic drop counters.
+The bounded event window can discard the original failure/retry details while
+a retained scenario summary still records whether the assertion completed.
 
 Players buffer ahead. A queued fault takes effect when the matching resource is
 requested, not when previously buffered media plays. Freeze can expose this delay

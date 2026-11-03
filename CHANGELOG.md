@@ -123,6 +123,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Clarify delivered HTTP faults, outstanding same-download retries and verified
+  retry results in the control UI. Explain possible rendition fallback without
+  claiming observed playback recovery; preserve strict retry matching and show
+  stopped, incomplete and remaining-failure states separately.
+
 - Use a bounded native Chrome CDP driver for endurance playback, avoiding unused
   browser-network bookkeeping. Preserve the shared player page, sandbox, decoded
   audio/captions, exception audits, independent HTTP viewers and 128 MiB gates;

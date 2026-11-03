@@ -51,6 +51,22 @@ definition retains its existing startup behavior and is shown as externally
 managed/read-only. Use `--scenario-start manual` when that loaded definition
 should be prepared and started interactively.
 
+For **One video 404 and retry**, fault delivery and retry success are separate
+observations in **Simulator results**. After the injected 404 completes,
+a later GET must complete with nonempty 200/206 media for the same resource,
+track and byte range. A successful request for another rendition does not
+satisfy that assertion. For presets with several rules or a timeline, verifying
+one retry does not complete the remaining requirements.
+
+A player may keep playing through buffered media, switch renditions or skip a
+failed fragment. The rule remains pending while awaiting successful retry
+completion, including when a retry is in flight. If no matching retry occurs,
+it stays pending; **Stop test** retains that incomplete result. An unsuccessful
+or cancelled retry can instead fail the assertion. The control API reports
+simulator requests and delivery, without establishing which player strategy
+kept playback moving. Use the player's own trace to identify fallback or playback
+recovery.
+
 ## Isolation, lifetime and conflicts
 
 Connecting, unlocking, status reads and baseline previews do not take control.
@@ -115,7 +131,10 @@ and retained scenario/manual results. A manual test retains up to 32 settings
 changes, including explicit restoration to all-off, with action/revision/time and
 portable values. At most ten completed manual tests and ten scenario results are
 retained; dropped changes/results are counted. Export before those bounds if the
-complete sequence is needed. Diagnostics also retain their own drop counters.
+complete sequence is needed. Export promptly after a test: the diagnostic event
+window can discard older request details while a retained run summary still
+shows its result. Check diagnostic drop counters before treating an export as a
+complete request history. See [diagnostic capture](diagnostics.md).
 
 The manifest view is a [baseline preview](manifest-preview.md), not a captured
 fault-response body. HLS discovery follows only advertised child playlists using

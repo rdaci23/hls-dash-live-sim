@@ -57,6 +57,11 @@ as a baseline preview. **Copy original**/**Download original** retain its origin
 text without another request. [Setup and workflow](docs/getting-started.md),
 [control API and limits](docs/session-controls.md).
 
+Scenario results distinguish fault delivery from a verified retry of the original
+download. A player can continue through buffering or rendition fallback while the
+same-segment retry remains pending. Check playback separately in your player;
+the control UI reports simulator observations.
+
 To run DASH instead:
 
 ```sh
