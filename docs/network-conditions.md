@@ -6,7 +6,8 @@ DASH `--no-fault-proxy` path and HLS Docker MP4 VoD do not provide these control
 
 ## Configure
 
-In the control page, use **Network conditions**:
+Connect and unlock the simulator in the control page, open **Manual faults** and
+select **Use manual controls**. Under **Network conditions**:
 
 - **Bandwidth limit (kbps):** an integer from 0 to 1,000,000 decimal kilobits per
   second. 1,000 kbps = 1 Mbps = 125,000 bytes/s. Zero disables the ceiling.
@@ -14,10 +15,12 @@ In the control page, use **Network conditions**:
   independent uniform integer from zero through this value, inclusive. Zero
   disables jitter. Samples use unseeded randomness.
 
-Select **Apply Network Conditions** or include them in **Save Config**.
-**Clear Network Conditions** clears both settings; **Reset (all off)** also clears
-fixed latency and other faults. Saved and runtime summaries show these values.
-Use the same fault file for the control server and simulator.
+Select **Apply settings**. **Clear faults** restores all-off settings and cancels
+this session's affected manual responses, preserving healthy requests and sibling
+sessions. Active effects update automatically without replacing unsaved edits.
+Normal UI changes are session-scoped; no matching controller fault file is needed.
+The separate Advanced legacy shared-file tool retains **Apply Network Conditions**,
+**Save Config** and **Reset (all off)** for existing file-based workflows.
 
 Equivalent partial configuration, for example a 500 kbps cap and up to 150 ms of
 extra response delay:
@@ -31,7 +34,9 @@ extra response delay:
 }
 ```
 
-Submit it with `POST /config` or merge it into the shared file. Older configurations
+For scoped writes, send it as `settings` to the simulator's revision-checked
+`POST /session-control/apply`; see [the control API](session-controls.md). Legacy
+clients can still use `POST /config` or merge it into their shared file. Older configurations
 without `network` keep both settings disabled. Invalid, fractional, negative or
 out-of-range values return HTTP 400 without changing the saved configuration.
 [Example complete config](../examples/faults.json).
@@ -48,15 +53,17 @@ out-of-range values return HTTP 400 without changing the saved configuration.
 | Health, diagnostics, scenario reports, DASH UTC, control API | No | No |
 
 The ceiling is shared across concurrent audio, video and initialization downloads
-handled by one simulator process. Two concurrent 10 kB downloads share the same
+handled by one simulator session. Two concurrent 10 kB downloads share the same
 80 kbps (10 kB/s) budget and take roughly two seconds together, allowing for normal
 overhead and small pacing bursts. Separate simulator processes have independent
-budgets, even if they share a configuration file.
+budgets, even if they share a configuration file. Privately controlled sessions
+also remain independent when hosted in the same Node process.
 
 Total start delay is **fixed latency + sampled jitter**. At both maximum settings,
 that can be 120 seconds. Jitter changes when a response starts, not MPD availability,
 media timestamps or the local UTC clock. It does not introduce per-chunk jitter.
-The manifest viewer allows a longer timeout to accommodate deliberate delays.
+The baseline manifest viewer bypasses these delays; ordinary playback requests
+still exercise them. Preview requests do not stand in for player timing evidence.
 
 ## Transfers and live changes
 
@@ -78,6 +85,10 @@ queued by an unthrottled response; it applies to new responses. Fixed/jitter del
 is sampled once per request, so edits apply to new waits, not a wait already in
 progress. Disconnect and session shutdown cancel both waits and paced transfers;
 cancelled queue entries reserve no future credit.
+
+Applying a zero cap releases queued writers normally. **Clear faults** and an
+explicit control-mode switch instead cancel already affected responses; these
+cancellations remain visible in evidence and are not successful downloads.
 
 Content-Length, Content-Range, status and bytes stay intact unless an explicit
 corruption/status fault is enabled. Successful range responses consume only their

@@ -55,6 +55,10 @@ async function ready(url, child, logs) {
       assert.ok(files.includes('dist/support-tools/assets/scenarios/' + name + '.json'));
     }
     assert.ok(files.includes('dist/support-tools/assets/fault-control/control.js'));
+    assert.ok(files.includes('dist/support-tools/assets/fault-control/legacy-control.js'));
+    assert.ok(files.includes('dist/support-tools/session-controls.js'));
+    assert.ok(files.includes('docs/session-controls.md'));
+    assert.ok(files.includes('examples/session-settings/constrained-network.json'));
     assert.ok(files.some(file => file.startsWith('dist/support-tools/assets/hls-sample/') && file.endsWith('.ts')));
     assert.ok(files.includes('docs/release-checklist.md'));
     for (const file of ['SECURITY.md','THIRD_PARTY_NOTICES.md','third-party/npm-manifest.json','docs/getting-started.md','docs/configuration.md','docs/scenario-recipes.md','docs/images/control-demo.png','examples/configurations/healthy.json','examples/request-segment.cjs']) assert.ok(files.includes(file), 'Missing release material: ' + file);
@@ -112,10 +116,12 @@ async function ready(url, child, logs) {
     const control = start(['fault-control', '--port', String(uiPort), '--fault-config', config]);
     const uiUrl = `http://127.0.0.1:${uiPort}`;
     await ready(uiUrl, control.child, control.logs);
-    assert.match(await (await fetch(uiUrl)).text(), /Generated manifest/);
+    assert.match(await (await fetch(uiUrl)).text(), /HLS \/ DASH test control/);
     const script = await fetch(uiUrl + '/control.js');
     assert.equal(script.status, 200);
-    assert.match(await script.text(), /nativeFetch/);
+    assert.equal(await script.text(), await fs.readFile(path.join(root, 'assets/fault-control/control.js'), 'utf8'));
+    assert.equal((await fetch(uiUrl + '/legacy-control.js')).status, 200);
+    assert.deepEqual(Object.keys(await (await fetch(uiUrl + '/ui-info')).json()), ['manifestHosts']);
     assert.equal((await fetch(uiUrl + '/config')).status, 200);
     const manualPort = await port(), token = require('node:crypto').randomUUID();
     const manual = start(['livesim', '--sim-type', 'hls', '--scenario-start', 'manual', '--port', String(manualPort), '--fault-config', config], token);
@@ -125,6 +131,19 @@ async function ready(url, child, logs) {
     assert.ok(catalog.presets.find(preset => preset.id === 'next-manifest-retry')?.enabled);
     const armed = await fetch(manualUrl + '/scenario/arm', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-Sim-Session-Id': catalog.sessionId }, body: JSON.stringify({ runId: catalog.runId, presetId: 'next-manifest-retry' }) });
     assert.equal(armed.status, 200); assert.equal((await armed.json()).state, 'armed');
+    let scoped = await (await fetch(manualUrl + '/session-control', { headers: { Authorization: 'Bearer ' + token } })).json();
+    assert.equal(scoped.available, true); assert.equal(scoped.authenticated, true); assert.equal(scoped.controlled, false);
+    const change = async (action, body) => {
+      const response = await fetch(manualUrl + '/session-control/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, 'X-Sim-Session-Id': scoped.sessionId }, body: JSON.stringify({ revision: scoped.revision, ...body }) });
+      assert.equal(response.status, 200); scoped = await response.json();
+    };
+    await change('mode', { mode: 'manual' });
+    await change('inject', { type: 'segment.missing' });
+    const manualMaster = await (await fetch(manualUrl + '/proxy.m3u8')).text(), manualVariant = new URL(firstUri(manualMaster), manualUrl);
+    const manualPlaylist = await (await fetch(manualVariant)).text(), manualMedia = new URL(firstUri(manualPlaylist), manualVariant);
+    assert.equal((await fetch(manualMedia)).status, 404);
+    assert.equal((await fetch(manualMedia)).status, 200);
+    await change('clear', {}); assert.equal(scoped.previousTests.length, 1);
     for (const protocol of ['hls','dash']) {
       const trackPort=await port(),base=`http://127.0.0.1:${trackPort}`,trackStream=start(['livesim','--sim-type',protocol,'--fixture','tracks','--video-renditions','3','--port',String(trackPort),'--fault-config',path.join(directory,protocol+'-track-faults.json'),'--scenario-file',path.join(installed,'examples/scenarios/independent-audio-outage.json')]);
       const url=base+(protocol==='hls'?'/proxy.m3u8':'/dash/manifest.mpd');await ready(url,trackStream.child,trackStream.logs);const content=await(await fetch(url)).text();

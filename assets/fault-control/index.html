@@ -1,55 +1,354 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Crect%20width=%2232%22%20height=%2232%22%20rx=%227%22%20fill=%22%232563eb%22/%3E%3Cpath%20d=%22M12%208l12%208-12%208z%22%20fill=%22white%22/%3E%3C/svg%3E" />
-  <title>HLS / DASH Fault Control</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 24px; background: #f7f8fa; color: #1d1f23; }
-    h1 { margin-bottom: 0.25rem; }
-    .container { max-width: 880px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 10px 35px rgba(15,23,42,0.1); }
-    section { margin-top: 24px; }
-    section h2 { font-size: 1.1rem; margin-bottom: 8px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-    .card { border: 1px solid #d9dee7; border-radius: 10px; padding: 16px; background: #fafbff; }
-    label { display: flex; align-items: center; justify-content: space-between; font-size: 0.95rem; margin-bottom: 10px; }
-    select, input[type="number"] { box-sizing: border-box; max-width: 100%; width: 120px; padding: 6px 8px; border-radius: 6px; border: 1px solid #c5c9d6; font-size: 0.9rem; }
-    button { background: #2563eb; color: #fff; border: none; padding: 10px 18px; border-radius: 8px; font-size: 0.95rem; cursor: pointer; }
-    button.secondary { background: #475569; }
-    button.warning { background: #f97316; }
-    button.danger { background: #dc2626; }
-    .quick-grid { display: flex; flex-wrap: wrap; gap: 12px; }
-    .quick-grid button { flex: 1 1 220px; min-width: 200px; }
-    pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; }
-    [hidden] { display: none !important; }
-    fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    input[type="url"] { box-sizing: border-box; width: 100%; padding: 8px; margin: 8px 0; }
-    .help { overflow-wrap: anywhere; color: #475569; font-size: .9rem; line-height: 1.5; }
-    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-    #manifest-output { max-height: 420px; white-space: pre; }
-    #manifest-url-label { display: block; }
-    #playlist-select { width: 100%; margin-top: 12px; }
-    summary { cursor: pointer; }
-    .stream-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; }
-    .stream-details dt { color: #475569; }
-    .stream-details dd { margin: 0; overflow-wrap: anywhere; }
-    .url-row { margin-top: 16px; }
-    .url-row label { display: block; }
-    .url-row input { box-sizing: border-box; width: 100%; padding: 8px; font: inherit; border: 1px solid #c5c9d6; border-radius: 6px; }
-    .fault-list { padding-left: 20px; line-height: 1.7; }
-    section h3 { font-size: 1rem; margin: 16px 0 8px; }
-    @media (max-width: 480px) { body { padding: 12px; } .container { padding: 16px; } label { gap: 10px; } .grid { grid-template-columns: minmax(0, 1fr); } .stream-details { grid-template-columns: 1fr; gap: 4px; } .stream-details dd { margin-bottom: 8px; } #control-token { max-width: 45%; } }
-    .status { overflow-wrap: anywhere; font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; font-size: 0.85rem; color: #475569; margin-top: 8px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HLS / DASH test control</title>
+<link rel="icon" href="data:,">
+<style>
+
+:root{color-scheme:light;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;background:#f5f7fb}
+*{box-sizing:border-box}
+body{margin:0;padding:24px}
+.container{max-width:1080px;margin:auto;background:#fff;border:1px solid #d9e0ea;border-radius:14px;padding:24px;box-shadow:0 8px 30px #17203308}
+h1{margin:0;font-size:1.65rem;line-height:1.3}
+h2{font-size:1.2rem;margin:0 0 12px}
+h3{font-size:1rem;margin:18px 0 8px}
+p{margin:8px 0}
+.help,.muted{color:#475569;font-size:.92rem;overflow-wrap:anywhere}
+.status{overflow-wrap:anywhere;margin:8px 0;color:#334155}
+.error{color:#b91c1c!important}
+.eyebrow{font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#475569}
+button,input,select{font:inherit}
+input,select{min-height:40px;border:1px solid #aebbcf;border-radius:7px;padding:8px;max-width:100%;background:white;color:#172033}
+input[type=url],input[type=text],input[type=password],input[type=search]{width:100%}
+input[type=checkbox]{min-height:auto;width:auto}
+input[type=number]{width:140px}
+button{min-height:40px;border:1px solid transparent;border-radius:7px;background:#1d4ed8;color:white;padding:8px 15px;font-weight:600;cursor:pointer}
+button.secondary{background:#fff;border-color:#aebbcf;color:#243349}
+button.warning{background:#9a3412}
+button.danger{background:#b91c1c}
+button:disabled{background:#edf1f6;border-color:#cbd5e1;color:#64748b;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,a:focus-visible{outline:3px solid #1d4ed8;outline-offset:3px}
+a{color:#1749a3}
+label{display:block;font-weight:600;margin-bottom:6px}
+fieldset{border:0;margin:0;padding:0;min-width:0}
+[hidden]{display:none!important}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+.inline-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.inline-form label{margin:0}
+.card{border:1px solid #d9e0ea;border-radius:10px;background:#f8faff;padding:16px}
+.connection{margin:18px 0}
+.connection-top{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.badge{display:inline-block;padding:3px 9px;border:1px solid #b8c5d8;border-radius:99px;font-size:.82rem;background:#edf3ff;color:#203a66}
+.url-row{margin-top:8px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px}.url-row>label,.url-row>.status{grid-column:1/-1}.url-row>.actions{margin-top:0}.url-row>input{min-width:0}.status:empty{display:none}
+.url-row input{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88rem}
+.fault-list{margin:6px 0;padding-left:20px;overflow-wrap:anywhere}
+.tabs{display:flex;gap:6px;border-bottom:1px solid #d9e0ea;margin:20px 0 0;overflow-x:auto;padding:4px 4px 0}
+.tabs button{flex:1;background:transparent;color:#475569;border-radius:7px 7px 0 0;white-space:nowrap;border-bottom:3px solid transparent}
+.tabs button[aria-selected=true]{color:#153eac;background:#edf3ff;border-bottom-color:#1d4ed8}
+[role=tabpanel]{padding-top:22px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.filter-grid{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:12px}
+.check-label{display:flex;align-items:center;gap:8px;font-weight:400;margin-top:12px}
+.full{width:100%}
+.field-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font-weight:500}
+.manual-grid select{width:140px}
+.quick-grid{display:flex;gap:8px;flex-wrap:wrap}
+.quick-grid button{flex:1 1 180px}
+.summary{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 16px;margin:12px 0}
+.summary dt{color:#475569}
+.summary dd{margin:0;overflow-wrap:anywhere}
+details{margin-top:18px}
+summary{cursor:pointer;font-weight:600}
+pre{max-width:100%;overflow:auto;border-radius:8px;padding:14px;background:#0f172a;color:#e2e8f0;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre}
+#manifest-output{max-height:520px}
+#manifest-output.wrap{white-space:pre-wrap;overflow-wrap:anywhere}
+.draft-notice{border-left:4px solid #a16207;padding:10px 12px;background:#fff8e6}
+.legacy-banner{max-width:1080px;margin:0 auto 16px;padding:16px;background:#fff1e6;border:1px solid #b45309;border-radius:8px}
+.small{font-size:.85rem}
+.legacy-view .container{max-width:880px}
+.legacy-view label{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.legacy-view section{margin-top:24px}
+.legacy-view .grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+@media(max-width:640px){body{padding:10px}
+.container{padding:16px}
+.inline-form,.grid,.filter-grid,.url-row{grid-template-columns:minmax(0,1fr)}.url-row>.actions>button{width:100%}
+.inline-form button{width:100%}
+.tabs{gap:0}
+.tabs button{padding:8px;font-size:.9rem}
+.summary{grid-template-columns:minmax(0,1fr);gap:2px}
+.summary dd{margin-bottom:7px}
+.field-row{align-items:flex-start}
+.actions>button{flex:1 1 auto}
+h1{font-size:1.4rem}
+}
+
+
+</style>
 </head>
 <body>
+<main class="container" id="app">
+<header>
+<p class="eyebrow">Test your player</p>
+<h1>HLS / DASH test control</h1>
+<p class="help">Connect a simulator, open its playback URL in your player, then choose the conditions to test.</p>
+</header>
+<section class="connection" aria-labelledby="stream-heading">
+<h2 id="stream-heading">Connect a stream</h2>
+<div id="connection-editor">
+<form id="connect-form" class="inline-form">
+<label for="manifest-url">Simulator manifest URL<input id="manifest-url" type="url" placeholder="http://127.0.0.1:PORT/proxy.m3u8" autocomplete="off" required>
+</label>
+<button id="load-manifest" type="submit">Connect stream</button>
+</form>
+</div>
+<p id="stream-status" class="status" role="status" aria-live="polite">No stream connected.</p>
+<div class="card" id="stream-details" hidden>
+<div class="connection-top">
+<div>
+<span class="badge" id="stream-protocol">
+</span> <span id="connection-state">Simulator ready</span>
+</div>
+<div class="actions" style="margin-top:0"><span class="badge" id="control-state">Read-only</span><button id="change-stream" class="secondary" type="button">Change stream</button></div>
+</div>
+<div class="url-row">
+<label for="playback-url">Playback URL</label>
+<input id="playback-url" type="text" readonly>
+<div class="actions">
+<button id="copy-playback" class="secondary">Copy Playback URL</button>
+</div>
+<p id="playback-copy-status" class="status small" role="status"></p>
+</div>
+<p id="control-guidance" class="help"></p>
+<div id="recovery-panel" class="draft-notice" hidden><strong>Test cleanup needs attention.</strong><p>Reset the current controls before starting another test. No fault will restart automatically.</p><button id="recover-controls" class="secondary" type="button">Reset current controls</button></div>
+<details id="token-details">
+<summary>Control access</summary>
+<p class="help">Use this simulator’s control token to change tests. It stays in page memory; refreshing this page requires entering it again.</p>
+<div class="inline-form">
+<label for="control-token">Simulator control token<input id="control-token" type="password" autocomplete="off">
+</label>
+<button id="connect-control" type="button">Unlock controls</button>
+</div>
+<p id="access-status" class="status" role="status"></p>
+</details>
+<h3 style="margin-top:8px">Active effects</h3>
+<ul id="active-faults" class="fault-list">
+</ul>
+<p id="current-run" class="status small"></p>
+<p class="help small">Check playback and recovery in your player.</p>
+</div>
+<p id="action-status" class="status" role="status" aria-live="polite"></p>
+</section>
+<div class="tabs" role="tablist" aria-label="Testing tools">
+<button id="tab-scenarios" role="tab" aria-controls="panel-scenarios" aria-selected="true">Scenarios</button>
+<button id="tab-manual" role="tab" aria-controls="panel-manual" aria-selected="false" tabindex="-1">Manual faults</button>
+<button id="tab-manifest" role="tab" aria-controls="panel-manifest" aria-selected="false" tabindex="-1">Manifest</button>
+</div>
+<section id="panel-scenarios" role="tabpanel" aria-labelledby="tab-scenarios">
+<h2>Choose a scenario</h2>
+<p class="help">Prepare a test, review its target, then Start when your player is ready.</p>
+<p id="scenario-status" class="status" role="status" aria-live="polite">Connect a stream to see compatible scenarios.</p>
+<div class="filter-grid">
+<label for="scenario-search">Search scenarios<input id="scenario-search" type="search" placeholder="For example: bandwidth or 404">
+</label>
+<label for="scenario-category">Category<select id="scenario-category" class="full">
+<option value="all">All categories</option>
+</select>
+</label>
+</div>
+<label class="check-label">
+<input id="show-unavailable" type="checkbox">Show unavailable scenarios</label>
+<label for="scenario-preset">Scenario preset</label>
+<select id="scenario-preset" class="full" disabled>
+</select>
+<p id="scenario-count" class="help small"></p>
+<p id="scenario-description" class="help"></p>
+<div class="card" id="prepared-panel" hidden>
+<h3 style="margin-top:0">Prepared test</h3>
+<p id="prepared-name"></p>
+<p id="prepared-summary" class="help"></p>
+<p id="prepared-change" class="draft-notice" hidden>Selection changed. Prepare again to replace the prepared test; Start always uses the prepared definition.</p>
+<dl class="summary">
+<dt>State</dt>
+<dd id="scenario-phase">—</dd>
+<dt>Next event</dt>
+<dd id="scenario-trigger">—</dd>
+<dt>Previous tests</dt>
+<dd id="scenario-history">0</dd>
+</dl>
+</div>
+<div class="actions">
+<button id="scenario-arm" disabled>Prepare test</button>
+<button id="scenario-start" disabled>Start test</button>
+<button id="scenario-reset" class="secondary" disabled>Stop test</button>
+<button id="scenario-export" class="secondary" disabled>Download test evidence</button>
+</div>
+<p class="help small" id="scenario-mode-help">Opening this tab never changes control mode or starts a fault.</p>
+</section>
+<section id="panel-manual" role="tabpanel" aria-labelledby="tab-manual" hidden>
+<h2>Manual faults</h2>
+<p class="help">Apply conditions to this session. One-shot injections affect one matching request from any viewer.</p>
+<p id="manual-mode-status" class="status" role="status"></p>
+<div class="actions">
+<button id="use-manual" disabled>Use manual controls</button>
+</div>
+<p id="fault-draft" class="draft-notice" hidden>Unsaved edits. Active effects show the applied settings.</p>
+<div id="conflict-panel" class="draft-notice" hidden>
+<strong>Settings changed in another window.</strong>
+<p>Your draft is preserved. Reload current settings, or explicitly reapply against the latest revision.</p>
+<div class="actions">
+<button id="reload-settings" class="secondary">Reload current settings</button>
+<button id="reapply-settings" class="secondary">Reapply my draft</button>
+</div>
+</div>
+<fieldset id="control-fields" disabled>
+<div class="grid manual-grid" style="margin-top:16px">
+<div class="card">
+<h3 style="margin-top:0">Media faults</h3>
+<label class="field-row">Malformed media<select data-key="segment.malformed">
+<option value="off">Off</option>
+<option value="once">Once</option>
+<option value="random">Random</option>
+<option value="always">Always</option>
+</select>
+</label>
+<label class="field-row">HTTP 403<select data-key="segment.forbidden">
+<option value="off">Off</option>
+<option value="once">Once</option>
+<option value="random">Random</option>
+<option value="always">Always</option>
+</select>
+</label>
+<label class="field-row">HTTP 404<select data-key="segment.missing">
+<option value="off">Off</option>
+<option value="once">Once</option>
+<option value="random">Random</option>
+<option value="always">Always</option>
+</select>
+</label>
+<label class="field-row">Manifest freeze<select data-key="manifest.freeze">
+<option value="off">Off</option>
+<option value="always">Always</option>
+</select>
+</label>
+</div>
+<div class="card">
+<h3 style="margin-top:0">Network conditions</h3>
+<label class="field-row">Response delay (ms)<input type="number" min="0" max="60000" step="any" value="0" data-key="segment.latencyMs" />
+</label>
+<label class="field-row">Bandwidth limit (kbps)<input type="number" min="0" max="1000000" step="1" value="0" data-key="network.bandwidthKbps" />
+</label>
+<label class="field-row">Jitter (ms)<input type="number" min="0" max="60000" step="1" value="0" data-key="network.jitterMs" />
+</label>
+<p class="help small">1,000 ms = 1 second. 1,000 kbps = 1 Mbps. Zero bandwidth means unlimited. The cap is shared across media/init downloads; jitter adds 0–N ms per matching response.</p>
+</div>
+</div>
+<details id="hls-key-controls" hidden>
+<summary>HLS encrypted-key faults</summary>
+<p class="help">Only available when the connected HLS source advertises encrypted keys.</p>
+<label class="field-row">Key HTTP failure<select data-key="drm.licenseFailure">
+<option value="off">Off</option>
+<option value="once">Once</option>
+<option value="random">Random</option>
+<option value="always">Always</option>
+</select>
+</label>
+<label class="field-row">Key response mismatch<select data-key="drm.keyRotationMismatch">
+<option value="off">Off</option>
+<option value="once">Once</option>
+<option value="random">Random</option>
+<option value="always">Always</option>
+</select>
+</label>
+</details>
+<div class="actions">
+<button id="save-config">Apply settings</button>
+<button id="reset-config" class="secondary">Clear faults</button>
+</div>
+<h3>Inject once</h3>
+<div class="quick-grid">
+<button class="warning" data-inject="segment.malformed">Malformed media once</button>
+<button class="warning" data-inject="segment.forbidden">HTTP 403 once</button>
+<button class="warning" data-inject="segment.missing">HTTP 404 once</button>
+</div>
+</fieldset>
+<details>
+<summary>Reuse manual settings</summary>
+<p class="help">Export contains portable fault settings only. Import loads an unsaved draft and never starts a test.</p>
+<div class="actions">
+<button id="export-settings" class="secondary" disabled>Export settings</button>
+<label for="import-settings" class="small">Import settings<input id="import-settings" type="file" accept="application/json,.json">
+</label>
+</div>
+<p id="settings-status" class="status" role="status"></p>
+</details>
+</section>
+<section id="panel-manifest" role="tabpanel" aria-labelledby="tab-manifest" hidden>
+<h2>Baseline manifest preview</h2>
+<p class="help">This is the generated baseline, not an injected fault response. Inspection never consumes faults. The snapshot stays unchanged until you refresh or choose another playlist.</p>
+<div class="actions">
+<button id="refresh-manifest" class="secondary" disabled>Refresh manifest</button>
+<button id="copy-manifest" class="secondary" disabled>Copy original</button>
+<button id="download-manifest" class="secondary" disabled>Download original</button>
+</div>
+<div id="playlist-label" hidden>
+<label for="playlist-select">HLS playlist</label>
+<select id="playlist-select" class="full">
+</select>
+</div>
+<div class="url-row" id="selected-url-row" hidden>
+<label for="selected-url">Displayed manifest URL</label>
+<input id="selected-url" type="text" readonly>
+<div class="actions">
+<button id="copy-selected" class="secondary" disabled>Copy displayed URL</button>
+</div>
+</div>
+<div class="actions">
+<label class="check-label">
+<input id="format-xml" type="checkbox">Readable XML</label>
+<label class="check-label">
+<input id="wrap-manifest" type="checkbox">Wrap long lines</label>
+</div>
+<p id="manifest-status" class="status" role="status">No manifest loaded.</p>
+<pre id="manifest-output" tabindex="0" hidden>
+</pre>
+<p id="export-status" class="status" role="status"></p>
+</section>
+<details id="advanced">
+<summary>Advanced details</summary>
+<dl class="summary">
+<dt>Simulator mode</dt>
+<dd id="stream-mode">—</dd>
+<dt>Session ID</dt>
+<dd id="stream-session">—</dd>
+<dt>Last checked</dt>
+<dd id="stream-checked">—</dd>
+<dt>Run ID</dt>
+<dd id="scenario-run-id">—</dd>
+</dl>
+<p class="help">Commands use environment variables for the token and current session/revision. No credentials are included.</p>
+<pre id="curl-example">
+</pre>
+<details>
+<summary>Raw session status</summary>
+<pre id="raw-state">
+</pre>
+</details>
+<p>
+<a href="?legacy=1">Open legacy shared-file controls</a>
+</p>
+<p class="help small">Legacy file changes can affect every simulator using that file. They are separate from session-scoped controls.</p>
+</details>
+</main>
+<template id="legacy-template">
   <div class="container">
-    <label>Control token (only for protected sessions) <input type="password" id="control-token" autocomplete="off" /></label>
+    <label>Control token (only for protected sessions) <input type="password" id="control-token" autocomplete="off" />
+</label>
     <button id="connect-control">Connect</button>
     <h1>HLS / DASH Fault Control</h1>
-    <p class="status">Active config path: <span id="config-path">loading…</span></p>
+    <p class="status">Active config path: <span id="config-path">loading…</span>
+</p>
     <p class="status" id="action-status" role="status" aria-live="polite">Connecting…</p>
     <section aria-labelledby="stream-heading">
       <h2 id="stream-heading">Connected stream</h2>
@@ -66,15 +365,25 @@
       <p class="status" id="stream-status" role="status" aria-live="polite">No stream connected.</p>
       <div class="card" id="stream-details" hidden>
         <dl class="stream-details">
-          <dt>Protocol</dt><dd id="stream-protocol"></dd>
-          <dt>Mode</dt><dd id="stream-mode"></dd>
-          <dt>Session ID</dt><dd id="stream-session"></dd>
-          <dt>Last checked</dt><dd id="stream-checked"></dd>
+          <dt>Protocol</dt>
+<dd id="stream-protocol">
+</dd>
+          <dt>Mode</dt>
+<dd id="stream-mode">
+</dd>
+          <dt>Session ID</dt>
+<dd id="stream-session">
+</dd>
+          <dt>Last checked</dt>
+<dd id="stream-checked">
+</dd>
         </dl>
         <div class="url-row">
           <label for="playback-url">Playback URL</label>
           <input id="playback-url" type="text" readonly />
-          <div class="actions"><button id="copy-playback" class="secondary" disabled>Copy Playback URL</button></div>
+          <div class="actions">
+<button id="copy-playback" class="secondary" disabled>Copy Playback URL</button>
+</div>
           <p id="playback-copy-status" class="status" role="status" aria-live="polite"></p>
         </div>
       </div>
@@ -86,13 +395,18 @@
       <p id="scenario-status" class="status" role="status" aria-live="polite">Connect a stream started with --scenario-start manual.</p>
       <fieldset id="scenario-fields" disabled>
         <label for="scenario-preset">Scenario preset</label>
-        <select id="scenario-preset" style="width:100%"></select>
+        <select id="scenario-preset" style="width:100%">
+</select>
         <p id="scenario-description" class="help"></p>
         <dl class="stream-details">
-          <dt>Run ID</dt><dd id="scenario-run-id">—</dd>
-          <dt>Phase / outcome</dt><dd id="scenario-phase">—</dd>
-          <dt>Next trigger</dt><dd id="scenario-trigger">—</dd>
-          <dt>Previous runs</dt><dd id="scenario-history">0</dd>
+          <dt>Run ID</dt>
+<dd id="scenario-run-id">—</dd>
+          <dt>Phase / outcome</dt>
+<dd id="scenario-phase">—</dd>
+          <dt>Next trigger</dt>
+<dd id="scenario-trigger">—</dd>
+          <dt>Previous runs</dt>
+<dd id="scenario-history">0</dd>
         </dl>
         <div class="actions">
           <button id="scenario-arm">Arm Preset</button>
@@ -108,11 +422,13 @@
       <h2 id="fault-heading">Active faults</h2>
       <div class="card">
         <p class="help" id="fault-source">Connect to load saved settings.</p>
-        <ul class="fault-list" id="active-faults"></ul>
+        <ul class="fault-list" id="active-faults">
+</ul>
         <div id="stream-fault-panel" hidden>
           <h3>Connected stream snapshot</h3>
           <p class="help" id="stream-fault-source"></p>
-          <ul class="fault-list" id="stream-faults"></ul>
+          <ul class="fault-list" id="stream-faults">
+</ul>
         </div>
         <p class="help" id="fault-draft" hidden>Unsaved edits — the summary shows the last saved settings. Select Save Config to apply them.</p>
         <p class="help">Controls use the config path shown above. Start the simulator with the same fault file. Stream status is a snapshot; refresh after requests to see one-shot consumption. HLS key faults require an encrypted origin.</p>
@@ -248,15 +564,19 @@
       </div>
       <div hidden id="playlist-label">
         <label for="playlist-select">HLS playlist</label>
-        <select id="playlist-select"></select>
+        <select id="playlist-select">
+</select>
       </div>
       <div class="url-row" id="selected-url-row" hidden>
         <label for="selected-url">Displayed manifest URL</label>
         <input id="selected-url" type="text" readonly />
-        <div class="actions"><button id="copy-selected" class="secondary" disabled>Copy Displayed URL</button></div>
+        <div class="actions">
+<button id="copy-selected" class="secondary" disabled>Copy Displayed URL</button>
+</div>
       </div>
       <p class="status" id="manifest-status" role="status" aria-live="polite">Connect to fault control, then load a simulator manifest.</p>
-      <pre id="manifest-output" hidden></pre>
+      <pre id="manifest-output" hidden>
+</pre>
       <p class="status" id="export-status" role="status" aria-live="polite"></p>
     </section>
 
@@ -269,6 +589,9 @@
     </section>
   </div>
 
-  <script src="/control.js" defer></script>
+
+</template>
+<script src="/control.js" defer>
+</script>
 </body>
 </html>

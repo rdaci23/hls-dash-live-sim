@@ -31,6 +31,7 @@ use your existing Chrome installation.
 
 | Command | Coverage | Requirements |
 | --- | --- | --- |
+| `npm run test:ui` | Real legacy and session-scoped HLS/DASH UI journeys, discovery, drafts/conflicts, exports and keyboard/narrow-window checks. | Chrome; Node-only owned fixtures; no device. |
 | `npm run endurance:driver` | Decoded native Chrome startup, CSP origin isolation, main/worker exceptions, console errors and owned-process/protocol cleanup. | Chrome; no Docker; about 30 seconds. |
 | `npm run endurance:smoke` | Ten-minute concurrent HLS/DASH browser plus two HTTP viewers each, drift/RSS/cleanup and complete rotated evidence. | Chrome, no Docker; about ten minutes. |
 | `npm run endurance:release` | Optional four-hour stress test, with the same ownership/evidence gates. | Chrome; explicit opt-in; keep the host awake; duration cannot be shortened. |

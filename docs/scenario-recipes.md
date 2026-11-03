@@ -5,6 +5,13 @@ These examples use generated media and need no private source URL. Complete the
 healthy manual file for each session, and leave manual UI controls off while a
 scenario owns the faults. The clock starts with the simulator, not the player.
 
+These CLI commands start automatically, preserving the original recipe behavior.
+For interactive UI timing, start with a simulator control token and **no automatic
+scenario definition**, connect its URL, then use **Prepare test → Start test**.
+The tokenless case remains available for playback/inspection. Automatic startup
+definitions appear externally managed in the UI; they are never silently taken
+over. [Session-scoped workflow](session-controls.md), [three-minute demo](demo.md).
+
 | Recipe | What it establishes | What it does not establish |
 | --- | --- | --- |
 | One missing video segment | An injected 404 and successful same-download retry. | Recovery in an arbitrary player. |

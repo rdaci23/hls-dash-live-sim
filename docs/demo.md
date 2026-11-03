@@ -1,46 +1,47 @@
 # A three-minute local demonstration
 
-Start with the [setup guide](getting-started.md): one healthy HLS server and its
-control UI using the same `output/demo-faults.json` file. This demonstration needs
-Node and a browser; no Docker, private media, credentials or physical device.
+Follow the [setup guide](getting-started.md): start healthy HLS with a simulator
+control token, then open the control UI in a second terminal. This demonstration
+uses generated local media, Node and a browser; no external account or device.
 
-1. Open the control UI, paste the printed HLS URL and select **Load Manifest**.
-   The connected-stream card shows protocol, mode, session and a playback URL.
-   Select the low HLS child playlist under **Generated manifest**. Refresh it;
-   the live sequence advances as media is published. This is a baseline preview: it
-   leaves armed faults untouched and bypasses local freeze/cache behavior.
-2. Select **Copy Playback URL** for your player. **Copy Manifest** or
-   **Download Manifest** exports the currently displayed text. A downloaded
-   playlist still needs the original server as its base for relative media URLs.
-3. Select **Inject 404 Segment**. The saved fault is armed for one media GET.
-   If you do not have a player connected, exercise that request from another
-   terminal in the checkout:
+1. Paste the printed HLS URL and select **Connect stream**. Under **Control
+   access**, paste that simulator's token and select **Unlock controls**. Copy the
+   playback URL into your own player. Connection and inspection do not take control
+   or consume faults.
+2. In **Scenarios**, search for “404”, choose **One video 404 and retry**, then
+   **Prepare test**. Review the prepared target and **Start test** when ready.
+   With no competing media viewer, exercise the request from another terminal:
 
    ```sh
    node examples/request-segment.cjs http://127.0.0.1:8899/proxy.m3u8
    ```
 
-   It fetches the generated playlist and makes two requests for the same segment.
-   With no other media clients consuming the one-shot, expect status 404 followed
-   by 200 with nonempty media. It prints request/fault IDs for correlation.
-4. Select **Refresh Stream Status**. The runtime one-shot shows consumed. The
-   saved configuration still says `once`; that is arm mode, not a pending count.
-   Reading status or using the manifest viewer leaves faults untouched. A real
-   playback URL still exercises the configured scenario.
-5. Set bandwidth to 450 kbps and jitter to 150 ms, then select **Apply Network
-   Conditions**. Run the helper again or watch your own player. Select **Clear
-   Network Conditions**, then **Reset (all off)** to restore the baseline.
+   The helper fetches the playlist and downloads the same segment twice. Expect
+   404 then 200 with nonempty media. The scenario result updates automatically;
+   inspect matched attempts and request/fault IDs under Advanced or download test
+   evidence. **Stop test** retains the result and leaves publication/UTC running.
+3. Open **Manifest**. HLS choices use advertised resolution/language labels.
+   Refresh the baseline preview to see a new live sequence. **Copy original** or
+   **Download original** exports the selected snapshot without another request.
+   Previews bypass injected faults and never seed freeze/cache prerequisites.
+   Relative media URLs still require the original simulator URL as their base.
+4. Open **Manual faults**, explicitly select **Use manual controls**, set bandwidth
+   to 450 kbps and jitter to 150 ms, then **Apply settings**. Run the helper again
+   or observe your player. **Clear faults** restores this session's all-off settings.
+   These writes never edit another stream or the legacy shared file.
+5. Under **Reuse manual settings**, export the settings or import the
+   [constrained-network example](../examples/session-settings/constrained-network.json).
+   Import only prepares a draft; **Apply settings** is always explicit. If another
+   window changes the session, reload or explicitly reapply your preserved draft.
 
-The helper demonstrates actual HTTP fault delivery and retry; it does not render
-video and cannot prove player recovery. The separate `npm run browser:verify`
-checks rendered playback in Chrome. An already-buffered player may show no stall
-from one missing segment; that is not evidence that the fault was absent.
+The helper proves HTTP delivery and retry, not rendered recovery. A player may
+already have buffered enough video to avoid a visible stall. The simulator's
+evidence and player recovery must be assessed separately.
 
-![Connected stream and copyable playback URL](images/control-demo.png)
+![Connected stream and session-scoped controls](images/control-demo.png)
 
-![Generated HLS baseline preview and export controls](images/manifest-demo.png)
+![HLS baseline preview and original-text export](images/manifest-demo.png)
 
-Screenshots were captured from the real control page using a temporary healthy
-sample session. Ports, session IDs and temporary paths vary per run.
-
-For a deterministic test, move on to the [three scenario recipes](scenario-recipes.md).
+Screenshots show temporary local sample sessions; URLs and IDs vary. For timed
+tests and automatic CLI definitions, continue with the
+[three scenario recipes](scenario-recipes.md). [Control API and boundaries](session-controls.md).

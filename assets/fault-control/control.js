@@ -1,486 +1,361 @@
 (() => {
   'use strict';
-  // Keep the browser's fetch intact. A global function named fetch replaces it
-  // before script execution, making a captured wrapper recursively call itself.
-  const nativeFetch = window.fetch.bind(window);
   const $ = id => document.getElementById(id);
-  const fields = [...document.querySelectorAll('[data-key]')];
-  let manifestHosts = new Set();
-  let connected = false;
-  let busy = false;
-  let savedConfig;
-  let streamSnapshot;
-  let manifestSnapshot;
-  let scenarioSnapshot;
-  let scenarioCatalog = [];
-  let scenarioBusy = false;
-
-
-  function status(message, error = false) {
-    $('action-status').textContent = message;
-    $('action-status').style.color = error ? '#dc2626' : '#475569';
+  if (new URLSearchParams(location.search).get('legacy') === '1') {
+    const legacy = $('legacy-template').content.cloneNode(true);
+    const banner = document.createElement('div'); banner.className = 'legacy-banner';
+    const text = document.createElement('p'); text.textContent = 'Legacy shared-file controls. Changes affect every simulator using the selected file; connecting a manifest does not retarget writes.';
+    const link = document.createElement('a'); link.href = location.pathname; link.textContent = 'Return to session-scoped testing';
+    banner.append(text, link); document.body.replaceChildren(banner, legacy); document.body.classList.add('legacy-view');
+    const script = document.createElement('script'); script.src = '/legacy-control.js'; document.body.append(script); return;
   }
-  function enableControls() {
-    $('control-fields').disabled = !connected || busy;
-    $('manifest-fields').disabled = !connected;
-    $('connect-control').disabled = busy;
-    $('control-token').disabled = busy;
-    $('refresh-controls').disabled = !connected || busy;
-    $('refresh-stream').disabled = !connected || !rootUrl || !!pending;
-    $('copy-playback').disabled = !connected || !streamSnapshot;
-    for (const id of ['copy-manifest', 'download-manifest', 'copy-selected']) $(id).disabled = !connected || !manifestSnapshot || !!pending;
-    $('refresh-manifest').disabled = !connected || !currentUrl || !!pending;
-    $('playlist-select').disabled = !connected || !!pending;
-    enableScenarios();
-  }
-  async function apiRequest(url, body) {
-    const token = $('control-token').value;
-    const response = await nativeFetch(url, {
-      method: body === undefined ? 'GET' : 'POST',
-      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10000),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      if (response.status === 401) { connected = false; enableControls(); }
-      throw new Error(data.error || 'Control request failed (' + response.status + ')');
+  const fetchNative = window.fetch.bind(window), fields = [...document.querySelectorAll('[data-key]')];
+  const defaultSettings = () => ({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } });
+  const state = { generation: 0, url: null, sessionId: null, protocol: null, health: null, control: null, token: '', manifest: null, playlists: new Map(), labels: new Map(), presets: [], op: null, timer: null, backoff: 2000, stale: false, dirty: false, draftRevision: null, draftSession: null, conflict: false, catalogSignature: null, editing: false, accessPrompted: false, credentialGeneration: 0, trackCounts: Object.create(null), discoveryWarning: '' };
+  let hosts = new Set(['localhost', '127.0.0.1', '[::1]', location.hostname]);
+  const message = (id, text, error = false) => { $(id).textContent = text; $(id).classList.toggle('error', error); };
+  const clone = x => JSON.parse(JSON.stringify(x));
+  let importSequence = 0;
+  const run = () => state.control?.scenarioRun;
+  const writable = () => !!(state.url && !state.stale && state.control?.available && state.control?.authenticated);
+  const busy = () => !!state.op;
+  const isManual = () => state.control?.controlled && state.control.mode === 'manual';
+  const settingsKey = (settings, group, key) => settings?.[group]?.[key] ?? defaultSettings()[group][key];
+  function setFields(settings) { for (const field of fields) { const [group, key] = field.dataset.key.split('.'); field.value = settingsKey(settings, group, key); } }
+  function validateSettings(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Settings must be an object.');
+    const allowed = { segment: ['malformed', 'forbidden', 'missing', 'latencyMs'], network: ['bandwidthKbps', 'jitterMs'], manifest: ['freeze'], drm: ['licenseFailure', 'keyRotationMismatch'] };
+    const result = defaultSettings();
+    for (const [group, entries] of Object.entries(value)) {
+      if (!Object.hasOwn(allowed, group) || !entries || typeof entries !== 'object' || Array.isArray(entries)) throw Error('Unsupported settings group: ' + group);
+      for (const [key, entry] of Object.entries(entries)) {
+        if (!allowed[group].includes(key)) throw Error('Unsupported setting: ' + group + '.' + key);
+        if (key === 'latencyMs' || key === 'bandwidthKbps' || key === 'jitterMs') {
+          const max = key === 'bandwidthKbps' ? 1000000 : 60000;
+          if (typeof entry !== 'number' || !Number.isFinite(entry) || entry < 0 || entry > max || (key !== 'latencyMs' && !Number.isInteger(entry))) throw Error(key + ' must be ' + (key === 'latencyMs' ? 'a number' : 'a whole number') + ' between 0 and ' + max.toLocaleString() + '.');
+        } else if (!(key === 'freeze' ? ['off', 'always'] : ['off', 'once', 'random', 'always']).includes(entry)) throw Error('Unsupported value for ' + group + '.' + key);
+        result[group][key] = entry;
+      }
     }
-    return data;
-  }
-  function numeric(field) {
-    const value = Number(field.value);
-    if (!field.value.trim() || !Number.isFinite(value) || value < Number(field.min) || value > Number(field.max) || (field.step !== 'any' && !Number.isInteger(value))) {
-      if (field.dataset.key === 'segment.latencyMs') throw new Error('Enter a latency between 0 and 60,000 ms.');
-      throw new Error((field.dataset.key === 'network.bandwidthKbps' ? 'Bandwidth' : 'Jitter') + ' must be a whole number from 0 to ' + Number(field.max).toLocaleString() + '.');
-    }
-    return value;
-  }
-  function latency() { return numeric(document.querySelector('[data-key="segment.latencyMs"]')); }
-  function networkConfig() {
-    return { bandwidthKbps: numeric(document.querySelector('[data-key="network.bandwidthKbps"]')), jitterMs: numeric(document.querySelector('[data-key="network.jitterMs"]')) };
-  }
-  function collectConfig() {
-    const result = {};
-    for (const field of fields) {
-      const [group, key] = field.dataset.key.split('.');
-      (result[group] ||= {})[key] = field.type === 'number' ? numeric(field) : field.value;
-    }
+    if (state.url && !state.control?.capabilities?.hlsKeys && Object.values(result.drm).some(v => v !== 'off')) throw Error('Key faults are unavailable for this stream. Import compatible settings instead.');
     return result;
   }
-  const shellQuote = text => "'" + text.replace(/'/g, "'\\''") + "'";
-  function updateCurl() {
-    try {
-      $('curl-example').textContent = 'curl -X POST ' + shellQuote(location.origin + '/config') +
-        ' -H "Content-Type: application/json"' +
-        ($('control-token').value ? ' -H "Authorization: Bearer $HLS_DASH_CONTROL_TOKEN"' : '') +
-        ' --data ' + shellQuote(JSON.stringify(collectConfig()));
-    } catch { $('curl-example').textContent = 'Enter valid numeric settings to generate this command.'; }
+  function collect() {
+    const value = defaultSettings();
+    for (const field of fields) { const [group, key] = field.dataset.key.split('.'); if (field.type === 'number' && !field.value.trim()) throw Error('Enter a value for ' + field.closest('label').textContent.trim() + '.'); value[group][key] = field.type === 'number' ? Number(field.value) : field.value; }
+    return validateSettings(value);
   }
-  async function fetchConfig() {
-    const data = await apiRequest('/config');
-    if (!data.config || !Array.isArray(data.manifestHosts)) throw new Error('Invalid control configuration response.');
-    $('config-path').textContent = data.path;
-    for (const field of fields) {
-      const [group, key] = field.dataset.key.split('.');
-      field.value = data.config[group]?.[key] ?? (field.type === 'number' ? 0 : 'off');
-    }
-    $('profile-input').value = data.config.profile || '';
-    manifestHosts = new Set(data.manifestHosts);
-    savedConfig = data.config;
-    $('fault-source').textContent = 'Saved control settings · refreshed ' + new Date().toLocaleTimeString();
-    renderSavedFaults();
-    $('fault-draft').hidden = true;
-    connected = true;
-    enableControls();
-    updateCurl();
-  }
-  async function run(action) {
-    if (busy) return;
-    busy = true;
-    enableControls();
-    try { await action(); }
-    catch (error) { status(error.message || 'Control request failed', true); }
-    finally { busy = false; enableControls(); }
-  }
-  async function connect() {
-    connected = false;
-    disconnectStream();
-    enableControls();
-    status('Connecting…');
-    try { await fetchConfig(); status('Connected — fault controls are ready.'); }
-    catch (error) { $('config-path').textContent = 'unavailable'; throw error; }
-  }
-  $('connect-control').addEventListener('click', () => run(connect));
-  $('control-token').addEventListener('input', () => {
-    connected = false;
-    disconnectStream();
-    enableControls();
-    status('Token changed. Select Connect to authenticate.');
-    updateCurl();
-  });
-  fields.forEach(field => field.addEventListener('input', () => {
-    updateCurl();
-    try { $('fault-draft').hidden = JSON.stringify(collectConfig()) === JSON.stringify(savedFields()); }
-    catch { $('fault-draft').hidden = false; }
-  }));
-  $('refresh-controls').addEventListener('click', () => run(async () => {
-    await fetchConfig(); status('Saved settings refreshed');
-  }));
-  function savedFields() {
-    const result = {};
-    for (const field of fields) {
-      const [group, key] = field.dataset.key.split('.');
-      (result[group] ||= {})[key] = savedConfig?.[group]?.[key] ?? (field.type === 'number' ? 0 : 'off');
-    }
-    return result;
-  }
-  const faultNames = {
-    'segment.malformed': 'Malformed media', 'segment.forbidden': 'Media HTTP 403',
-    'segment.missing': 'Media HTTP 404', 'hls.keyFailure': 'HLS key HTTP failure',
-    'hls.keyMismatch': 'HLS key mismatch',
-  };
-  function listItems(id, lines) {
-    $(id).replaceChildren(...lines.map(text => { const item = document.createElement('li'); item.textContent = text; return item; }));
-  }
-  function renderSavedFaults() {
-    const cfg = savedConfig;
-    const rules = [
-      ['segment.malformed', cfg.segment?.malformed], ['segment.forbidden', cfg.segment?.forbidden],
-      ['segment.missing', cfg.segment?.missing], ['hls.keyFailure', cfg.drm?.licenseFailure],
-      ['hls.keyMismatch', cfg.drm?.keyRotationMismatch],
-    ];
-    const lines = rules.filter(([, mode]) => mode && mode !== 'off').map(([key, mode]) =>
-      faultNames[key] + ' — ' + (mode === 'once' ? 'once configured; check stream consumption below' : mode === 'random' ? 'random (40% per matching request)' : 'always'));
-    if (cfg.segment?.latencyMs) lines.push('Response latency — ' + cfg.segment.latencyMs + ' ms');
-    if (cfg.network?.bandwidthKbps) lines.push('Shared media bandwidth — ' + cfg.network.bandwidthKbps + ' kbps');
-    if (cfg.network?.jitterMs) lines.push('Additional jitter — 0–' + cfg.network.jitterMs + ' ms');
-    if (cfg.manifest?.freeze === 'always') lines.push('Manifest freeze — enabled');
-    listItems('active-faults', lines.length ? lines : ['No manual faults enabled in saved controls.']);
-  }
-
-  $('apply-network').addEventListener('click', () => run(async () => {
-    await apiRequest('/config', { network: networkConfig() });
-    await fetchConfig(); status('Network conditions applied');
-  }));
-  $('clear-network').addEventListener('click', () => run(async () => {
-    await apiRequest('/config', { network: { bandwidthKbps: 0, jitterMs: 0 } });
-    await fetchConfig(); status('Network conditions cleared');
-  }));
-  $('save-config').addEventListener('click', () => run(async () => {
-    await apiRequest('/config', collectConfig());
-    await fetchConfig(); status('Configuration saved');
-  }));
-  $('reset-config').addEventListener('click', () => run(async () => {
-    await apiRequest('/reset', {});
-    await fetchConfig(); status('Configuration reset');
-  }));
-  $('apply-profile').addEventListener('click', () => run(async () => {
-    const profile = $('profile-input').value.trim();
-    if (!profile) throw new Error('Enter a session label.');
-    await apiRequest('/profile', { profile });
-    await fetchConfig(); status('Session label applied');
-  }));
-  document.querySelectorAll('[data-inject]').forEach(button => button.addEventListener('click', () => run(async () => {
-    const type = button.dataset.inject;
-    const data = await apiRequest('/inject', { type, ...(type === 'segment.latencySpike' ? { value: latency() } : {}) });
-    await fetchConfig();
-    status(data.message + (data.faultId ? ' — Fault ID: ' + data.faultId : ''));
-  })));
-
-  let rootUrl;
-  let currentUrl;
-  let sessionId;
-  let protocol;
-  let pending;
-  let generation = 0;
-  function clearManifest() {
-    manifestSnapshot = undefined;
-    $('manifest-output').hidden = true;
-    $('manifest-output').textContent = '';
-    $('selected-url-row').hidden = true;
-    $('export-status').textContent = '';
-  }
-  function disconnectStream() {
-    pending?.abort(); pending = undefined; generation++;
-    rootUrl = undefined; currentUrl = undefined; sessionId = undefined;
-    streamSnapshot = undefined;
-    scenarioSnapshot = undefined; scenarioCatalog = [];
-    $('scenario-status').textContent = 'Connect a stream started with --scenario-start manual.';
-    clearManifest();
-    $('stream-details').hidden = true;
-    $('stream-fault-panel').hidden = true;
-    $('playlist-label').hidden = true;
-    $('stream-status').textContent = 'No stream connected.';
-    manifestStatus('No manifest loaded. Load a simulator URL to inspect it.');
-    $('playback-copy-status').textContent = '';
-    enableControls();
-  }
-  function showStream(health, id, url) {
-    streamSnapshot = { health, id, url: new URL(url), checked: new Date() };
-    $('stream-details').hidden = false;
-    $('stream-protocol').textContent = health.protocol.toUpperCase();
-    $('stream-mode').textContent = health.mode || 'DASH engine';
-    $('stream-session').textContent = id;
-    $('stream-checked').textContent = streamSnapshot.checked.toLocaleString();
-    $('playback-url').value = url.href;
-    $('stream-status').textContent = 'Connected — simulator ready. Playback must be checked in your player.';
-    $('stream-fault-panel').hidden = false;
-    $('stream-fault-source').textContent = 'Observed from the simulator at ' + streamSnapshot.checked.toLocaleTimeString() + '. Refresh to update; saved controls and stream may use different fault files.';
-    const faults = health.faults;
-    const lines = [];
-    if (health.scenario) lines.push('Scenario mode — ' + health.scenario + '. Manual controls do not govern this session.');
-    else if (!faults || !Array.isArray(faults.rules)) lines.push('Runtime fault status unavailable. Restart the simulator with the current build.');
-    else {
-      for (const rule of faults.rules) lines.push((faultNames[rule.fault] || rule.fault) + ' — ' + rule.mode + ' · ' + rule.state);
-      if (faults.latencyMs) lines.push('Response latency — ' + faults.latencyMs + ' ms');
-      if (faults.bandwidthKbps) lines.push('Shared media bandwidth — ' + faults.bandwidthKbps + ' kbps');
-      if (faults.jitterMs) lines.push('Additional jitter — 0–' + faults.jitterMs + ' ms');
-      if (faults.manifestFreeze) lines.push('Manifest freeze — enabled');
-      if (!lines.length) lines.push('No manual faults enabled in this simulator.');
-    }
-    listItems('stream-faults', lines);
-    scenarioSnapshot = health.scenarioRun;
-    renderScenario();
-    if (scenarioSnapshot && !scenarioCatalog.length) refreshScenario().catch(error => { $('scenario-status').textContent = error.message; });
-  }
-  function enableScenarios() {
-    const enabled = connected && streamSnapshot && scenarioSnapshot && !pending && !scenarioBusy;
-    $('scenario-fields').disabled = !enabled;
-    const armed = scenarioSnapshot?.state === 'armed';
-    $('scenario-arm').disabled = !enabled || !['idle', 'armed'].includes(scenarioSnapshot?.state) || !scenarioCatalog.find(p => p.id === $('scenario-preset').value)?.enabled;
-    $('scenario-start').disabled = !enabled || !armed || !scenarioCatalog.find(p => p.id === scenarioSnapshot?.presetId)?.enabled;
-  }
-  function renderScenario() {
-    const run = scenarioSnapshot;
-    $('scenario-status').textContent = !run ? 'Manual runs unavailable. Restart this simulator with --scenario-start manual and a control token.' : 'Run ' + run.state + '. Refresh to observe progress; reads never consume faults.';
-    $('scenario-run-id').textContent = run?.runId || '—';
-    const timeline = run?.scenario?.timeline;
-    $('scenario-phase').textContent = run ? run.state + (timeline ? ' · ' + JSON.stringify(timeline.map(p => ({ id: p.phaseId, result: p.result }))) : '') : '—';
-    $('scenario-trigger').textContent = run?.scenario ? JSON.stringify(run.nextTrigger) : run ? 'Arm, then Start; elapsed time begins at Start.' : '—';
-    $('scenario-history').textContent = String(run?.previousRuns?.length || 0) + (run?.droppedPreviousRuns ? ' · ' + run.droppedPreviousRuns + ' older results dropped' : '');
-    const preset = scenarioCatalog.find(p => p.id === $('scenario-preset').value);
-    $('scenario-description').textContent = preset ? (preset.enabled ? (preset.protocols || []).join(' / ').toUpperCase() + ' · ' + preset.requires + '. ' + preset.expectedEffect + '. Targets: ' + JSON.stringify(preset.targets) : preset.reason) : '';
-    enableScenarios();
-  }
-  async function scenarioRequest(path, body) {
-    const target = streamSnapshot;
-    if (!connected || !target || !scenarioSnapshot) throw new Error('Connect a manual-start stream first.');
-    const requestGeneration = generation;
-    const response = await nativeFetch(new URL('/scenario/' + path, target.url), {
-      method: body === undefined ? 'GET' : 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15000),
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json', Authorization: 'Bearer ' + $('control-token').value, 'X-Sim-Session-Id': target.id },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    const data = JSON.parse(await readText(response));
-    if (requestGeneration !== generation || target !== streamSnapshot) throw new Error('Stream changed while controlling the run. Refresh the connected stream.');
-    if (response.headers.get('X-Sim-Session-Id') !== target.id) { disconnectStream(); throw new Error('Simulator session changed. Reconnect its manifest.'); }
-    if (!response.ok) throw new Error(data.error || 'Scenario request failed (' + response.status + ')');
-    return data;
-  }
-  async function refreshScenario() {
-    if (scenarioBusy || !scenarioSnapshot) return;
-    scenarioBusy = true; enableScenarios();
-    try {
-      const data = await scenarioRequest('catalog');
-      scenarioSnapshot = data;
-      const selected = $('scenario-preset').value;
-      scenarioCatalog = data.presets;
-      $('scenario-preset').replaceChildren(...scenarioCatalog.map(preset => {
-        const option = document.createElement('option'); option.value = preset.id;
-        option.textContent = preset.name + (preset.enabled ? '' : ' (unavailable)');
-        return option;
-      }));
-      $('scenario-preset').value = selected && scenarioCatalog.some(p => p.id === selected) ? selected : data.presetId || scenarioCatalog[0]?.id || '';
-      renderScenario();
-    } finally { scenarioBusy = false; enableScenarios(); }
-  }
-  async function scenarioAction(name) {
-    if (scenarioBusy || !scenarioSnapshot) return;
-    scenarioBusy = true; enableScenarios();
-    try {
-      scenarioSnapshot = await scenarioRequest(name, { runId: scenarioSnapshot.runId, ...(name === 'arm' ? { presetId: $('scenario-preset').value } : {}) });
-      renderScenario();
-    } catch (error) { $('scenario-status').textContent = error.message + ' Refresh Run before retrying.'; }
-    finally { scenarioBusy = false; enableScenarios(); }
-  }
-  $('scenario-preset').addEventListener('change', renderScenario);
-  for (const name of ['arm', 'start', 'reset']) $('scenario-' + name).addEventListener('click', () => scenarioAction(name));
-  $('scenario-refresh').addEventListener('click', () => refreshScenario().catch(error => { $('scenario-status').textContent = error.message; }));
-  $('scenario-export').addEventListener('click', async () => {
-    if (scenarioBusy) return;
-    scenarioBusy = true; enableScenarios();
-    try {
-      const data = await scenarioRequest('evidence');
-      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'scenario-evidence.json'; anchor.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      $('scenario-status').textContent = 'Run evidence download requested. Simulator delivery and player recovery are separate results.';
-    } catch (error) { $('scenario-status').textContent = error.message; }
-    finally { scenarioBusy = false; enableScenarios(); }
-  });
-  async function healthAt(target, signal, reset) {
-    const response = await simulatorRequest(new URL('/health', target), signal);
-    const health = JSON.parse(await readText(response));
-    const id = response.headers.get('X-Sim-Session-Id');
-    if (health.status !== 'ready' || !['hls', 'dash'].includes(health.protocol) || !/^[0-9a-f-]{36}$/i.test(id || '')) throw new Error('This URL is not a ready simulator with the default fault proxy.');
-    if (!reset && sessionId !== id) {
-      throw Object.assign(new Error('The simulator session changed. Load its manifest URL again.'), { sessionChanged: true });
-    }
-    return { health, id };
-  }
-  async function refreshStream() {
-    if (!connected || !rootUrl || pending) return;
-    const request = generation;
-    $('refresh-stream').disabled = true;
-    $('stream-status').textContent = 'Refreshing stream status…';
-    try {
-      const { health, id } = await healthAt(rootUrl, AbortSignal.timeout(10000), false);
-      if (request !== generation) return;
-      showStream(health, id, rootUrl);
-    } catch (error) {
-      if (request !== generation) return;
-      if (error.sessionChanged) disconnectStream();
-      streamSnapshot = undefined;
-      clearManifest();
-      $('stream-status').textContent = error.message + ' Select Load Manifest to reconnect.';
-      $('stream-fault-panel').hidden = true;
-      $('stream-details').hidden = true;
-    } finally { enableControls(); }
-  }
-  $('refresh-stream').addEventListener('click', refreshStream);
-  $('manifest-url').addEventListener('input', disconnectStream);
-  async function copy(value, label, destination = 'export-status') {
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error();
-      await navigator.clipboard.writeText(value);
-      $(destination).textContent = label + ' copied.';
-    } catch { $(destination).textContent = 'Clipboard unavailable or permission denied. Select the URL or displayed manifest and copy manually.'; }
-  }
-  $('copy-playback').addEventListener('click', () => { if (connected && streamSnapshot) copy(streamSnapshot.url.href, 'Playback URL', 'playback-copy-status'); });
-  $('copy-selected').addEventListener('click', () => { if (connected && manifestSnapshot) copy(manifestSnapshot.url, 'Displayed manifest URL'); });
-  $('copy-manifest').addEventListener('click', () => { if (connected && manifestSnapshot) copy(manifestSnapshot.text, 'Manifest snapshot'); });
-  $('download-manifest').addEventListener('click', () => {
-    if (!connected || !manifestSnapshot || pending) return;
-    const snapshot = manifestSnapshot;
-    const hls = snapshot.protocol === 'hls';
-    const blob = new Blob([snapshot.text], { type: (hls ? 'application/vnd.apple.mpegurl' : 'application/dash+xml') + ';charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = hls ? (snapshot.text.includes('#EXT-X-STREAM-INF:') ? 'hls-master.m3u8' : 'hls-playlist.m3u8') : 'dash-manifest.mpd';
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    $('export-status').textContent = 'Manifest snapshot download requested. This is raw text; relative URLs need the original simulator URL as their base.';
-  });
-
-  const playlists = new Map();
-  function manifestStatus(message, error = false) {
-    $('manifest-status').textContent = message;
-    $('manifest-status').style.color = error ? '#dc2626' : '#475569';
+  function markDraft() {
+    if (!state.dirty) { state.draftRevision = state.control?.revision; state.draftSession = state.sessionId; }
+    try { state.dirty = JSON.stringify(collect()) !== JSON.stringify(state.control?.settings ? validateSettings(state.control.settings) : defaultSettings()); }
+    catch { state.dirty = true; }
+    render();
   }
   function localUrl(value) {
     const url = new URL(value);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash || !manifestHosts.has(url.hostname)) {
-      throw new Error('Use an HTTP(S) simulator URL on this computer, without credentials or a fragment.');
-    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash || !hosts.has(url.hostname)) throw Error('Use an HTTP(S) simulator URL on this computer, without credentials or a fragment.');
     return url;
   }
-  async function readText(response) {
-    const limit = 4 * 1024 * 1024;
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let bytes = 0, text = '';
-    try {
-      while (true) {
-        const part = await reader.read();
-        if (part.done) break;
-        bytes += part.value.byteLength;
-        if (bytes > limit) throw new Error('Manifest response exceeds the 4 MiB viewer limit.');
-        text += decoder.decode(part.value, { stream: true });
+  async function readText(response, limit = 4 * 1024 * 1024) {
+    const reader = response.body?.getReader(); if (!reader) return '';
+    const decoder = new TextDecoder(); let bytes = 0, text = '';
+    try { for (;;) { const part = await reader.read(); if (part.done) break; bytes += part.value.byteLength; if (bytes > limit) throw Error('Response exceeds the ' + Math.round(limit / 1024 / 1024) + ' MiB viewer limit.'); text += decoder.decode(part.value, { stream: true }); } return text + decoder.decode(); }
+    finally { await reader.cancel().catch(() => {}); }
+  }
+  async function request(url, { method = 'GET', body, token = '', signal, expected, preview = false, maxBytes } = {}) {
+    const requestGeneration = state.generation;
+    const response = await fetchNative(url, { method, credentials: 'omit', redirect: 'error', cache: 'no-store', signal,
+      headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(method === 'POST' && expected ? { 'X-Sim-Session-Id': expected } : {}), ...(preview ? { 'X-Sim-Manifest-Preview': 'baseline-v1' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    if (expected && response.headers.get('X-Sim-Session-Id') !== expected) throw Object.assign(Error('Simulator session changed. Reconnect its manifest URL; no settings will be replayed.'), { sessionChanged: true });
+    const text = await readText(response, maxBytes);
+    if (requestGeneration !== state.generation) throw new DOMException('Connection changed', 'AbortError');
+    if (!response.ok) { let detail; try { const parsed = JSON.parse(text); if (typeof parsed.error === 'string') detail = parsed.error; } catch {}
+      let safe = (detail || text).replace(/[\u0000-\u001f\u007f]/g, ' ').trim(); if (token) safe = safe.split(token).join('[redacted]'); safe = safe.replace(/Bearer\s+[^\s]+/gi, 'Bearer [redacted]').slice(0, 512);
+      throw Object.assign(Error(safe || 'Simulator returned HTTP ' + response.status + '.'), { status: response.status }); }
+    if (preview && response.headers.get('X-Sim-Manifest-Preview') !== 'baseline-v1') throw Error('The simulator did not acknowledge an inert manifest preview.');
+    return { response, text };
+  }
+  async function health(signal, url = state.url, expected = state.sessionId) {
+    const { response, text } = await request(new URL('/health', url), { signal, expected });
+    const data = JSON.parse(text), id = response.headers.get('X-Sim-Session-Id');
+    if (data.status !== 'ready' || !['hls', 'dash'].includes(data.protocol) || !/^[0-9a-f-]{36}$/i.test(id || '')) throw Error('This URL is not a ready HLS/DASH simulator.');
+    return { data, id };
+  }
+  async function sessionRead(path, signal) {
+    const credentials = state.credentialGeneration;
+    const { text } = await request(new URL('/session-control' + path, state.url), { signal, token: state.token, expected: state.sessionId });
+    if (credentials !== state.credentialGeneration) throw Object.assign(Error('Control token changed. Unlock controls again.'), { credentialsChanged: true });
+    const data = JSON.parse(text);
+    if (data.sessionId !== state.sessionId) throw Object.assign(Error('Simulator session changed. Reconnect before controlling it.'), { sessionChanged: true });
+    return data;
+  }
+  async function mutate(action, body = {}) {
+    if (!writable()) throw Error('Unlock this simulator’s controls before changing a test.');
+    const credentials = state.credentialGeneration;
+    const { text } = await request(new URL('/session-control/' + action, state.url), { method: 'POST', token: state.token, expected: state.sessionId, signal: state.op.controller.signal, body: { revision: state.control.revision, ...body } });
+    if (credentials !== state.credentialGeneration) throw Object.assign(Error('Control token changed. Refresh status before retrying; no action will be replayed.'), { credentialsChanged: true });
+    const data = JSON.parse(text); acceptControl(data, true, !['apply', 'clear'].includes(action)); return data;
+  }
+  function acceptControl(data, own = false, keepDraft = false) {
+    if (data.sessionId !== state.sessionId || !Number.isInteger(data.revision)) throw Error('Invalid session-control response.');
+    const previousSettings = state.control?.settings;
+    const sameSessionDraft = state.dirty && state.draftSession === state.sessionId;
+    const blockedDraft = state.dirty && (state.conflict || !sameSessionDraft);
+    const editedFields = own && keepDraft && sameSessionDraft && !blockedDraft ? new Set(fields.filter(field => { const [group, key] = field.dataset.key.split('.'); return String(field.value) !== String(settingsKey(previousSettings, group, key)); })) : null;
+    state.control = data;
+    if (Array.isArray(data.presets)) state.presets = data.presets;
+    if (own && !keepDraft) { state.dirty = false; state.conflict = false; }
+    if (own && keepDraft && !blockedDraft) {
+      if (editedFields) {
+        for (const field of fields) if (!editedFields.has(field)) { const [group, key] = field.dataset.key.split('.'); field.value = settingsKey(data.settings, group, key); }
+        try { state.dirty = JSON.stringify(collect()) !== JSON.stringify(validateSettings(data.settings)); } catch { state.dirty = true; }
       }
-      return text + decoder.decode();
-    } finally { await reader.cancel().catch(() => {}); }
-  }
-  async function simulatorRequest(url, signal, preview = false) {
-    // This request intentionally has no control Authorization header or cookies.
-    const response = await nativeFetch(url, { credentials: 'omit', redirect: 'error', cache: 'no-store', signal, ...(preview ? {headers:{'X-Sim-Manifest-Preview':'baseline-v1'}} : {}) });
-    if (!response.ok) throw new Error('Simulator returned HTTP ' + response.status + (preview ? '. Check the source; preview bypasses faults on this simulator.' : '. Check the URL and active faults.'));
-    return response;
-  }
-  function addChildren(text, base) {
-    let variant = false;
-    for (const raw of text.split(/\r?\n/)) {
-      const line = raw.trim();
-      let uri;
-      if (line.startsWith('#EXT-X-STREAM-INF:')) { variant = true; continue; }
-      if (/^#EXT-X-(MEDIA|I-FRAME-STREAM-INF):/.test(line)) uri = /(?:^|,)URI="([^"]+)"/.exec(line.slice(line.indexOf(':') + 1))?.[1];
-      else if (line && !line.startsWith('#')) { if (variant) uri = line; variant = false; }
-      if (!uri) continue;
-      try {
-        const child = localUrl(new URL(uri, base).href);
-        if (child.origin !== rootUrl.origin) continue;
-        playlists.set(child.href, child.pathname + child.search);
-      } catch { /* External playlists are outside this local viewer's scope. */ }
+      state.draftRevision = data.revision; state.draftSession = state.sessionId; state.conflict = false;
     }
-    $('playlist-select').replaceChildren(...[...playlists].map(([value, label]) => {
-      const option = document.createElement('option'); option.value = value; option.textContent = label; return option;
-    }));
-    $('playlist-select').value = currentUrl.href;
-    $('playlist-label').hidden = playlists.size < 2;
+    if (!state.dirty) { setFields(data.settings || defaultSettings()); state.draftRevision = data.revision; state.draftSession = state.sessionId; state.conflict = false; }
+    else if (state.draftSession !== state.sessionId || state.draftRevision !== data.revision) state.conflict = true;
   }
-  async function loadManifest(reset) {
-    pending?.abort();
-    const controller = new AbortController();
-    pending = controller;
-    const request = ++generation;
-    if (reset) { currentUrl = undefined; rootUrl = undefined; streamSnapshot = undefined; $('stream-details').hidden = true; $('stream-fault-panel').hidden = true; $('playlist-label').hidden = true; }
-    const timer = setTimeout(() => controller.abort(), 15000);
-    clearManifest();
-    scenarioCatalog = [];
-    enableControls();
-    manifestStatus('Reading generated baseline… Preview does not exercise faults.');
-    $('stream-status').textContent = 'Loading stream and manifest…';
+  function stopPolling() { clearTimeout(state.timer); state.timer = null; }
+  function schedulePoll() { stopPolling(); if (state.url && !document.hidden) state.timer = setTimeout(poll, state.backoff); }
+  function disconnect(note = 'No stream connected.') {
+    state.generation++; state.credentialGeneration++; stopPolling(); state.op?.controller.abort(); state.op = null;
+    $('import-settings').value = '';
+    state.url = null; state.sessionId = null; state.protocol = null; state.health = null; state.control = null; state.token = ''; $('control-token').value = '';
+    state.manifest = null; state.playlists.clear(); state.labels.clear(); state.trackCounts = Object.create(null); state.discoveryWarning = ''; state.presets = []; state.catalogSignature = null; state.stale = false; state.editing = false; state.accessPrompted = false;
+    $('manifest-output').hidden = true; $('manifest-output').textContent = ''; $('selected-url-row').hidden = true; $('playlist-label').hidden = true;
+    message('stream-status', note); message('manifest-status', 'No manifest loaded.'); render();
+  }
+  async function operation(action) {
+    const actionGeneration = state.generation;
+    if (state.op?.kind === 'poll') { const poll = state.op; poll.interruptedForAction = true; poll.controller.abort(); await poll.finished; }
+    if (actionGeneration !== state.generation || state.op) return;
+    stopPolling();
+    const op = { controller: new AbortController(), generation: state.generation, kind: 'action' }; state.op = op;
+    const timeout = setTimeout(() => op.controller.abort(), 15000); render();
+    try { await action(op.controller.signal); }
+    catch (error) {
+      if (op.generation !== state.generation || op.credentialsChanged || error.credentialsChanged) return;
+      if (error.sessionChanged) disconnect(error.message);
+      else if (error.status === 401) { state.token = ''; $('control-token').value = ''; if (state.control) state.control.authenticated = false; message('access-status', 'Token rejected. Enter this simulator’s control token.', true); }
+      else if (error.status === 409) { state.conflict = true; message('action-status', error.message + ' Your draft was preserved. Reload current settings before retrying.', true); }
+      else message('action-status', error.name === 'AbortError' ? 'Request cancelled or timed out. Refresh status before retrying; no action will be replayed automatically.' : error.message, true);
+    } finally { clearTimeout(timeout); if (state.op === op) { state.op = null; render(); schedulePoll(); } }
+  }
+  async function controlStatus(signal, catalog = false) {
+    try { const data = await sessionRead(catalog ? '/catalog' : '', signal); acceptControl(data); }
+    catch (error) {
+      if (error.status === 404 || error.status === 405) { state.control = { available: false, authenticated: false, controlled: false, revision: 0, mode: 'legacy', settings: defaultSettings(), reason: 'This build supports inspection only. Restart with a current simulator and a control token for session-scoped writes.' }; }
+      else throw error;
+    }
+  }
+  async function poll() {
+    if (!state.url || document.hidden) return;
+    if (state.op) { schedulePoll(); return; }
+    let finished; const op = { controller: new AbortController(), generation: state.generation, kind: 'poll', finished: new Promise(resolve => { finished = resolve; }) }; state.op = op;
+    const previousAvailability = JSON.stringify([state.control?.mode, state.control?.available, state.control?.capabilities?.hlsKeys, run()?.state]);
+    const timeout = setTimeout(() => op.controller.abort(), 10000);
     try {
-      if (!connected) throw new Error('Connect to fault control first.');
-      const target = localUrl(reset ? $('manifest-url').value.trim() : currentUrl.href);
-      if (reset && !/\.(m3u8|mpd)$/i.test(target.pathname)) throw new Error('Paste the simulator’s .m3u8 or .mpd manifest URL.');
-      const { health, id } = await healthAt(target, controller.signal, reset);
-      if (health.manifestPreview !== 'baseline-v1') throw new Error('This simulator does not support inert manifest previews. Upgrade it before inspecting; no manifest request was made.');
-      const response = await simulatorRequest(target, controller.signal, true);
-      if (response.headers.get('X-Sim-Manifest-Preview') !== 'baseline-v1') throw new Error('The simulator did not acknowledge an inert manifest preview.');
-      if (response.headers.get('X-Sim-Session-Id') !== id) throw Object.assign(new Error('Manifest and simulator session do not match. Load the manifest URL again.'), { sessionChanged: true });
-      const text = await readText(response);
-      if (health.protocol === 'hls' ? !/^\s*#EXTM3U(?:\s|$)/.test(text) : !/<(?:\w+:)?MPD(?:\s|>)/.test(text)) {
-        throw new Error('The response is not an HLS playlist or DASH MPD. The source manifest may be invalid; previews bypass simulator faults.');
-      }
-      if (request !== generation) return;
-      if (reset) { rootUrl = target; playlists.clear(); playlists.set(target.href, 'Root manifest — ' + target.pathname); }
-      currentUrl = target; sessionId = id; protocol = health.protocol;
-      if (protocol === 'hls') addChildren(text, target);
-      else { playlists.clear(); $('playlist-label').hidden = true; }
-      showStream(health, id, rootUrl);
-      manifestSnapshot = { text, url: target.href, protocol };
-      $('selected-url').value = target.href;
-      $('selected-url-row').hidden = false;
-      $('manifest-output').textContent = text;
-      $('manifest-output').hidden = false;
-      manifestStatus(protocol.toUpperCase() + ' · fetched ' + new Date().toLocaleTimeString() + ' · baseline preview · ' + target.href);
+      const observed = await health(op.controller.signal);
+      if (op.generation !== state.generation) return;
+      state.health = observed.data; await controlStatus(op.controller.signal);
+      const availability = JSON.stringify([state.control?.mode, state.control?.available, state.control?.capabilities?.hlsKeys, run()?.state]);
+      if (availability !== previousAvailability) await controlStatus(op.controller.signal, true);
+      if (op.generation !== state.generation) return;
+      state.stale = false; state.backoff = 2000; $('stream-checked').textContent = new Date().toLocaleString();
+      message('stream-status', 'Connected — simulator ready. Check playback in your player.' + state.discoveryWarning);
     } catch (error) {
-      if (request !== generation) return;
-      if (error.sessionChanged) disconnectStream();
-      $('stream-status').textContent = error.message || 'Stream inspection failed.';
-      manifestStatus((error.name === 'AbortError' ? 'Manifest request cancelled or timed out.' : error.message) + ' Start a local simulator with its default proxy and check that it is reachable.', true);
-    } finally {
-      clearTimeout(timer);
-      if (request === generation) { pending = undefined; enableControls(); }
-    }
+      if (op.generation !== state.generation || op.interruptedForAction || error.credentialsChanged) return;
+      if (error.sessionChanged) disconnect(error.message);
+      else { state.stale = true; state.backoff = Math.min(30000, state.backoff * 2); message('stream-status', 'Connection stale — last observed settings are shown. ' + (error.status === 401 ? 'Unlock controls again.' : 'Waiting to reconnect.'), true); if (error.status === 401) { state.token = ''; $('control-token').value = ''; if (state.control) state.control.authenticated = false; } }
+    } finally { clearTimeout(timeout); if (state.op === op) { state.op = null; render(); schedulePoll(); } finished(); }
   }
-  $('load-manifest').addEventListener('click', () => loadManifest(true));
-  $('refresh-manifest').addEventListener('click', () => loadManifest(false));
-  $('playlist-select').addEventListener('change', () => {
-    currentUrl = new URL($('playlist-select').value);
-    loadManifest(false);
+  const attributes = line => Object.fromEntries([...line.matchAll(/(?:^|,)([A-Z0-9-]+)=(?:"([^"]*)"|([^,]*))/g)].map(m => [m[1], m[2] ?? m[3]]));
+  function discoverChildren(text, base) {
+    let variant; const children = [];
+    for (const raw of text.split(/\r?\n/)) {
+      if (state.playlists.size >= 129) { state.discoveryWarning = ' Metadata is limited to 128 advertised playlists; automatic discovery reads at most 32. Inspect the baseline text for the full manifest.'; break; }
+      if (raw.length > 8192) { state.discoveryWarning = ' Some advertised playlist entries exceed the metadata viewer limit.'; continue; }
+      const line = raw.trim(); let uri, label, type;
+      if (line.startsWith('#EXT-X-STREAM-INF:')) { variant = attributes(line.slice(line.indexOf(':') + 1)); continue; }
+      if (/^#EXT-X-(MEDIA|I-FRAME-STREAM-INF):/.test(line)) { const a = attributes(line.slice(line.indexOf(':') + 1)); uri = a.URI; type = line.startsWith('#EXT-X-I-FRAME-STREAM-INF:') ? 'iframe' : a.TYPE === 'AUDIO' ? 'audio' : a.TYPE === 'SUBTITLES' ? 'text' : 'video'; label = (type === 'audio' ? 'Audio' : type === 'text' ? 'Captions' : 'I-frame video') + (a.NAME ? ' · ' + a.NAME : '') + (a.LANGUAGE ? ' (' + a.LANGUAGE + ')' : ''); }
+      else if (line && !line.startsWith('#') && variant) { uri = line; type = 'video'; label = 'Video' + (variant.RESOLUTION ? ' · ' + variant.RESOLUTION.replace('x', ' × ') : '') + (variant.BANDWIDTH ? ' · ' + Math.round(Number(variant.BANDWIDTH) / 1000) + ' kbps' : ''); variant = null; }
+      if (!uri) continue;
+      try { const child = localUrl(new URL(uri, base).href); if (child.origin !== state.url.origin) continue; if (!state.playlists.has(child.href)) { if (type !== 'iframe') { const index = state.trackCounts[type] || 0; state.trackCounts[type] = index + 1; state.labels.set(type + ':' + index, label); } state.playlists.set(child.href, { label, type }); children.push(child); } } catch { /* Only advertised playlists on the connected simulator are inspected. */ }
+    }
+    return children;
+  }
+  async function preview(url, signal, maxBytes) {
+    const { text } = await request(url, { signal, expected: state.sessionId, preview: true, maxBytes });
+    if (state.protocol === 'hls' ? !/^\s*#EXTM3U(?:\s|$)/.test(text) : !/<(?:\w+:)?MPD(?:\s|>)/.test(text)) throw Error('The response is not a valid baseline manifest.');
+    return text;
+  }
+  async function connectStream(signal) {
+    const target = localUrl($('manifest-url').value.trim()); if (!/\.(m3u8|mpd)$/i.test(target.pathname)) throw Error('Paste the simulator’s .m3u8 or .mpd manifest URL.');
+    const observed = await health(signal, target, null);
+    if (observed.data.manifestPreview !== 'baseline-v1') throw Error('This simulator does not support inert manifest previews. Upgrade it before inspecting; no manifest request was made.');
+    state.url = target; state.sessionId = observed.id; state.protocol = observed.data.protocol; state.health = observed.data;
+    const text = await preview(target, signal); state.manifest = { url: target.href, text, protocol: state.protocol, checked: new Date() };
+    state.playlists.set(target.href, { label: 'Root manifest', type: 'root' });
+    let warning = '';
+    if (state.protocol === 'hls') {
+      const queue = discoverChildren(text, target); let bytes = new TextEncoder().encode(text).length, count = 0, missed = 0;
+      while (queue.length && count < 32 && bytes < 8 * 1024 * 1024) {
+        const child = queue.shift(); count++;
+        try { const body = await preview(child, signal, Math.min(4 * 1024 * 1024, 8 * 1024 * 1024 - bytes)); bytes += new TextEncoder().encode(body).length; queue.push(...discoverChildren(body, child)); }
+        catch (error) { if (error.sessionChanged || error.name === 'AbortError') throw error; missed++; }
+      }
+      if (queue.length || missed) warning = ' Some advertised playlists could not be discovered; unavailable presets explain their prerequisites.';
+    } else {
+      const doc = /<!DOCTYPE|<!ENTITY/i.test(text) ? null : new DOMParser().parseFromString(text, 'application/xml'); const counters = {};
+      for (const set of [...(doc?.getElementsByTagNameNS('*', 'AdaptationSet') || [])].slice(0, 256)) for (const rep of [...set.getElementsByTagNameNS('*', 'Representation')].slice(0, 256)) { const type = set.getAttribute('contentType') || (rep.getAttribute('mimeType') || '').split('/')[0]; const n = counters[type] || 0; counters[type] = n + 1; state.labels.set(type + ':' + n, (type === 'video' ? 'Video' : type === 'audio' ? 'Audio' : 'Captions') + (rep.getAttribute('height') ? ' · ' + rep.getAttribute('height') + 'p' : '') + (set.getAttribute('lang') ? ' · ' + set.getAttribute('lang') : '')); }
+    }
+    await controlStatus(signal, true); state.stale = false; state.backoff = 2000;
+    $('stream-protocol').textContent = state.protocol.toUpperCase(); $('stream-mode').textContent = state.health.mode || 'DASH engine'; $('stream-session').textContent = state.sessionId; $('stream-checked').textContent = new Date().toLocaleString(); $('playback-url').value = target.href;
+    state.discoveryWarning += warning; renderManifest(); message('stream-status', 'Connected — simulator ready. Check playback in your player.' + state.discoveryWarning); message('action-status', '');
+  }
+  function renderManifest() {
+    const snapshot = state.manifest; $('manifest-output').hidden = !snapshot; $('selected-url-row').hidden = !snapshot;
+    if (!snapshot) return;
+    const choices = [...state.playlists]; $('playlist-label').hidden = state.protocol !== 'hls' || choices.length < 2;
+    $('playlist-select').replaceChildren(...choices.map(([value, data]) => { const o = document.createElement('option'); o.value = value; o.textContent = data.label; return o; })); $('playlist-select').value = snapshot.url;
+    $('selected-url').value = snapshot.url;
+    let display = snapshot.text;
+    if (snapshot.protocol === 'dash' && $('format-xml').checked) { let depth = 0; display = snapshot.text.replace(/>\s*</g, '>\n<').split('\n').map(line => { const trimmed = line.trim(); if (/^<\//.test(trimmed)) depth = Math.max(0, depth - 1); const result = '  '.repeat(Math.min(depth, 32)) + trimmed; if (/^<[^!?/][^>]*>/.test(trimmed) && !/\/>$/.test(trimmed) && !/<\//.test(trimmed)) depth++; return result; }).join('\n'); }
+    $('manifest-output').textContent = display; $('manifest-output').classList.toggle('wrap', $('wrap-manifest').checked); $('format-xml').disabled = snapshot.protocol !== 'dash';
+    message('manifest-status', snapshot.protocol.toUpperCase() + ' · fetched ' + snapshot.checked.toLocaleTimeString() + ' · baseline preview · ' + snapshot.url);
+  }
+  function category(preset) {
+    const name = (preset.id + ' ' + preset.name).toLowerCase();
+    if (/bandwidth|jitter|starvation|oscillat|network|endurance/.test(name)) return 'Network';
+    if (/key|token|utc|clock/.test(name)) return 'Keys, access and clock';
+    if (/restart|event|timestamp|sequence|window|freeze/.test(name)) return 'Live lifecycle';
+    if (/cache|publication|lag|stale|revalidation|range/.test(name)) return 'Publication and HTTP';
+    if (/malformed|damaged|wrong|framing|invalid/.test(name)) return 'Invalid content';
+    return 'Outages and retries';
+  }
+  const selectedPreset = () => state.presets.find(p => p.id === $('scenario-preset').value);
+  function targetDescription(target) { if (!target) return 'Matching requests'; const track = state.labels.get(target.track) || (target.track === 'root' ? 'root manifest' : target.track === 'any' ? 'any matching track' : String(target.track || 'matching resources')); const resource = target.resource || 'media'; return track + (target.track === 'root' ? '' : ' · ' + resource) + (target.segment === 'next' ? ' · next matching request' : ''); }
+  function presetDescription(preset) { return preset ? (preset.expectedEffect || '') + (preset.targets?.length ? ' Target: ' + preset.targets.map(targetDescription).join('; ') + '.' : '') : ''; }
+  function renderCatalog() {
+    const categories = [...new Set(state.presets.map(category))].sort(), currentCategory = $('scenario-category').value;
+    const categoryKey = categories.join('|');
+    if ($('scenario-category').dataset.signature !== categoryKey) { $('scenario-category').replaceChildren(...['all', ...categories].map(value => { const o = document.createElement('option'); o.value = value; o.textContent = value === 'all' ? 'All categories' : value; return o; })); $('scenario-category').value = categories.includes(currentCategory) ? currentCategory : 'all'; $('scenario-category').dataset.signature = categoryKey; }
+    const query = $('scenario-search').value.trim().toLowerCase(), showAll = $('show-unavailable').checked, group = $('scenario-category').value;
+    const filtered = state.presets.filter(p => (showAll || p.enabled) && (group === 'all' || category(p) === group) && (!query || (p.name + ' ' + (p.expectedEffect || '')).toLowerCase().includes(query))).sort((a, b) => Number(b.enabled) - Number(a.enabled));
+    const old = $('scenario-preset').value, signature = filtered.map(p => p.id + ':' + p.enabled + ':' + p.name).join('|');
+    if (signature !== state.catalogSignature) { state.catalogSignature = signature; $('scenario-preset').replaceChildren(...filtered.map(p => { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name + (p.enabled ? '' : ' — unavailable'); return o; })); $('scenario-preset').value = filtered.some(p => p.id === old) ? old : filtered.find(p => p.id === run()?.presetId)?.id || filtered.find(p => p.enabled)?.id || filtered[0]?.id || ''; }
+    $('scenario-count').textContent = state.presets.length ? filtered.length + ' shown · ' + state.presets.filter(p => p.enabled).length + ' compatible with this stream' : '';
+    const preset = selectedPreset(); message('scenario-description', preset ? preset.enabled ? presetDescription(preset) : preset.reason || 'This stream does not meet the preset requirements.' : state.url ? 'No matching scenarios. Adjust the filters.' : '');
+    $('scenario-preset').disabled = !state.url || !filtered.length;
+  }
+  function triggerDescription(report) {
+    if (!report) return 'Prepare a test, then Start when your player is ready.';
+    if (report.state === 'armed') return 'Ready. Start when your player is ready.';
+    if (['passed', 'failed', 'stopped'].includes(report.state)) return 'Test ended. Evidence describes simulator delivery; check recovery in your player.';
+    const next = report.nextTrigger;
+    const phases = report.scenario?.timeline || [], phase = phases.find(p => p.phaseId === next?.phaseId);
+    if (phase) { const effects = []; if (phase.network?.bandwidthKbps) effects.push(phase.network.bandwidthKbps + ' kbps shared bandwidth'); if (phase.network?.jitterMs) effects.push('0–' + phase.network.jitterMs + ' ms jitter'); if (phase.manifestFreeze) effects.push('manifest frozen'); const remaining = Math.max(0, phase.beforeMs - Number(next.elapsedMs || 0)); return (effects.length ? effects.join(', ') : 'Healthy delivery') + '. Next phase in about ' + Math.ceil(remaining / 1000) + ' seconds.'; }
+    if (next?.pendingRules?.length) { const first = next.pendingRules[0], wait = Math.max(0, Number(first.afterMs || 0) - Number(next.elapsedMs || 0)); return (wait > 0 ? 'In about ' + Math.ceil(wait / 1000) + ' seconds: ' : 'Waiting for ') + targetDescription(first.target) + '.'; }
+    return report.state === 'running' ? 'Running. Waiting for matching requests or the next phase.' : 'Prepare a test, then Start when your player is ready.';
+  }
+  function renderEffects() {
+    const cfg = state.control?.settings || {}, lines = [], faults = state.health?.faults;
+    if (state.control?.controlled && state.control.mode === 'scenario') { if (run()?.state === 'running') lines.push('Scenario running · ' + (state.presets.find(p => p.id === run()?.presetId)?.name || 'test in progress')); else lines.push('No faults active.'); }
+    else {
+      const names = { malformed: 'Malformed media', forbidden: 'Media HTTP 403', missing: 'Media HTTP 404' };
+      for (const [key, name] of Object.entries(names)) if (cfg.segment?.[key] && cfg.segment[key] !== 'off') { const observed = faults?.rules?.find(r => r.fault === 'segment.' + key); lines.push(name + ' · ' + cfg.segment[key] + (observed?.state ? ' · ' + observed.state : '')); }
+      if (cfg.segment?.latencyMs) lines.push('Response delay · ' + cfg.segment.latencyMs + ' ms');
+      if (cfg.network?.bandwidthKbps) lines.push('Shared bandwidth · ' + cfg.network.bandwidthKbps + ' kbps');
+      if (cfg.network?.jitterMs) lines.push('Jitter · 0–' + cfg.network.jitterMs + ' ms');
+      if (cfg.manifest?.freeze === 'always') lines.push('Manifest freeze · enabled');
+      if (cfg.drm?.licenseFailure && cfg.drm.licenseFailure !== 'off') lines.push('HLS key HTTP failure · ' + cfg.drm.licenseFailure);
+      if (cfg.drm?.keyRotationMismatch && cfg.drm.keyRotationMismatch !== 'off') lines.push('HLS key mismatch · ' + cfg.drm.keyRotationMismatch);
+      if (!state.control?.controlled && state.health?.scenario) lines.push('Externally managed scenario · ' + state.health.scenario);
+    }
+    if (!lines.length) lines.push('No faults active.');
+    $('active-faults').replaceChildren(...lines.map(line => { const li = document.createElement('li'); li.textContent = line; return li; }));
+    $('current-run').textContent = run()?.state === 'running' ? triggerDescription(run()) : '';
+  }
+  function render() {
+    const control = state.control, report = run(), auth = writable(), working = busy(), manual = isManual(), recovery = !!control?.recoveryRequired;
+    $('connection-editor').hidden = !!state.url && !state.editing; $('stream-heading').textContent = state.url ? 'Connected stream' : 'Connect a stream';
+    $('stream-status').hidden = !!state.url && !state.stale && !$('stream-status').classList.contains('error') && !state.discoveryWarning;
+    $('token-details').hidden = !control?.available;
+    if (control?.available && !control.authenticated && !state.accessPrompted) { $('token-details').open = true; state.accessPrompted = true; }
+    $('recovery-panel').hidden = !recovery; $('recover-controls').disabled = !auth || working;
+    $('stream-details').hidden = !state.url; $('connection-state').textContent = state.stale ? 'Connection stale' : 'Simulator ready'; $('control-state').textContent = recovery ? 'Reset needed' : state.stale ? 'Writes paused' : auth ? (control.controlled ? 'Session control · ' + control.mode : 'Controls unlocked') : 'Read-only';
+    $('control-guidance').textContent = !control ? 'Inspecting the stream…' : !control.available ? control.reason || 'Session controls unavailable. Start a current simulator with HLS_DASH_CONTROL_TOKEN and --scenario-start manual to control tests.' : !control.authenticated ? 'Inspection is available. Enter this simulator’s control token to change tests.' : !control.controlled ? 'Prepare a test or enable Manual faults to take control.' : 'Session-scoped controls. The current test continues if this page closes.';
+    $('load-manifest').disabled = working; $('connect-control').disabled = !state.url || working || !control?.available; $('copy-playback').disabled = !state.url; $('refresh-manifest').disabled = !state.manifest || working;
+    for (const id of ['copy-manifest', 'download-manifest', 'copy-selected']) $(id).disabled = !state.manifest;
+    $('control-fields').disabled = !auth || !manual; $('use-manual').disabled = !auth || working || manual && !recovery; $('use-manual').textContent = control?.mode === 'scenario' && ['running', 'armed'].includes(report?.state) ? 'Stop scenario and use manual controls' : 'Use manual controls';
+    $('manual-mode-status').textContent = !auth ? 'Read-only. Unlock this simulator’s controls to apply faults.' : manual ? 'Manual mode · changes apply only when you select Apply settings or Inject once.' : 'Manual controls are inactive. Switching modes stops the current test and retains its evidence.';
+    $('fault-draft').hidden = !state.dirty; $('conflict-panel').hidden = !state.conflict; $('reapply-settings').disabled = !auth || !manual || working || state.draftSession !== state.sessionId; $('reload-settings').disabled = !state.url || working;
+    $('save-config').disabled = working || state.conflict || recovery; $('reset-config').disabled = working; for (const button of document.querySelectorAll('[data-inject]')) button.disabled = working || recovery;
+    $('hls-key-controls').hidden = state.protocol !== 'hls' || !control?.capabilities?.hlsKeys;
+    $('export-settings').disabled = !state.url; renderCatalog(); renderEffects();
+    const selected = selectedPreset(), armed = report?.state === 'armed', active = ['running', 'armed', 'passed', 'failed'].includes(report?.state);
+    $('prepared-panel').hidden = !report?.presetId; $('prepared-name').textContent = state.presets.find(p => p.id === report?.presetId)?.name || report?.presetId || ''; $('prepared-summary').textContent = presetDescription(state.presets.find(p => p.id === report?.presetId)); $('prepared-change').hidden = !armed || !selected || selected.id === report.presetId;
+    const phases = report?.scenario?.timeline || [], phaseIndex = phases.findIndex(p => p.phaseId === report?.nextTrigger?.phaseId);
+    $('scenario-phase').textContent = (report?.state || 'Not prepared') + (phaseIndex >= 0 ? ' · phase ' + (phaseIndex + 1) + ' of ' + phases.length : ''); $('scenario-trigger').textContent = triggerDescription(report); $('scenario-history').textContent = String(report?.previousRuns?.length || 0); $('scenario-run-id').textContent = report?.runId || '—';
+    $('scenario-arm').disabled = !auth || working || !control?.capabilities?.scenario || !selected?.enabled || report?.state === 'running' || recovery; $('scenario-arm').textContent = control?.mode === 'manual' ? 'Stop manual faults and prepare test' : armed ? 'Prepare again' : 'Prepare test';
+    $('scenario-start').disabled = !auth || working || control?.mode !== 'scenario' || !control?.controlled || !armed || report?.presetId !== selected?.id || recovery;
+    $('scenario-reset').disabled = !auth || working || control?.mode !== 'scenario' || !active && !recovery; $('scenario-export').disabled = !state.url || working || !report;
+    message('scenario-status', !state.url ? 'Connect a stream to see compatible scenarios.' : !control?.capabilities?.scenario ? 'Scenario control is unavailable for this session. Inspection remains available.' : report ? 'Test ' + report.state + '. Status updates automatically.' : 'Choose a compatible scenario, then prepare it.');
+    $('raw-state').textContent = control ? JSON.stringify(control, null, 2) : 'No session connected.';
+    $('curl-example').textContent = state.url ? 'curl -X POST ' + JSON.stringify(new URL('/session-control/apply', state.url).href) + ' -H "Authorization: Bearer $HLS_DASH_CONTROL_TOKEN" -H "X-Sim-Session-Id: $HLS_DASH_SESSION_ID" -H "Content-Type: application/json" --data \'{"revision":' + (control?.revision || 0) + ',"settings":' + JSON.stringify(state.dirty ? (() => { try { return collect(); } catch { return {}; } })() : control?.settings || {}) + '}\'' : 'Connect a simulator to see its session API command.';
+  }
+  async function ensureMode(mode) { if (!state.control.controlled || state.control.mode !== mode) { await mutate('mode', { mode }); await controlStatus(state.op.controller.signal, true); } }
+  function switchTab(name, focus = false) { for (const tab of document.querySelectorAll('[role=tab]')) { const selected = tab.id === 'tab-' + name; tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; $(tab.getAttribute('aria-controls')).hidden = !selected; if (selected && focus) tab.focus(); } }
+  const tabs = [...document.querySelectorAll('[role=tab]')];
+  tabs.forEach((tab, index) => { tab.addEventListener('click', () => switchTab(tab.id.slice(4))); tab.addEventListener('keydown', event => { let next; if (event.key === 'ArrowRight') next = (index + 1) % tabs.length; if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length; if (event.key === 'Home') next = 0; if (event.key === 'End') next = tabs.length - 1; if (next !== undefined) { event.preventDefault(); switchTab(tabs[next].id.slice(4), true); } }); });
+  $('connect-form').addEventListener('submit', event => { event.preventDefault(); const target = $('manifest-url').value; disconnect('Connecting…'); $('manifest-url').value = target; operation(async signal => { try { await connectStream(signal); } catch (error) { disconnect(error.message); message('manifest-status', error.message, true); message('action-status', error.message, true); } }); });
+  $('change-stream').addEventListener('click', () => { state.editing = !state.editing; render(); if (state.editing) $('manifest-url').focus(); });
+  $('recover-controls').addEventListener('click', () => operation(async () => { await mutate('mode', { mode: state.control.mode === 'scenario' ? 'scenario' : 'manual' }); await controlStatus(state.op.controller.signal, true); message('action-status', 'Controls reset. Review the settings before starting another test.'); }));
+  $('manifest-url').addEventListener('input', () => disconnect('Stream URL changed. Connect to inspect it; existing tests continue on their simulator.'));
+  $('control-token').addEventListener('input', () => { state.credentialGeneration++; state.token = ''; if (state.control) state.control.authenticated = false; if (state.op?.kind === 'poll' || state.op?.authenticating) { state.op.credentialsChanged = true; state.op.controller.abort(); } message('access-status', 'Token changed. Unlock controls to authenticate.'); render(); });
+  $('connect-control').addEventListener('click', () => operation(async signal => { state.op.authenticating = true; state.token = $('control-token').value; await controlStatus(signal); if (state.control.authenticated) $('token-details').open = false; message('access-status', state.control.authenticated ? 'Controls unlocked for this session.' : 'Enter this simulator’s control token.'); }));
+  fields.forEach(field => field.addEventListener('input', markDraft));
+  for (const id of ['scenario-search', 'scenario-category', 'show-unavailable']) $(id).addEventListener(id === 'scenario-search' ? 'input' : 'change', render);
+  $('scenario-preset').addEventListener('change', render);
+  $('scenario-arm').addEventListener('click', () => operation(async () => { const preset = selectedPreset(); if (!preset?.enabled) throw Error('Choose a compatible preset.'); await ensureMode('scenario'); if (['passed', 'failed'].includes(run()?.state)) await mutate('stop', { runId: run().runId }); await mutate('arm', { runId: run()?.runId, presetId: preset.id }); message('action-status', 'Test prepared. Review the target, then Start when your player is ready.'); }));
+  $('scenario-start').addEventListener('click', () => operation(async () => { await mutate('start', { runId: run()?.runId }); message('action-status', 'Test started. Waiting for matching player requests.'); }));
+  $('scenario-reset').addEventListener('click', () => operation(async () => { await mutate('stop', { runId: run()?.runId }); message('action-status', 'Test stopped. Evidence retained; publication and UTC continue.'); }));
+  $('use-manual').addEventListener('click', () => operation(async () => { await ensureMode('manual'); message('action-status', 'Manual controls ready. Apply settings explicitly to change delivery.'); }));
+  $('save-config').addEventListener('click', () => operation(async () => { if (state.conflict) throw Error('Resolve the settings conflict before applying.'); await mutate('apply', { revision: state.draftRevision, settings: collect() }); message('action-status', 'Settings applied to this session.'); }));
+  $('reset-config').addEventListener('click', () => operation(async () => { await mutate('clear'); message('action-status', 'Faults cleared for this session. Check recovery in your player.'); }));
+  document.querySelectorAll('[data-inject]').forEach(button => button.addEventListener('click', () => operation(async () => { await mutate('inject', { type: button.dataset.inject }); message('action-status', 'One-shot fault armed for the next matching request.'); })));
+  $('reload-settings').addEventListener('click', () => operation(async signal => { const current = await sessionRead('', signal); state.dirty = false; state.conflict = false; acceptControl(current); message('action-status', 'Current settings loaded.'); }));
+  $('reapply-settings').addEventListener('click', () => operation(async signal => { if (state.draftSession !== state.sessionId) throw Error('This draft belongs to another session. Export it and import it explicitly if needed.'); const draft = collect(), current = await sessionRead('', signal); state.control = current; await mutate('apply', { revision: current.revision, settings: draft }); message('action-status', 'Your draft was applied against the latest session revision.'); }));
+  for (const id of ['format-xml', 'wrap-manifest']) $(id).addEventListener('change', renderManifest);
+  $('refresh-manifest').addEventListener('click', () => operation(async signal => { const url = new URL(state.manifest.url); const text = await preview(url, signal); state.manifest = { url: url.href, text, protocol: state.protocol, checked: new Date() }; if (state.protocol === 'hls') discoverChildren(text, url); renderManifest(); await controlStatus(signal, true); }));
+  $('playlist-select').addEventListener('change', () => { const selected = $('playlist-select').value; if (!state.playlists.has(selected)) return; operation(async signal => { const text = await preview(new URL(selected), signal); state.manifest = { url: selected, text, protocol: state.protocol, checked: new Date() }; if (state.protocol === 'hls') discoverChildren(text, new URL(selected)); renderManifest(); await controlStatus(signal, true); }); });
+  async function copy(value, label, id) { try { if (!navigator.clipboard?.writeText) throw Error(); await navigator.clipboard.writeText(value); message(id, label + ' copied.'); } catch { message(id, 'Clipboard unavailable or permission denied. Select the displayed text and copy manually.', true); } }
+  $('copy-playback').addEventListener('click', () => { if (state.url) copy(state.url.href, 'Playback URL', 'playback-copy-status'); });
+  $('copy-selected').addEventListener('click', () => { if (state.manifest) copy(state.manifest.url, 'Displayed URL', 'export-status'); });
+  $('copy-manifest').addEventListener('click', () => { if (state.manifest) copy(state.manifest.text, 'Original manifest snapshot', 'export-status'); });
+  function download(text, type, filename) { const url = URL.createObjectURL(new Blob([text], { type })), a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  $('download-manifest').addEventListener('click', () => { if (!state.manifest) return; const snapshot = state.manifest, hls = snapshot.protocol === 'hls'; download(snapshot.text, hls ? 'application/vnd.apple.mpegurl' : 'application/dash+xml', hls ? snapshot.text.includes('#EXT-X-STREAM-INF:') ? 'hls-master.m3u8' : 'hls-playlist.m3u8' : 'dash-manifest.mpd'); message('export-status', 'Original snapshot download requested. Relative URLs use the displayed simulator URL as their base.'); });
+  $('scenario-export').addEventListener('click', () => operation(async signal => { const data = await sessionRead('/evidence', signal); download(JSON.stringify(data, null, 2), 'application/json', 'scenario-evidence.json'); message('action-status', 'Test evidence download requested. Player recovery is a separate result.'); }));
+  $('export-settings').addEventListener('click', () => { try { const settings = collect(); download(JSON.stringify({ type: 'hls-dash-manual-settings', version: 1, settings }, null, 2) + '\n', 'application/json', 'manual-settings.json'); message('settings-status', 'Portable settings exported without credentials or session/run state.'); } catch (error) { message('settings-status', error.message, true); } });
+  $('import-settings').addEventListener('change', async event => {
+    const input = event.target, file = input.files?.[0], generation = state.generation, sessionId = state.sessionId, sequence = ++importSequence;
+    const current = () => sequence === importSequence && generation === state.generation && sessionId === state.sessionId;
+    try {
+      if (!file) return;
+      if (file.size > 65536) throw Error('Settings file must be at most 64 KiB.');
+      if (!state.url) throw Error('Connect a stream before importing settings.');
+      const text = await file.text();
+      if (!current()) return;
+      const data = JSON.parse(text);
+      if (!data || data.type !== 'hls-dash-manual-settings' || data.version !== 1 || Object.keys(data).some(k => !['type', 'version', 'settings'].includes(k))) throw Error('Use a version-1 manual settings export.');
+      const settings = validateSettings(data.settings); setFields(settings); state.dirty = true; state.draftSession = sessionId; state.draftRevision = state.control?.revision; state.conflict = false;
+      message('settings-status', 'Settings imported as an unsaved draft. Use manual controls, then Apply settings when ready.'); render();
+    } catch (error) { if (current()) message('settings-status', error.message, true); }
+    finally { if (current()) input.value = ''; }
   });
-  run(connect);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { stopPolling(); if (state.op?.kind === 'poll') state.op.controller.abort(); } else schedulePoll(); });
+  window.addEventListener('pagehide', () => { stopPolling(); state.op?.controller.abort(); state.credentialGeneration++; state.token = ''; $('control-token').value = ''; if (state.control) state.control.authenticated = false; });
+  window.addEventListener('pageshow', schedulePoll);
+  setFields(defaultSettings()); render();
+  fetchNative('/ui-info', { credentials: 'omit', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).then(data => { if (Array.isArray(data?.manifestHosts)) hosts = new Set(data.manifestHosts.filter(h => typeof h === 'string')); }).catch(() => {});
 })();

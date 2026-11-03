@@ -1,15 +1,19 @@
 # Fault controls
 
-Start a simulator and control UI from the same directory:
+Start a simulator with a control token and open its URL in the control UI:
 
 ```sh
+export HLS_DASH_CONTROL_TOKEN="$(node -p 'require("node:crypto").randomBytes(24).toString("hex")')"
+printf 'Simulator control token: %s\n' "$HLS_DASH_CONTROL_TOKEN"
 npm run hls
 # Another terminal:
 npm run fault-control
 ```
 
-The default panel is `http://127.0.0.1:19090`. For distinct working directories,
-pass the same absolute `--fault-config` path to both commands. See
+The default panel is `http://127.0.0.1:19090`. Connect the printed simulator URL
+and unlock it with that simulator's token. Normal writes affect only that session
+and do not need a matching controller file. Tokenless streams remain read-only
+for playback/inspection. [Session API, modes and lifetime](session-controls.md). See
 [network access](../README.md#network-access) before enabling LAN control.
 
 | Control              | Supported effect                                                                                                                         |
@@ -29,30 +33,30 @@ For network units, scope, cancellation and timing examples, see
 
 ## Inspecting current state
 
-The connected-stream card reports the verified protocol, mode, session ID and last
-check time. **Copy Playback URL** copies the root manifest URL, which stays fixed
+The connection bar reports the observed protocol, control mode and active effects;
+technical IDs and timestamps live under Advanced. **Copy Playback URL** copies the root manifest URL, which stays fixed
 when an HLS child is selected. **Copy Displayed URL** copies the selected playlist
 or MPD URL. A loopback URL is for this computer; use a deliberately LAN-bound
 simulator URL on another device. The UI does not invent unverified LAN aliases.
 
-**Active faults** shows two distinct sources: saved control settings and the last
-runtime snapshot read from the connected simulator. Unsaved dropdown/latency edits
-do not change the saved summary. A saved `once` setting can remain configured
+**Active effects** shows the connected simulator's runtime state. Unsaved edits
+do not change that summary. A configured `once` setting can remain configured
 after consumption; runtime status distinguishes `armed` and `consumed`. Random
 or always settings report `enabled`, which does not mean a particular request was
 faulted. HLS key rules still require an encrypted origin. Scenario sessions show
 the scenario result instead of claiming manual faults apply.
 
-**Refresh Saved Settings** reloads settings into the form and replaces unsaved
-edits. **Refresh Stream Status** only reads `/health`; it does not request a
-manifest, media or key, nor select/consume faults. Snapshots show their observation
-time and are not automatic live monitoring. The control and simulator processes
-must share a fault file; loading a URL does not attach the controls to that file.
+Visible-page status polling observes health and scoped state without consuming
+faults. Drafts remain intact; a conflicting revision requires explicit reload or
+reapply. Session changes disable writes and never replay a previous test. Tabs
+only navigate. Switching between Manual and Scenarios is explicit and stops the
+current test while keeping its evidence, publication and UTC clocks.
 
-**Copy Manifest** and **Download Manifest** export exactly the displayed text,
+**Copy original** and **Download original** export the original baseline text,
 without refreshing the stream. Master/child HLS files use `.m3u8`; DASH uses
-`.mpd`. Exports are disabled while loading, after failures, after a session change,
-or when the URL/token changes. Clipboard denial offers manual-copy guidance.
+`.mpd`. Exports use the retained snapshot. Changing/disconnecting the stream or
+detecting a new session clears it; changing the control token does not change
+that baseline. Clipboard denial offers manual-copy guidance.
 The snapshot is raw text, with its original relative URLs; opening it as a local
 playback file is not guaranteed to work. Use the original simulator URL as the
 base, and keep that simulator session running for its resources.
@@ -78,7 +82,13 @@ before consumption coalesce into the latest arm. Random uses 40 percent per matc
 not yet seeded. There is no DRM license simulator; key controls do not affect DASH
 or the clear samples. The profile field is a session label, not a stored scenario.
 
-The JSON configuration is validated, saved atomically and watched through directory
+## Separate legacy shared-file API
+
+The Advanced legacy link (`?legacy=1`) retains the original file workflow. Only
+this tool needs matching absolute fault-file paths. Its controller credential is
+separate from the simulator token; inspecting a URL never retargets file writes.
+
+The legacy JSON configuration is validated, saved atomically and watched through directory
 changes. Invalid edits keep the last valid config. Unknown fields and negative or
 excessive latency return HTTP 400; failed writes are reported rather than acknowledged
 as saved. Partial API writes reread the latest valid file under an exclusive

@@ -32,6 +32,8 @@ git clone https://github.com/rdaci23/hls-dash-live-sim.git
 cd hls-dash-live-sim
 npm ci
 npm run build
+export HLS_DASH_CONTROL_TOKEN="$(node -p 'require("node:crypto").randomBytes(24).toString("hex")')"
+printf 'Simulator control token: %s\n' "$HLS_DASH_CONTROL_TOKEN"
 npm run hls
 ```
 
@@ -42,15 +44,18 @@ from the same directory:
 npm run fault-control
 ```
 
-Open `http://127.0.0.1:19090` to change faults. Under **Generated manifest**, paste
-the stream URL and select **Load Manifest**. HLS offers master/child selection;
-DASH displays its MPD. The stream card shows protocol, mode, session ID and a
-copyable root playback URL. **Refresh Manifest** reads a fresh generated baseline preview; it bypasses local
-faults and does not consume an armed fault or seed freeze/cache snapshots. The viewer supports simulators on this computer
-with the default proxy enabled; it does not fetch media or keys. **Copy Manifest**
-and **Download Manifest** export the displayed snapshot without another request.
-HLS downloads use `.m3u8`; DASH uses `.mpd`. These are raw manifests, not media
-bundles; relative URLs still need the original simulator URL as their base.
+Open `http://127.0.0.1:19090`, paste the simulator URL and select **Connect stream**.
+Enter its token under **Control access** to unlock session-scoped writes. Tokenless
+streams remain usable for playback and inspection. Copy the playback URL into your
+player, choose a compatible scenario, **Prepare test**, then **Start test**.
+
+The three tabs are **Scenarios**, **Manual faults** and **Manifest**. Tabs and
+inspection are inert; mode changes are explicit. Controls affect only the connected
+session, and status updates preserve unsaved drafts. The manifest viewer discovers
+advertised HLS children without fetching media/init/keys and labels the snapshot
+as a baseline preview. **Copy original**/**Download original** retain its original
+text without another request. [Setup and workflow](docs/getting-started.md),
+[control API and limits](docs/session-controls.md).
 
 To run DASH instead:
 
@@ -65,9 +70,10 @@ livesim2 image. It is AMD64-only; ARM Docker hosts use emulation. Ctrl+C closes
 the supervised session and its owned container. `--detach` is a legacy flag;
 the Node process remains in the foreground.
 
-If commands run from different directories, pass the same absolute
-`--fault-config` path to the stream and control commands. Use separate fault
-files for independent sessions. Stop sessions before regenerating sample assets.
+Only the Advanced legacy shared-file workflow requires stream/controller commands
+to share an absolute `--fault-config` path. Legacy sessions sharing a file share
+settings until explicit scoped takeover. Stop sessions before regenerating sample
+assets.
 
 ## Supported behavior
 
@@ -96,32 +102,32 @@ Apple, Android and additional Roku models remain unverified. [Detailed capabilit
 
 ## Fault controls
 
-The page connects automatically for unprotected local sessions. For protected
-sessions, enter the control token and select **Connect**. Actions stay disabled
-until configuration loads successfully. **Active faults** separates the saved
-control settings from the connected simulator's runtime snapshot. Unsaved edits
-are marked. **Refresh Saved Settings** reloads the control file; **Refresh Stream
-Status** checks the simulator without requesting media or consuming a one-shot.
-Runtime one-shots show armed or consumed. Always use the same fault file for the
-stream and controls; inspecting a stream does not retarget its configuration.
+Normal UI writes require the simulator's control token and current session/revision.
+Manual settings and scenarios are exclusive modes; stopping/switching retains
+evidence and leaves publication/UTC clocks running. Settings survive UI refresh
+and reconnection to the same session, but not simulator restart. Tokens remain in
+page memory. Advanced retains a separate legacy shared-file tool for existing
+CLI/file workflows; only that tool requires matching stream/controller file paths.
 
-Set **Latency (ms)** between 0 and 60,000, then **Apply Latency**. This delays
-matching media and manifest responses until **Clear Latency** or zero is applied.
-Fixed latency is separate from **Network conditions**: set **Bandwidth limit
-(kbps)** and **Jitter (ms)**, then **Apply Network Conditions**. Zero disables each
-setting. The bandwidth ceiling is shared across concurrent media/init downloads;
-jitter adds a random 0–N ms to media/manifest GETs. **Clear Network Conditions**
-releases queued capped transfers. Local UTC and health stay unaffected.
+In **Manual faults**, select **Use manual controls**, set **Response delay (ms)**,
+**Bandwidth limit (kbps)** and **Jitter (ms)**, then **Apply settings**. Delay and
+jitter accept 0–60,000 ms; zero bandwidth means unlimited. The cap is shared
+across concurrent media/init downloads; jitter adds a random 0–N ms to
+media/manifest GETs. **Clear faults** restores all-off settings and cancels this
+session's affected manual work while leaving healthy requests and other sessions
+alone. Local UTC and health stay unaffected.
 [Units, timing and scope](docs/network-conditions.md).
 
-**Once** applies to one matching GET, not one playback event. Quick Inject rearms
+**Once** applies to one matching GET, not one playback event. **Inject once** rearms
 it; repeated injections before consumption coalesce into the latest arm. Player
 buffering can delay when a fault becomes visible. HLS key faults require an
 actual encrypted origin; they do not affect clear samples or DASH.
 
-**Advanced: equivalent curl command** is an optional terminal alternative to
-**Save Config**. Protected commands reference `$HLS_DASH_CONTROL_TOKEN`; the page
-never puts your token into the command. [Modes, API and examples](docs/fault-injection-guide.md).
+**Reuse manual settings** exports portable JSON or imports it as a validated
+draft requiring explicit Apply. **Advanced details** provides a session API
+command with environment-variable placeholders, never your token. The separate
+legacy tool retains **Save Config** and shared-file API examples.
+[Modes, API and examples](docs/fault-injection-guide.md).
 
 ## Network access
 
@@ -138,11 +144,15 @@ addresses; unrelated website origins are rejected.
 
 Stream access and control access are separate. Keep control on loopback unless
 you need LAN control. Set `HLS_DASH_CONTROL_TOKEN` to a token of at least 16
-characters before starting LAN control, then enter it in the panel:
+characters before starting LAN control to protect its legacy endpoints:
 
 ```sh
 npm start -- fault-control --host 0.0.0.0
 ```
+
+The normal panel needs the **connected simulator's** token, configured when that
+simulator starts. The control server's legacy token is separate; the two need not
+match. Keep both out of playback URLs and shared transcripts.
 
 Source authorization is scoped to the source origin. A separate CDN must be
 explicitly permitted with `--allow-origin`. Saved source URLs can contain secrets;

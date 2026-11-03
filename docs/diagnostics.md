@@ -91,6 +91,7 @@ keep cancellation separate from completion.
 | `request.aborted` | An explicitly injected connection abort, with advertised versus locally written bytes; it is distinct from client cancellation and is not a completed response. |
 | `transport.headers` / `transport.stalled` / `transport.resumed` / `transport.completed` / `transport.aborted` | Downstream body phase, expected/written bytes and delivery-relative timing. [Field meanings and verification](transport-scenarios.md). |
 | `request.error`                      | A safe reason code identifies a rejected resource or failed origin request. Raw exception messages are omitted.                                                                                                    |
+| `control.changed` | An explicit session-scoped control mutation completed. Configuration/run revision and bounded settings-change history are available in session-control evidence; tokens and source URLs are excluded. |
 
 Cancellation during artificial delay leaves later one-shot faults unconsumed.
 If a one-shot was already selected before a later cancellation, consumption remains

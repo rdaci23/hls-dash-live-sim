@@ -32,6 +32,9 @@ release requirement.
   cancellation and real-engine integration checks; broader player recovery remains unverified.
 - [x] Control-page startup regression, configurable latency and actual HLS/DASH
   manifest inspection, with dedicated browser checks.
+- [x] Session-scoped testing UI, authenticated private manual settings, explicit
+  manual/scenario modes, revision-aware drafts and inert baseline exports;
+  [controls and boundaries](session-controls.md). Candidate checks remain required.
 - [x] Timed bandwidth, seeded jitter and manifest freeze/resume scenarios, with
   isolated HLS/DASH HTTP replay verification and retained CI evidence;
   [scope](network-scenarios.md).

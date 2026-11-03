@@ -24,6 +24,8 @@ npm ci
 npm run build
 mkdir -p output
 cp examples/configurations/healthy.json output/demo-faults.json
+export HLS_DASH_CONTROL_TOKEN="$(node -p 'require("node:crypto").randomBytes(24).toString("hex")')"
+printf 'Simulator control token: %s\n' "$HLS_DASH_CONTROL_TOKEN"
 npm run hls -- --fault-config output/demo-faults.json
 ```
 
@@ -32,13 +34,34 @@ if you chose another port. It serves a 180p/360p H.264/AAC ladder with two-secon
 segments. In a second terminal in the same checkout:
 
 ```sh
-npm run fault-control -- --fault-config output/demo-faults.json
+npm run fault-control
 ```
 
 Open `http://127.0.0.1:19090`, paste the playback URL into **Simulator manifest
-URL**, then select **Load Manifest**. The UI shows stream details, a copyable root
-playback URL, active faults and a fresh baseline manifest preview. Pick an HLS child playlist to
-see its live sequence. Copy/download exports the displayed text snapshot.
+URL**, then select **Connect stream**. Connecting only observes the stream. Under
+**Control access**, enter the simulator token printed in the first terminal and
+select **Unlock controls**. Tokens stay in page memory and must be re-entered
+after a page refresh; the simulator's active settings/test continue unchanged.
+
+The compact connection bar shows the playback URL and active effects. Use
+**Scenarios** to choose a compatible preset, **Prepare test**, review its target,
+then **Start test** when your external player is ready. **Stop test** retains its
+result. The **Manual faults** tab uses an explicit **Use manual controls** action;
+switching modes stops the current test in this session. Tabs alone never change
+fault delivery. These settings are private to the running simulator, without
+changing another stream or writing the shared fault file.
+
+**Manifest** shows a stable baseline preview with friendly HLS playlist choices.
+Advertised child playlists are discovered automatically without fetching media,
+initialization segments or keys. **Copy original** and **Download original**
+export the original snapshot, including when readable XML/wrapping is enabled.
+Status updates automatically; the displayed manifest changes only when you
+refresh it or choose another playlist. [Controls, settings reuse and API](session-controls.md).
+
+Without a simulator token, playback and inspection still work and controls show
+read-only setup guidance. Existing automatic CLI scenarios remain managed by
+their startup definition. Legacy shared-file controls are a separate Advanced
+tool and still require matching file paths; inspecting a URL never retargets them.
 
 The control UI inspects streams; it does not contain a video player. Give the
 playback URL to your own HLS-capable player. A plain browser tab does not guarantee
@@ -61,6 +84,9 @@ The image is AMD64-only and uses emulation on ARM. The optional `abr` asset has
 180p/360p video and separate AAC; omit `--asset abr` for the single-video baseline.
 Use the full printed MPD URL, including its path options. It is also available
 through `/proxy.mpd` on the printed proxy port. Normal local UTC is the default.
+Keep the generated token in that terminal's environment, or set a fresh one before
+starting DASH, to enable its session controls. Connecting its URL does not replay
+the previous HLS session's faults.
 
 `--detach` is a legacy compatibility flag: keep the terminal process running.
 Ctrl+C closes the supervised stream and its owned container. It does not stop
@@ -90,9 +116,11 @@ tool, not an internet-facing hosting service.
 | Clone fails | Check the repository URL and GitHub access; private checkouts require an authorized account. |
 | DASH cannot start | Start Docker, check image-download access and use the pinned image. |
 | Port in use | Stop your own session or select a free `--port`. |
-| Controls have no effect | Stream and control commands must use the same absolute fault-file path. |
+| Controls are read-only | Start the simulator with a control token of at least 16 characters; enter that simulator's token under Control access. |
+| Legacy file controls have no effect | Only the separate legacy tool requires stream/controller to use the same absolute file path. |
 | No video in a plain browser | Use a compatible player; the control UI is an inspector. |
-| Scenario rejects manual faults | Start with a healthy config and leave manual controls off in scenario mode. |
+| Settings changed in another window | Your draft is preserved. Explicitly reload current settings or reapply against the latest revision. |
+| Scenario rejects manual faults | Use the explicit mode switch; legacy scenario APIs still require a healthy shared config until UI takeover. |
 | A deliberate fault appears late | The player may be rendering buffered media. Inspect request/fault IDs. |
 | Stream freezes but UTC/media still respond | Manifest freeze holds responses while live publication and clocks continue. |
 

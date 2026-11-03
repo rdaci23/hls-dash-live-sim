@@ -11,6 +11,15 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Added
 
+- Session-scoped authenticated controls with revision conflicts, private manual
+  settings, explicit manual/scenario mode transitions and retained bounded test
+  history. Existing automatic CLI and legacy shared-file workflows remain separate.
+- A focused control UI with connection summary, Scenarios/Manual faults/Manifest
+  tabs, inert HLS metadata discovery, compatible searchable presets, plain-language
+  run status, validated settings reuse and stable original-text manifest exports.
+- Streaming CLI token forwarding, tokenless read-only inspection, page-memory-only
+  credentials and keyboard/contrast/narrow-window UI checks.
+
 - Require ten-minute concurrent endurance evidence for release review. Keep the
   four-hour stress test optional through `--extended-soak` or manual CI dispatch;
   preserve the 128 MiB growth limits, complete evidence and cleanup checks.
