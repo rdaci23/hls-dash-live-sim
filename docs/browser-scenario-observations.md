@@ -35,11 +35,28 @@ and failed observations have distinct results.
 caption evidence, followed by 60 seconds of rendered continuation without an
 unexplained stall over four seconds. Recovery failure remains a separate explicit
 result even when HTTP restoration passes. Raw player errors, console errors and
-stalls remain in the evidence. Errors in the healthy lead-in fail the observation.
+stalls remain in the evidence. Integrity checks cover the complete run through
+browser shutdown, including the time after the healthy lead-in. Exceptions retain
+timestamps, scenario position and stacks; missing/truncated audits, unexpected
+external requests and unexplained errors fail the observation. Raw and source
+file hashes, candidate identity, restoration phases and cleanup are rechecked by
+local release review rather than trusting a stored green flag.
 Wrong/stale initialization and broader transport/cache combinations retain the
 [HTTP-only limits](payload-transport-scenarios.md) outside this specific matrix;
 this runner does not establish recovery for every supported configuration.
 
 Each run closes owned resources and validates its complete diagnostic file.
-`passed` means the observation was captured with restored HTTP controls; it does
+`passed` means the observation has restored HTTP controls and complete, explained
+evidence; it does
 **not** mean the player recovered or that the project is ready for publication.
+
+One narrowly identified compatibility exception is dash.js 5.2.1's handling of
+the deliberately truncated MPD. Its `CapabilitiesFilter` dereferences a missing
+`AdaptationSet`, and the manifest-update promise has no rejection handler. The
+exception can be recorded as that named fault outcome only with the exact fresh
+stack, reviewed player/browser version, delivered 33-byte body/hash and matching
+fault/request IDs, a decoded healthy lead-in and independently verified HTTP
+restoration. Message-only historical traces cannot qualify. Other exceptions
+remain blocking, and this classification never verifies decoded recovery.
+[Pinned capabilities filter](https://github.com/Dash-Industry-Forum/dash.js/blob/v5.2.1/src/streaming/utils/CapabilitiesFilter.js),
+[pinned manifest update](https://github.com/Dash-Industry-Forum/dash.js/blob/v5.2.1/src/streaming/controllers/StreamController.js).

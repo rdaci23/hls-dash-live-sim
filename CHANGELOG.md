@@ -123,6 +123,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Release checks fail on unexplained late browser errors and incomplete evidence.
+  CI and local review share independent core/scenario verification and an explicit
+  DVR compatibility classifier; known limitations retain failed recovery results.
+
 - Browser verification accounts for measured DASH frame catch-up and HLS
   delayed-join caption time origins. Subtitle-switch aborts require causal
   loading-attempt evidence; unrelated errors and genuine discontinuities still

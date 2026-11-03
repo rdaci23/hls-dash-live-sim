@@ -111,7 +111,7 @@ Manual dispatch also offers these optional additions, all off by default:
 
 | Input | Additional checks |
 | --- | --- |
-| `playback` | Full six-case browser playback gate and strict DVR browser matrix. |
+| `playback` | Full six-case browser playback gate and the shared DVR release-check policy. |
 | `core_observations` | Seven rendition/network profiles and nine owned fault browser profiles. |
 | `release_soak` | Optional four-hour concurrent stress test; not required for publication. |
 

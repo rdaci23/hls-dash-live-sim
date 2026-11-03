@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const { bound, endurance } = require('./release/acceptance.cjs');
 const {reviewOptions}=require('./release/options.cjs');
 const {createProcessOwner}=require('./release/process-owner.cjs');
+const corePolicy=require('./browser/core-policy.cjs'),scenarioPolicy=require('./browser/scenario-integrity.cjs'),dvrPolicy=require('./browser/dvr-acceptance.cjs');
 const root = path.resolve(__dirname, '..'), args = process.argv.slice(2);
 const capture = (command, params, cwd = root) => execFileSync(command, params, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -136,6 +137,12 @@ async function main() {
             const evidence = JSON.parse(await fs.readFile(path.join(output, 'report.json'), 'utf8'));
             bound(evidence, commit);
             assert.equal(evidence.passed ?? evidence.allPassed ?? evidence.allCasesVerified, true, name + ' did not pass');
+            if(name==='scenario-browser'){
+                const integrity=await scenarioPolicy.read(output,{expectedCommit:commit});
+                assert.equal(integrity.cases.length,18,'Incomplete scenario-browser release matrix');
+                assert.equal(integrity.passed,true,integrity.failures.join('; '));
+                report.scenarioIntegrity=integrity;
+            }
             report.core.push({ name, commit, passed: true, checks: evidence.checks?.length, report: name + '/report.json' });
         }
         const outageOutput = path.join(directory, 'sustained-outage');
@@ -148,18 +155,18 @@ async function main() {
         const observations = JSON.parse(await fs.readFile(path.join(coreOutput, 'report.json'), 'utf8'));
         bound(observations, commit);
         assert.equal(observations.checks.length, 7);
-        assert.ok(observations.checks.every(r => r.observationCompleted && r.diagnosticFile?.complete));
+        for(const caseId of ['hls-high','hls-low','dash-low','hls-starvation','dash-starvation','hls-oscillation','dash-oscillation']){
+            const integrity=await corePolicy.qualifyDirectory(path.join(coreOutput,caseId),{commit});
+            assert.equal(integrity.passed,true,integrity.failures.join('; '));
+        }
         report.compatibility = observations.checks.map(r => ({ caseId: r.caseId, compatibility: r.browserCompatibility, faultObserved: r.faultObserved, healthyWindowsVerified: r.healthyWindowsVerified, failures: r.failures }));
         const dvrOutput = path.join(directory, 'dvr-browser');
-        await step('dvr-browser', process.execPath, ['scripts/verify-dvr-browser.cjs', '--output', dvrOutput], checkout, undefined, true);
+        await step('dvr-browser', process.execPath, ['scripts/verify-dvr-browser.cjs', '--release-check','--output', dvrOutput]);
         const dvr = JSON.parse(await fs.readFile(path.join(dvrOutput, 'report.json'), 'utf8'));
         bound(dvr, commit);
-        assert.equal(dvr.checks.length, 6);
-        for (const r of dvr.checks) {
-            assert.equal(r.diagnosticFile?.complete, true);
-            if (!r.passed)
-                assert.ok(r.kind === 'join-during-outage' && /first rendered frame timed out/.test(r.error) || r.protocol === 'dash' && r.kind === 'long-manifest-freeze' && /automatic rendering in the restored live window timed out/.test(r.error), 'Unexplained DVR failure');
-        }
+        const dvrIntegrity=await dvrPolicy.read(dvrOutput,{releaseCheck:true,expectedCommit:commit});
+        assert.equal(dvrIntegrity.accepted,true,dvrIntegrity.failures.join('; '));
+        report.dvrIntegrity=dvrIntegrity;
         report.dvrCompatibility = dvr.checks.map(r => ({ protocol: r.protocol, kind: r.kind, passed: r.passed, error: r.error }));
         await step('browser-routing', process.execPath, ['scripts/verify-browser-routing.cjs', '--output', path.join(directory, 'browser-routing')]);
         await step('endurance-cleanup', process.execPath, ['scripts/verify-endurance-cleanup.cjs', '--output', path.join(directory, 'endurance-cleanup')]);

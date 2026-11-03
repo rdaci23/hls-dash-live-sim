@@ -337,7 +337,7 @@ jobs:
       - run: npx --no-install playwright install --with-deps chrome
       - run: npm run lifecycle:invalid -- --output output/ci-invalid-lifecycle
       - run: npm run dvr:verify -- --output output/ci-dvr-http
-      - run: npm run browser:dvr -- --output output/ci-dvr-browser
+      - run: npm run browser:dvr -- --release-check --output output/ci-dvr-browser
         if: github.event_name == 'workflow_dispatch' && inputs.playback
       - run: npm run lifecycle:verify -- --output output/ci-lifecycle-http
       - run: npm run browser:lifecycle -- --output output/ci-lifecycle-browser

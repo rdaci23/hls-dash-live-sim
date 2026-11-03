@@ -32,12 +32,17 @@ Unexplained page exceptions, healthy-window errors, evidence drops/truncation an
 unexplained stalls are explicit failures. A known player limitation is retained;
 it must not be relabeled as a simulator defect or a recovery pass.
 
-The command's default exit status reports whether it captured an observation.
-Read `browserCompatibility`, `faultObserved`, `healthyWindowsVerified`, failures
-and `simulatorResult` separately. Add `--require-continuation` to fail the command
-when the healthy before/after windows do not qualify. Neither mode is a public
-release approval, and all reports keep `releaseReady: false`. The separate full
-healthy gate still requires three minutes and two played DASH Period transitions.
+The default command fails on unverified healthy windows, unexplained errors or
+incomplete evidence, even if observation capture finished. CLI and local release
+review independently recompute the same policy from raw measurements, the closed
+browser audit and the complete source file. Time proximity to a fault alone cannot
+explain a player error: status errors and constrained-transfer cancellations need
+matching resource/request evidence. `--require-continuation` remains available;
+it cannot disable integrity checks. Read `browserCompatibility`, `faultObserved`,
+`healthyWindowsVerified`, failures and `simulatorResult` separately. An unexercised
+target does not become a fallback/recovery pass. All reports retain
+`releaseReady: false`; the full healthy gate still requires three minutes and two
+played DASH Period transitions.
 
 The verifier validates the closed diagnostic file from session start through
 session close, with contiguous event IDs, matching session/protocol, a complete

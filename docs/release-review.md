@@ -139,6 +139,15 @@ whether extended testing was requested; skipped extended testing is not a pass.
 Use an awake machine for the complete browser/integration matrix.
 It does not contact a Roku or change repository visibility.
 
+Browser capture completion is not a release gate by itself. Core and targeted
+scenario checks independently recompute raw measurements, closed source-file
+identity, browser audit integrity and fault attribution. Unexplained exceptions,
+unhealthy baseline windows and missing evidence remain blocking. Documented
+invalid-stream player outcomes stay separate from HTTP restoration and decoded
+recovery. DVR uses the same evidence-backed `--release-check` classifier in CI and
+local review; its exact known limitations retain failed player outcomes. Neither
+a time-window match nor an arbitrary timeout can qualify a failure.
+
 Reports retain the candidate commit, clean-tree checks, scanner version, archive
 hash and file inventory, redacted scan reports, step logs and browser evidence.
 Only complete successful local checks set `candidateChecksPassed`. This does not

@@ -98,6 +98,8 @@ npm run hls -- --fixture tracks --scenario examples/scenarios/join-during-outage
 npm run dash -- --fixture tracks --scenario examples/scenarios/long-manifest-freeze.json
 npm run dvr:verify -- --output output/dvr-http
 npm run browser:dvr -- --output output/dvr-browser
+# Candidate policy used identically by manual CI and local release review:
+npm run browser:dvr -- --release-check --output output/dvr-release-check
 ```
 
 The isolated HTTP checks retain the same old media identity, wait beyond actual
@@ -132,5 +134,16 @@ stopped at its automatic seek to the new window. That is unqualified browser
 recovery. The verifier now additionally requires newly rendered media inside the
 restored source window; looping old frames cannot pass. Both protocols passed
 HTTP held-body identity, retention expiry, advancing publication and fresh media
-restoration. Manual full CI checks these HTTP contracts; the strict DVR browser
-matrix additionally requires the `playback` dispatch input and retains its failures.
+restoration. Manual full CI checks these HTTP contracts; the DVR browser matrix
+additionally requires the `playback` dispatch input.
+
+`browser:dvr` is strict by default: failed player behavior returns a failing exit
+status. CI and local release review both use the same `--release-check` policy.
+That policy can classify only the two protocol-specific join timeouts and the
+documented DASH restored-window timeout. It requires all six unique cases, the
+exact reviewed player/browser identity, a clean candidate, the correct phase,
+independent fault/isolation/restoration probes, complete hashed evidence, no
+unexplained audit/player errors, and drained resources. Unknown versions or missing
+evidence block qualification. Raw `passed` and recovery fields stay false for a
+known limitation; separate `releaseCheckPassed` and `knownLimitations` fields
+explain the classification. A timeout message alone cannot qualify a case.

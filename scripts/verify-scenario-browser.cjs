@@ -1,13 +1,14 @@
 // Compatibility observations: simulator delivery/restoration and player recovery are separate results.
 const fs = require('node:fs/promises'), path = require('node:path'), assert = require('node:assert/strict'), { randomUUID } = require('node:crypto');
+const { createHash } = require('node:crypto'), { XMLValidator } = require('fast-xml-parser'), { resourceUrl } = require('./browser/audit.cjs'), { assess } = require('./browser/scenario-integrity.cjs');
 const { open } = require('./browser/owned-player.cjs'), { kinds, definition, correlate } = require('./browser/scenario-observations.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs');
 async function verify(session, protocol, kind, signal, dir) {
     const startup = kind === 'wrong-track-init', responses = [], pending = new Set();
-    let ui, metrics, error, restored, recoveryError, healthy, observed;
+    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,manifestEvidenceBytes=0,clockAnchor,faultWindowBrowser;
     const responseErrors = [];
     const origin = new URL(session.url).origin, window = startup ? 15000 : 50000;
     try {
-        const advertised = await tracks(session, protocol);
+        const advertised = await tracks(session, protocol),manifestUrls=new Set([session.url,...advertised.map(r=>r.manifest)].filter(Boolean).map(String).map(resourceUrl));
         // Advertised audio init is the explicit donor. Never infer a resource from its filename.
         if (startup) {
             const audio = advertised.find(r => r.track === 'audio:0');
@@ -15,17 +16,28 @@ async function verify(session, protocol, kind, signal, dir) {
             assert.equal((await fetch(audio.init)).status, 200);
         }
         ui = await open(session, protocol, signal, { onResponse: response => {
-                if (new URL(response.url()).origin !== origin)
+                try {
+                if (responsesClosing || new URL(response.url()).origin !== origin)
                     return;
-                const job = (async () => { const headers = await response.allHeaders(); responses.push({ status: response.status(), requestId: headers['x-sim-request-id'], faultIds: headers['x-sim-fault-ids'] }); })();
+                if(responses.length+pending.size>=5000){responseDropped++;return;}
+                const receivedEpochMs=Date.now(),scenarioElapsedMs=session.scenario?.report().elapsedMs;
+                const job = (async () => { const headers = await response.allHeaders(),entry={ status: response.status(), method:response.request().method(),requestResourceId:session.diagnostics.resourceId(new URL(response.url()).pathname+new URL(response.url()).search), url:resourceUrl(response.url()), receivedEpochMs,scenarioElapsedMs, requestId: headers['x-sim-request-id'], faultIds: headers['x-sim-fault-ids'] };
+                    if(['malformed-manifest','manifest-rollback','rendition-lag'].includes(kind)&&entry.faultIds&&manifestUrls.has(entry.url)){
+                        const declared=Number(headers['content-length']);if(Number.isFinite(declared)&&declared>128*1024)throw Error('Manifest fault evidence exceeds body limit');
+                        const body=await response.body();manifestEvidenceBytes+=body.length;if(body.length>128*1024||manifestEvidenceBytes>2*1024*1024)throw Error('Manifest fault evidence exceeds capture limit');
+                        Object.assign(entry,{bytes:body.length,bodyText:body.toString('utf8'),bodySha256:createHash('sha256').update(body).digest('hex')});
+                    }responses.push(entry); })();
                 pending.add(job);
-                job.then(() => pending.delete(job), e => { responseErrors.push(e.message); pending.delete(job); });
+                job.then(() => pending.delete(job), e => { if(responseErrors.length<100)responseErrors.push(e.message);else responseDropped++; pending.delete(job); });
+                }catch(e){if(responseErrors.length<100)responseErrors.push(e.message);else responseDropped++;}
             } });
+        const anchor=async()=>{const m=await ui.snapshot(),scenarioElapsedMs=session.scenario.report().elapsedMs;clockAnchor={browserElapsedMs:m.elapsedMs,scenarioElapsedMs,epochMs:Date.now()};const offset=m.elapsedMs-scenarioElapsedMs;faultWindowBrowser={fromMs:offset+(startup?0:35000),toMs:offset+(startup?15000:50000)};};
+        if(startup){await ui.wait(m=>Number.isFinite(m.elapsedMs),10000,'browser telemetry initialization');await anchor();}
         if (!startup) {
-            const first = await ui.wait(m => m.frames > 0, 10000, 'healthy first frame');
+            first = await ui.wait(m => m.frames > 0, 10000, 'healthy first frame');
             await ui.page.click('#enable');
             await ui.page.evaluate(() => window.selectTracks({ audio: 'en', text: 'en', videoIndex: 0 }));
-            await session.runs.action('start', { runId: session.runs.runId });
+            await session.runs.action('start', { runId: session.runs.runId });await anchor();
             healthy = await ui.wait(m => session.scenario.report().elapsedMs >= 30000 && m.mediaTime - first.mediaTime >= 29 && languageEvidence(m, first.elapsedMs, 'en').verified, 33000, '30-second decoded healthy lead-in');
             assert.ok(!healthy.errors.some(e => !expectedCancellation(e, healthy.events)) && !healthy.gaps.some(g => g.to - g.from > 4000) && !ui.audit.length, 'Lead-in contains unexplained playback errors');
             console.log(protocol+' '+kind+': decoded healthy lead-in verified');
@@ -47,15 +59,21 @@ async function verify(session, protocol, kind, signal, dir) {
                 assert.equal(response.status, 200);
                 assert.ok(bytes.byteLength > 0);
                 assert.equal(response.headers.get('x-sim-fault-ids'), null);
-                controls.push({ track: r.track, status: response.status, bytes: bytes.byteLength, requestId: response.headers.get('x-sim-request-id') });
+                controls.push({ track: r.track, status: response.status, bytes: bytes.byteLength,requestResourceId:session.diagnostics.resourceId(new URL(resource).pathname+new URL(resource).search),completedEpochMs:Date.now(),scenarioElapsedMs:session.scenario.report().elapsedMs, requestId: response.headers.get('x-sim-request-id') });
             }
-        restored = { atMs: session.scenario.report().elapsedMs, controls };
+        const response=await fetch(session.url,{signal:AbortSignal.timeout(6000)}),manifestBody=Buffer.from(await response.arrayBuffer());
+        assert.equal(response.status,200);assert.ok(manifestBody.length>0);assert.equal(response.headers.get('x-sim-fault-ids'),null);
+        const manifestText=manifestBody.toString('utf8'),valid=protocol==='hls'?manifestText.startsWith('#EXTM3U'):XMLValidator.validate(manifestText)===true&&/<MPD(?:\s|>)/.test(manifestText)&&/<AdaptationSet(?:\s|>)/.test(manifestText);
+        assert.equal(valid,true,'Restored manifest must be a valid control');
+        restored = { atMs: session.scenario.report().elapsedMs,epochMs:Date.now(),manifest:{status:response.status,requestResourceId:session.diagnostics.resourceId(new URL(session.url).pathname+new URL(session.url).search),completedEpochMs:Date.now(),scenarioElapsedMs:session.scenario.report().elapsedMs,bytes:manifestBody.length,bodyText:manifestText,valid,requestId:response.headers.get('x-sim-request-id'),sha256:createHash('sha256').update(manifestBody).digest('hex')}, controls };
         if (startup)
             recoveryError = 'Startup initialization observation: decoded recovery is not qualified by this check';
         else
             try {
                 const from = await ui.snapshot();
+                restored.recoveryStartedAtMs=from.elapsedMs;
                 const decoded = await ui.wait(m => m.frames > from.frames + 3 && m.mediaTime > from.mediaTime + 1 && languageEvidence(m, from.elapsedMs, 'en').verified, 15000, 'automatic decoded restoration');
+                restored.decodedAtMs=decoded.elapsedMs;
                 const last = await ui.wait(m => m.elapsedMs >= decoded.elapsedMs + 60000 && m.mediaTime >= decoded.mediaTime + 55, 65000, '60-second continuation');
                 assert.ok(!last.errors.some(e => e.atMs > decoded.elapsedMs && !expectedCancellation(e, last.events)) && !last.gaps.some(g => g.from > decoded.elapsedMs && g.to - g.from > 4000), 'Post-restoration playback was not healthy');
                 restored.browser = { firstDecodedAtMs: decoded.elapsedMs, continuedToMs: last.elapsedMs, mediaTime: last.mediaTime };
@@ -76,14 +94,15 @@ async function verify(session, protocol, kind, signal, dir) {
                 metrics = await ui.snapshot();
             }
             catch { }
-            await ui.close();
+            await Promise.allSettled([...pending]);responsesClosing=true;await ui.close();
         }
         await Promise.allSettled([...pending]);
     }
-    const report = { protocol, kind, passed: !error, error, observationCaptured: !error, simulatorRestorationVerified: !!restored, browserRecoveryVerified: !!restored?.browser, recoveryError, startup, healthyLeadIn: healthy && { frames: healthy.frames, mediaTime: healthy.mediaTime, elapsedMs: healthy.elapsedMs }, affectedBrowserResponses: observed, restored, browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, releaseReady: false };
-    await fs.writeFile(path.join(dir, 'raw.json'), JSON.stringify({ metrics, audit: ui?.audit, report }, null, 2) + '\n', { mode: 0o600 });
-    if (error)
-        throw Error(error);
+    const healthyLeadIn=healthy&&{frames:healthy.frames,mediaTime:healthy.mediaTime,elapsedMs:healthy.elapsedMs,fromMs:first.elapsedMs,durationMs:healthy.elapsedMs-first.elapsedMs,decodedVerified:languageEvidence(healthy,first.elapsedMs,'en').verified};
+    const integrity=assess({protocol,kind,metrics,faultWindowBrowser,clockAnchor,browserResponses:responses,audit:ui?.audit??[],auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,error,restored,startup,healthyLeadIn,healthyMetrics:healthy,browserRecoveryVerified:!!restored?.browser,recoveryError,affectedBrowserResponses:observed,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion});
+    const report = { protocol, kind, faultWindowBrowser,clockAnchor,passed: !error&&integrity.passed, error:error??(!integrity.passed?integrity.failures.join('; '):undefined), observationCaptured: !error,integrity, simulatorRestorationVerified: !!restored, browserRecoveryVerified: integrity.passed&&integrity.player.browserRecoveryVerified, recoveryError, startup, healthyLeadIn, affectedBrowserResponses: observed, restored, browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, releaseReady: false };
+    await fs.writeFile(path.join(dir, 'raw.json'), JSON.stringify({ metrics,healthyMetrics:healthy, audit: ui?.audit,auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,responses,diagnosticMetadata:{...session.diagnostics.snapshot(),events:undefined}, report }, null, 2) + '\n', { mode: 0o600 });
+    if (!report.passed){const failure=Error(report.error);failure.result=report;throw failure;}
     return report;
 }
 require('./owned-scenarios/runner.cjs').run('scenario-browser', kinds, definition, verify, () => ({ scenarioStart: 'manual', controlToken: randomUUID() })).catch(e => { console.error(e.message); process.exitCode = 1; });
