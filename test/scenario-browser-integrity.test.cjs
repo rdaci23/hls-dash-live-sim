@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const root=path.resolve(__dirname,'..');
 // Run the real orchestration with only its browser/HTTP I/O replaced. In
 // particular, an error delivered after the lead-in reaches the final gate.
-async function run(lateAudit,missingAuditCounter=false){
+async function run(lateAudit,missingAuditCounter=false,responseEvent){
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'scenario-integrity-'));
  let verify,waits=0;const audit=[],metrics={protocol:'dash',startEpochMs:65000,elapsedMs:120000,mediaTime:120,frames:2800,firstFrameMs:100,errors:[],gaps:[],events:[],dropped:0,retrySettings:{retryAttempts:{MediaSegment:3}}};
  const session={url:'http://127.0.0.1:18080/manifest.mpd',runs:{runId:'run',action:async()=>{}},scenario:{report:()=>({elapsedMs:waits<=1?0:60000})},diagnostics:{snapshot:()=>({events:[]}),resourceId:value=>'resource_'+value}};
@@ -10,7 +10,7 @@ async function run(lateAudit,missingAuditCounter=false){
  if(missingAuditCounter)delete ui.auditDropped;
  const realRequire=require('node:module').createRequire(path.join(root,'scripts/verify-scenario-browser.cjs'));
  const mocked=specifier=>{
-  if(specifier==='./browser/owned-player.cjs')return{open:async()=>ui};
+  if(specifier==='./browser/owned-player.cjs')return{open:async(_session,_protocol,_signal,options)=>{if(responseEvent)options.onResponse(responseEvent);return ui;}};
   if(specifier==='./track-scenarios/verify.cjs')return{tracks:async()=>[{track:'video:0',init:'http://127.0.0.1:18080/init',media:'http://127.0.0.1:18080/media'}]};
   if(specifier==='./track-browser/acceptance.cjs')return{languageEvidence:()=>({verified:true}),expectedCancellation:()=>false};
   if(specifier==='./browser/scenario-observations.cjs')return{...realRequire(specifier),correlate:()=>[{status:200,url:'http://127.0.0.1:18080/media',method:'GET',requestResourceId:'resource_media',requestId:'fault-request',faultIds:'fault-id',fault:'scenario.payload',resource:'media',track:'video:0',receivedEpochMs:100100,scenarioElapsedMs:35000}]};
@@ -19,7 +19,7 @@ async function run(lateAudit,missingAuditCounter=false){
  };
  const context=vm.createContext({require:mocked,console:{log(){}},Buffer,URL,Date,AbortSignal,setTimeout,clearTimeout,process:{argv:[],exitCode:0},fetch:async url=>({status:200,arrayBuffer:async()=>String(url).endsWith('manifest.mpd')?Buffer.from('<MPD><Period><AdaptationSet></AdaptationSet></Period></MPD>'):new Uint8Array([1,2]).buffer,headers:{get:name=>name==='x-sim-request-id'?'control-request':null}})});
  vm.runInContext(await fs.readFile(path.join(root,'scripts/verify-scenario-browser.cjs'),'utf8'),context);
- try{return await verify(session,'dash','damaged-media',new AbortController().signal,directory);}finally{await fs.rm(directory,{recursive:true,force:true});}
+ try{const result=await verify(session,'dash','damaged-media',new AbortController().signal,directory);if(responseEvent)result.capturedResponses=JSON.parse(await fs.readFile(path.join(directory,'raw.json'),'utf8')).responses;return result;}finally{await fs.rm(directory,{recursive:true,force:true});}
 }
 test('scenario observations reject an unexplained exception delivered after the healthy lead-in',async()=>{
  await assert.rejects(run({kind:'pageerror',epochMs:Date.now(),scenarioElapsedMs:55000,message:'late unexpected callback',stack:'Error: late unexpected callback\n at unrelated (http://127.0.0.1/player.js:1:1)'}),/exception|integrity|unexplained/i);
@@ -32,3 +32,10 @@ test('a complete scenario observation without browser errors still qualifies',as
 });
 
 test('the actual driver cannot normalize a missing audit loss counter into zero',async()=>{await assert.rejects(run(undefined,true),/missing|truncated/i);});
+
+function staleResponse(status=410,declared='25'){return{url:()=> 'http://127.0.0.1:18080/expired-media',status:()=>status,request:()=>({method:()=> 'GET'}),allHeaders:async()=>({'x-sim-request-id':'expired-request','content-length':declared}),body:async()=>Buffer.from('Media is no longer here.\n')};}
+test('the actual response capture retains bounded completed error-body evidence for stale media',async()=>{
+ const result=await run(undefined,false,staleResponse());const response=result.capturedResponses[0];
+ assert.equal(response.status,410);assert.equal(response.requestId,'expired-request');assert.equal(response.bytes,25);assert.equal(response.bodySha256,require('node:crypto').createHash('sha256').update('Media is no longer here.\n').digest('hex'));assert.equal(typeof response.completedEpochMs,'number');assert.ok(response.completedEpochMs>=response.receivedEpochMs);assert.equal(response.bodyText,undefined);
+});
+test('oversized error bodies cannot silently qualify a scenario observation',async()=>{await assert.rejects(run(undefined,false,staleResponse(404,String(128*1024+1))),/missing|truncated|failed|evidence/i);});

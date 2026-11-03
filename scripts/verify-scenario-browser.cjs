@@ -4,7 +4,7 @@ const { createHash } = require('node:crypto'), { XMLValidator } = require('fast-
 const { open } = require('./browser/owned-player.cjs'), { kinds, definition, correlate } = require('./browser/scenario-observations.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs');
 async function verify(session, protocol, kind, signal, dir) {
     const startup = kind === 'wrong-track-init', responses = [], pending = new Set();
-    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,manifestEvidenceBytes=0,clockAnchor,faultWindowBrowser;
+    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser;
     const responseErrors = [];
     const origin = new URL(session.url).origin, window = startup ? 15000 : 50000;
     try {
@@ -22,10 +22,11 @@ async function verify(session, protocol, kind, signal, dir) {
                 if(responses.length+pending.size>=5000){responseDropped++;return;}
                 const receivedEpochMs=Date.now(),scenarioElapsedMs=session.scenario?.report().elapsedMs;
                 const job = (async () => { const headers = await response.allHeaders(),entry={ status: response.status(), method:response.request().method(),requestResourceId:session.diagnostics.resourceId(new URL(response.url()).pathname+new URL(response.url()).search), url:resourceUrl(response.url()), receivedEpochMs,scenarioElapsedMs, requestId: headers['x-sim-request-id'], faultIds: headers['x-sim-fault-ids'] };
-                    if(['malformed-manifest','manifest-rollback','rendition-lag'].includes(kind)&&entry.faultIds&&manifestUrls.has(entry.url)){
-                        const declared=Number(headers['content-length']);if(Number.isFinite(declared)&&declared>128*1024)throw Error('Manifest fault evidence exceeds body limit');
-                        const body=await response.body();manifestEvidenceBytes+=body.length;if(body.length>128*1024||manifestEvidenceBytes>2*1024*1024)throw Error('Manifest fault evidence exceeds capture limit');
-                        Object.assign(entry,{bytes:body.length,bodyText:body.toString('utf8'),bodySha256:createHash('sha256').update(body).digest('hex')});
+                    const manifestBody=['malformed-manifest','manifest-rollback','rendition-lag'].includes(kind)&&entry.faultIds&&manifestUrls.has(entry.url);
+                    if(manifestBody||entry.method==='GET'&&[404,410].includes(entry.status)){
+                        const declared=Number(headers['content-length']);if(Number.isFinite(declared)&&declared>128*1024)throw Error('Browser body evidence exceeds body limit');
+                        const body=await response.body();bodyEvidenceBytes+=body.length;if(body.length>128*1024||bodyEvidenceBytes>2*1024*1024)throw Error('Browser body evidence exceeds capture limit');
+                        Object.assign(entry,{bytes:body.length,completedEpochMs:Date.now(),bodySha256:createHash('sha256').update(body).digest('hex'),...(manifestBody?{bodyText:body.toString('utf8')}:{})});
                     }responses.push(entry); })();
                 pending.add(job);
                 job.then(() => pending.delete(job), e => { if(responseErrors.length<100)responseErrors.push(e.message);else responseDropped++; pending.delete(job); });

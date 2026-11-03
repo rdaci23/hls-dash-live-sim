@@ -8,16 +8,18 @@ const list = value => Array.isArray(value) ? value : [], finite = Number.isFinit
 const sha = value => createHash('sha256').update(value).digest('hex');
 function bodyVerified(response) { return typeof response.bodyText === 'string' && Buffer.byteLength(response.bodyText) <= 128 * 1024 && response.bytes === Buffer.byteLength(response.bodyText) && response.bodySha256 === sha(response.bodyText); }
 function validManifest(response, protocol) { return bodyVerified(response) && (protocol === 'hls' ? /^#EXTM3U\r?\n/.test(response.bodyText) && /#EXT-X-TARGETDURATION:\d+/.test(response.bodyText) : XMLValidator.validate(response.bodyText) === true && /<MPD(?:\s|>)/.test(response.bodyText)); }
-function advertisedMedia(response, protocol) {
+function advertisedResources(response, protocol) {
     if (!validManifest(response, protocol)) return [];
-    const urls = new Set(), add = value => { const url = resourceUrl(new URL(value, response.url).href); if (url) urls.add(url); if (urls.size > 1024) throw Error('Manifest media evidence limit'); };
+    const resources = new Map(), add = (value, trackKind) => { const url = resourceUrl(new URL(value, response.url).href); if (url) { if (!resources.has(url)) resources.set(url, { url, trackKind }); else if (resources.get(url).trackKind !== trackKind) resources.get(url).trackKind = undefined; } if (resources.size > 1024) throw Error('Manifest media evidence limit'); };
     try {
-        if (protocol === 'hls') for (const line of response.bodyText.split(/\r?\n/)) { if (line && !line.startsWith('#')) add(line); }
+        if (protocol === 'hls') for (const line of response.bodyText.split(/\r?\n/)) { if (line && !line.startsWith('#')) add(line, /^video:\d+$/.test(response.track) ? 'video' : undefined); }
         else {
             const root = new XMLParser({ ignoreAttributes: false, parseAttributeValue: false }).parse(response.bodyText).MPD, many = value => value === undefined ? [] : Array.isArray(value) ? value : [value];
             if (!root || root.BaseURL) return [];
             for (const period of many(root.Period)) for (const adaptation of many(period.AdaptationSet)) for (const representation of many(adaptation.Representation)) {
                 if (period.BaseURL || adaptation.BaseURL || representation.BaseURL) return [];
+                const contentType = adaptation['@_contentType'], mimeType = representation['@_mimeType'] ?? adaptation['@_mimeType'], mimeKind = /^(video|audio|text)\//i.exec(mimeType ?? '')?.[1].toLowerCase();
+                const trackKind = contentType !== undefined ? ['video', 'audio', 'text'].includes(contentType) && (!mimeKind || mimeKind === contentType) ? contentType : undefined : mimeKind;
                 const template = { ...root.SegmentTemplate, ...period.SegmentTemplate, ...adaptation.SegmentTemplate, ...representation.SegmentTemplate }, entries = many(template.SegmentTimeline?.S);
                 if (typeof template['@_media'] !== 'string') return [];
                 let time = 0n, number = BigInt(template['@_startNumber'] ?? 1);
@@ -26,14 +28,15 @@ function advertisedMedia(response, protocol) {
                     time = BigInt(entry['@_t'] ?? time);
                     for (let n = 0; n <= repeat; n++) {
                         const uri = template['@_media'].replaceAll('$RepresentationID$', String(representation['@_id'])).replaceAll('$Bandwidth$', String(representation['@_bandwidth'])).replaceAll('$Time$', String(time)).replaceAll('$Number$', String(number++));
-                        if (uri.includes('$')) return []; add(uri); time += duration;
+                        if (uri.includes('$')) return []; add(uri, trackKind); time += duration;
                     }
                 }
             }
         }
     } catch { return []; }
-    return [...urls];
+    return [...resources.values()];
 }
+function advertisedMedia(response, protocol) { return advertisedResources(response, protocol).map(resource => resource.url); }
 function validFault(response, input) {
     const { kind, protocol } = input, from = kind === 'wrong-track-init' ? 0 : 35000, to = kind === 'wrong-track-init' ? 15000 : 50000;
     if (!text(response.requestId) || !text(response.faultIds) || !text(response.url) || response.url !== resourceUrl(response.url) || !finite(response.receivedEpochMs) || !finite(response.scenarioElapsedMs) || response.scenarioElapsedMs < from || response.scenarioElapsedMs >= to) return false;
@@ -64,6 +67,24 @@ function failedWaitBound(input) {
     if (sampleEpoch < snapshot.requestedEpochMs - 10 || sampleEpoch > snapshot.completedEpochMs + 10) return invalid('Final player sample is outside its measured snapshot RPC');
     return { verified: true, fromMs: start, toMs: metrics.elapsedMs, waitStartedEpochMs: wait.startedEpochMs, waitEndedEpochMs: wait.endedEpochMs, finalSnapshot: snapshot };
 }
+function staleMediaFailures(input) {
+    const { protocol, metrics, faultWindowBrowser: window, restored } = input;
+    if (input.kind !== 'manifest-rollback' || !['hls', 'dash'].includes(protocol) || !finite(metrics?.startEpochMs) || !finite(metrics.elapsedMs) || !finite(window?.fromMs) || !finite(window?.toMs) || Math.abs(window.toMs - window.fromMs - 15000) > 0.001) return [];
+    const sourceEpoch = metrics.startEpochMs + window.fromMs - 35000, decodedAt = restored?.decodedAtMs ?? restored?.browser?.firstDecodedAtMs, wait = failedWaitBound(input);
+    const end = finite(decodedAt) ? decodedAt : wait.verified ? wait.toMs : Math.min(metrics.elapsedMs, window.toMs + 15000);
+    const manifests = list(input.affectedBrowserResponses).filter(r => validFault(r, input) && finite(r.completedEpochMs) && r.completedEpochMs >= r.receivedEpochMs && Math.abs(r.receivedEpochMs - sourceEpoch - r.scenarioElapsedMs) <= 250).map(response => ({ response, resources: new Map(advertisedResources(response, protocol).map(resource => [resource.url, resource])) }));
+    const responses = list(input.browserResponses), counts = new Map(), resources = new Map();
+    for (const r of responses) { counts.set(r.requestId, (counts.get(r.requestId) ?? 0) + 1); if (text(r.requestResourceId)) { const urls = resources.get(r.requestResourceId) ?? new Set(); urls.add(r.url); resources.set(r.requestResourceId, urls); } }
+    const result = [];
+    for (const r of responses) {
+        if (r.method !== 'GET' || ![404, 410].includes(r.status) || r.faultIds || !text(r.requestId) || counts.get(r.requestId) !== 1 || !text(r.requestResourceId) || resources.get(r.requestResourceId)?.size !== 1 || !text(r.url) || r.url !== resourceUrl(r.url) || !finite(r.receivedEpochMs) || !finite(r.completedEpochMs) || r.completedEpochMs < r.receivedEpochMs || !finite(r.scenarioElapsedMs) || Math.abs(r.receivedEpochMs - sourceEpoch - r.scenarioElapsedMs) > 250 || !Number.isSafeInteger(r.bytes) || r.bytes < 1 || r.bytes > 128 * 1024 || !/^[a-f0-9]{64}$/.test(r.bodySha256 ?? '')) continue;
+        const completedAt = r.completedEpochMs - metrics.startEpochMs;
+        if (r.receivedEpochMs - metrics.startEpochMs < window.fromMs || completedAt > end) continue;
+        const cause = manifests.filter(m => m.resources.has(r.url) && m.response.completedEpochMs <= r.receivedEpochMs + 250).sort((a, b) => b.response.completedEpochMs - a.response.completedEpochMs)[0];
+        if (cause) result.push({ requestId: r.requestId, requestResourceId: r.requestResourceId, url: r.url, trackKind: cause.resources.get(r.url).trackKind, status: r.status, bytes: r.bytes, bodySha256: r.bodySha256, receivedEpochMs: r.receivedEpochMs, completedEpochMs: r.completedEpochMs, scenarioElapsedMs: r.scenarioElapsedMs, browserCompletedAtMs: completedAt, faultRequestId: cause.response.requestId, faultIds: cause.response.faultIds });
+    }
+    return result;
+}
 function assessPlayer(input) {
     const { protocol, kind, metrics, healthyMetrics, faultWindowBrowser: window, restored } = input, failures = [], expectedFaultErrors = [], expectedCancellations = [], unexplainedErrors = [], expectedFaultGaps = [], unexplainedGaps = [];
     const startup = kind === 'wrong-track-init', versions = { hls: '1.7.3', dash: '5.2.1' };
@@ -74,6 +95,7 @@ function assessPlayer(input) {
     if (!window || !finite(window.fromMs) || !finite(window.toMs) || Math.abs(window.toMs - window.fromMs - 15000) > 0.001 || window.toMs <= 0) failures.push('Measured browser fault window missing or invalid');
     if (!Array.isArray(input.affectedBrowserResponses) || !Array.isArray(input.browserResponses)) failures.push('Delivered resource and browser response identities missing');
     const faults = list(input.affectedBrowserResponses).filter(response => validFault(response, input));
+    const staleFailures = staleMediaFailures(input);
     if (!faults.length) failures.push('No independently identified named fault response reached the player');
     const decodedAt = restored?.decodedAtMs ?? restored?.browser?.firstDecodedAtMs;
     if (decodedAt !== undefined && (!finite(decodedAt) || !finite(metrics?.elapsedMs) || decodedAt < (window?.toMs ?? Infinity) || decodedAt > metrics.elapsedMs)) failures.push('Decoded-resume clock is invalid');
@@ -106,9 +128,8 @@ function assessPlayer(input) {
             else if (protocol === 'dash' && kind === 'wrong-track-init' && error.code === 4 && error.message === WRONG_INIT) response = associated[0];
         }
         if (!response && kind === 'manifest-rollback') {
-            const url = errorUrl(error), failed = list(input.browserResponses).find(r => r.url === url && [404, 410].includes(r.status) && text(r.requestId) && near(r, error));
-            if (failed && (protocol === 'dash' && error.kind === 'dash' && error.code === 27 && error.message === url + ' is not available' || protocol === 'hls' && error.kind === 'hls' && error.type === 'networkError' && error.details === 'fragLoadError' && error.status === failed.status && error.message === 'HTTP Error ' + failed.status + (failed.status === 404 ? ' Not Found' : ' Gone'))) response = faults.find(r => r.receivedEpochMs <= epoch(error) + 250 && advertisedMedia(r, protocol).includes(url));
-            if (response) return { error, signature: 'advertised-stale-media-unavailable', faultRequestId: response.requestId, faultIds: response.faultIds, failedRequestId: failed.requestId };
+            const url = errorUrl(error), failed = staleFailures.filter(r => r.url === url && (!text(error.requestId) || r.requestId === error.requestId) && near({ receivedEpochMs: r.completedEpochMs }, error)).sort((a, b) => Math.abs(epoch(error) - a.completedEpochMs) - Math.abs(epoch(error) - b.completedEpochMs))[0];
+            if (failed && (protocol === 'dash' && error.kind === 'dash' && error.code === 27 && error.message === url + ' is not available' || protocol === 'hls' && error.kind === 'hls' && error.type === 'networkError' && error.details === 'fragLoadError' && error.status === failed.status && error.message === 'HTTP Error ' + failed.status + (failed.status === 404 ? ' Not Found' : ' Gone'))) return { error, signature: 'advertised-stale-media-unavailable', trackKind: failed.trackKind, faultRequestId: failed.faultRequestId, faultIds: failed.faultIds, failedRequestId: failed.requestId };
         }
         if (response) return { error, signature: protocol + '-' + kind, faultRequestId: response.requestId, faultIds: response.faultIds };
     }
@@ -120,8 +141,8 @@ function assessPlayer(input) {
         const known = primary(error); if (known) expectedFaultErrors.push(known); else pending.push(error);
     }
     for (const error of pending) {
-        const cause = expectedFaultErrors.find(known => known.error.atMs <= error.atMs);
-        if (protocol === 'hls' && error.kind === 'hls' && error.type === 'mediaError' && error.fatal === false && error.details === 'bufferStalledError' && /^Playback stalling at @-?\d+(?:\.\d+)? due to low buffer \(/.test(error.message ?? '') && inWindow(error.atMs) && (!finite(decodedAt) || error.atMs < decodedAt) && cause) expectedFaultErrors.push({ error, signature: 'underflow-after-identified-fault', faultRequestId: cause.faultRequestId, faultIds: cause.faultIds });
+        const cause = expectedFaultErrors.find(known => known.error.atMs <= error.atMs && (kind !== 'manifest-rollback' || ['video', 'audio'].includes(known.trackKind)));
+        if (protocol === 'hls' && error.kind === 'hls' && error.type === 'mediaError' && error.fatal === false && error.details === 'bufferStalledError' && /^Playback stalling at @-?\d+(?:\.\d+)? due to low buffer \(/.test(error.message ?? '') && inWindow(error.atMs) && (!finite(decodedAt) || error.atMs < decodedAt) && cause) expectedFaultErrors.push({ error, signature: 'underflow-after-identified-fault', trackKind: cause.trackKind, faultRequestId: cause.faultRequestId, faultIds: cause.faultIds });
         else unexplainedErrors.push(error);
     }
     if (unexplainedErrors.length) failures.push('Unexplained player/video errors in complete scenario history');
@@ -130,11 +151,17 @@ function assessPlayer(input) {
     for (const gap of gaps.values()) {
         if (!finite(gap.from) || !finite(gap.to) || gap.to < gap.from) { unexplainedGaps.push(gap); continue; }
         if (gap.to - gap.from <= 4000) continue;
-        const cause = expectedFaultErrors.find(known => known.error.atMs <= gap.from + 250) ?? faults.find(r => ['video:0', 'video:1', 'audio:0'].includes(r.track) && r.resource === 'media' && r.receivedEpochMs <= (metrics?.startEpochMs ?? 0) + gap.from + 250);
-        if (inWindow(gap.from) && gap.to <= end && cause) expectedFaultGaps.push({ gap, faultRequestId: cause.faultRequestId ?? cause.requestId, faultIds: cause.faultIds }); else unexplainedGaps.push(gap);
+        const cause = staleFailures.find(r => ['video', 'audio'].includes(r.trackKind) && r.browserCompletedAtMs <= gap.from + 250) ?? expectedFaultErrors.find(known => known.error.atMs <= gap.from + 250 && (kind !== 'manifest-rollback' || ['video', 'audio'].includes(known.trackKind))) ?? faults.find(r => ['video:0', 'video:1', 'audio:0'].includes(r.track) && r.resource === 'media' && r.receivedEpochMs <= (metrics?.startEpochMs ?? 0) + gap.from + 250);
+        if (inWindow(gap.from) && gap.to <= end && cause) expectedFaultGaps.push({ gap, faultRequestId: cause.faultRequestId ?? cause.requestId, faultIds: cause.faultIds, ...(cause.browserCompletedAtMs !== undefined ? { failedRequestId: cause.requestId } : {}) }); else unexplainedGaps.push(gap);
     }
     if (unexplainedGaps.length) failures.push('Unexplained rendered gap before fault, after resume or without named resource evidence');
-    const passed = failures.length === 0, recovery = !startup && input.browserRecoveryVerified === true && finite(decodedAt) && finite(restored?.browser?.continuedToMs) && restored.browser.continuedToMs - decodedAt >= 60000;
-    return { passed, integrityPassed: passed, failures: [...new Set(failures)], expectedFaultErrors, expectedCancellations, unexplainedErrors, expectedFaultGaps, unexplainedGaps, recoveryObservation, decodedAtMs: decodedAt, browserRecoveryVerified: passed && recovery, compatibilityPassed: passed && recovery, compatibility: !passed ? 'integrity-failed' : recovery ? 'decoded-recovery-verified' : 'recovery-not-verified' };
+    const continuation = restored?.browser, completeContinuation = finite(decodedAt) && finite(continuation?.firstDecodedAtMs) && Math.abs(continuation.firstDecodedAtMs - decodedAt) <= 0.001 && finite(continuation.continuedToMs) && continuation.continuedToMs - decodedAt >= 60000 && continuation.continuedToMs <= metrics?.elapsedMs;
+    if (!startup && finite(decodedAt)) {
+        if (input.recoveryError !== undefined) failures.push('Unexpected recovery/continuation failure: ' + String(input.recoveryError));
+        if (input.browserRecoveryVerified !== true || !completeContinuation) failures.push('Sixty seconds of valid continuation after decoded resume not verified');
+    }
+    if (startup && (input.browserRecoveryVerified !== false || input.recoveryError !== undefined && input.recoveryError !== 'Startup initialization observation: decoded recovery is not qualified by this check')) failures.push('Unexpected startup recovery outcome');
+    const passed = failures.length === 0, recovery = !startup && input.browserRecoveryVerified === true && completeContinuation && input.recoveryError === undefined;
+    return { passed, integrityPassed: passed, failures: [...new Set(failures)], expectedFaultErrors, expectedCancellations, unexplainedErrors, expectedFaultGaps, unexplainedGaps, staleMediaFailures: staleFailures, recoveryObservation, decodedAtMs: decodedAt, browserRecoveryVerified: passed && recovery, compatibilityPassed: passed && recovery, compatibility: !passed ? 'integrity-failed' : recovery ? 'decoded-recovery-verified' : 'recovery-not-verified' };
 }
-module.exports = { assessPlayer, failedWaitBound, advertisedMedia, validFault, MALFORMED, DEMUX, WRONG_INIT };
+module.exports = { assessPlayer, staleMediaFailures, failedWaitBound, advertisedMedia, advertisedResources, validFault, MALFORMED, DEMUX, WRONG_INIT };

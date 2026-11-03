@@ -45,10 +45,17 @@ browser shutdown, including the time after the healthy lead-in. Exceptions retai
 timestamps, scenario position and stacks; missing/truncated audits, unexpected
 external requests and unexplained errors fail the observation. Raw and source
 file hashes, candidate identity, restoration phases and cleanup are rechecked by
-local release review rather than trusting a stored green flag.
+both CI and local release review instead of trusting a stored green flag.
 Failed recovery waits retain their actual deadline, last probe and final snapshot
 timings. Bounded evidence-collection overhead cannot be counted as a player
-recovery, and an unexplained overrun still fails verification.
+recovery, and an unexplained overrun still fails verification. Telemetry failures,
+interruptions and incomplete continuation after a decoded resume block the check;
+they cannot qualify as player limitations. Rollback stalls and console errors
+require expired-media URLs advertised by the captured stale manifest and matching
+completed browser downloads in the closed source diagnostics. Player error
+notifications may arrive later after retries, so their timestamp alone is not
+the start of the failed download. Caption download errors remain distinct and
+cannot explain a rendered-video gap without a proven audio/video failure.
 Wrong/stale initialization and broader transport/cache combinations retain the
 [HTTP-only limits](payload-transport-scenarios.md) outside this specific matrix;
 this runner does not establish recovery for every supported configuration.

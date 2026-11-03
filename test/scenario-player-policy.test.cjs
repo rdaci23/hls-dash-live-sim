@@ -1,5 +1,5 @@
 const { test } = require('node:test'), assert = require('node:assert/strict'), { createHash } = require('node:crypto');
-const { assessPlayer, advertisedMedia, MALFORMED, DEMUX, WRONG_INIT } = require('../scripts/browser/scenario-player-policy.cjs');
+const { assessPlayer, staleMediaFailures, advertisedMedia, advertisedResources, MALFORMED, DEMUX, WRONG_INIT } = require('../scripts/browser/scenario-player-policy.cjs');
 const epoch = 1793724000000, url = 'http://127.0.0.1:12345/advertised-resource';
 function input(protocol = 'hls', kind = 'audio-outage') {
     const startup = kind === 'wrong-track-init', from = startup ? -500 : 35000, at = startup ? 100 : 36000;
@@ -13,6 +13,7 @@ function input(protocol = 'hls', kind = 'audio-outage') {
         Object.assign(response, { resource: 'manifest', track: protocol === 'dash' && kind !== 'rendition-lag' ? 'root' : 'video:0', fault: kind === 'manifest-rollback' ? 'scenario.cache' : kind === 'rendition-lag' ? 'scenario.publication' : 'scenario.payload' });
         body(response, kind === 'malformed-manifest' ? MALFORMED[protocol] : protocol === 'hls' ? '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXTINF:2,\nold-media.m4s\n' : '<MPD><Period><AdaptationSet contentType="video"><Representation id="low"><SegmentTemplate media="old-$Number$.m4s" startNumber="3"><SegmentTimeline><S t="6" d="2" r="1"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>');
     }
+    if(response.resource==='manifest')response.completedEpochMs=response.receivedEpochMs+1;
     value.affectedBrowserResponses.push(response); value.browserResponses.push(response); return value;
 }
 function body(response, text) { Object.assign(response, { bodyText: text, bytes: Buffer.byteLength(text), bodySha256: createHash('sha256').update(text).digest('hex') }); }
@@ -45,7 +46,7 @@ test('narrow malformed, damaged, framing, wrong-init and lag signatures require 
 });
 test('cached manifest failures must concern media actually advertised by the retained delivered manifest', () => {
     for (const protocol of ['hls', 'dash']) {
-        const value = input(protocol, 'manifest-rollback'), target = advertisedMedia(value.affectedBrowserResponses[0], protocol)[0], wire = { url: target, status: 404, requestId: 'stale-media', receivedEpochMs: epoch + 42000 };
+        const value = input(protocol, 'manifest-rollback'), target = advertisedMedia(value.affectedBrowserResponses[0], protocol)[0], wire = { url: target, method: 'GET', status: 404, requestId: 'stale-media', requestResourceId: 'stale-resource', receivedEpochMs: epoch + 42000, completedEpochMs: epoch + 42001, scenarioElapsedMs: 42000, bytes: 25, bodySha256: 'a'.repeat(64) };
         value.browserResponses.push(wire); value.metrics.errors.push({ kind: protocol, atMs: 42020, url: target, requestId: wire.requestId, status: 404, ...(protocol === 'hls' ? { type: 'networkError', details: 'fragLoadError', message: 'HTTP Error 404 Not Found' } : { code: 27, message: target + ' is not available' }) }); healthy(value);
         for (const edit of [x => x.metrics.errors[0].url = 'http://127.0.0.1:12345/not-advertised', x => x.browserResponses.pop(), x => delete x.affectedBrowserResponses[0].bodySha256, x => body(x.affectedBrowserResponses[0], '<MPD>invalid')]) { const changed = structuredClone(value); edit(changed); assert.equal(assessPlayer(changed).passed, false); }
     }
@@ -115,4 +116,37 @@ test('secondary underflow requires an identified primary fault; a known signatur
 });
 test('missing whole-run arrays, measured clock, source identity and metadata cannot default to clean', () => {
     const value = input(); for (const edit of [x => delete x.metrics.errors, x => delete x.metrics.gaps, x => delete x.metrics.events, x => delete x.metrics.startEpochMs, x => x.metrics.dropped++, x => delete x.healthyMetrics, x => delete x.browserResponses, x => delete x.affectedBrowserResponses, x => delete x.faultWindowBrowser, x => x.faultWindowBrowser.toMs++, x => x.playerVersion = '1.7.4', x => x.browserVersion = '999', x => x.startup = true, x => x.kind = 'unknown']) { const changed = structuredClone(value); edit(changed); assert.equal(assessPlayer(changed).passed, false); }
+});
+test('telemetry failure during continuation cannot become an accepted player limitation after decoded resume', () => {
+    const value = input('hls', 'malformed-manifest'); value.browserRecoveryVerified = false; value.recoveryError = 'Browser telemetry probe timed out'; delete value.restored.browser;
+    value.restored.decodedAtMs = 53271; Object.assign(value.metrics, { elapsedMs: 56831, lastFrameMs: 56820, frames: 1300 });
+    assert.equal(assessPlayer(value).passed, false);
+    for (const recoveryError of ['Browser telemetry probe exceeded timeout', 'This operation was aborted', '60-second continuation timed out', 'Post-restoration playback was not healthy', 'unexpected callback', '', null]) { const changed = structuredClone(value); changed.recoveryError = recoveryError; assert.equal(assessPlayer(changed).passed, false); }
+    const complete = input(); complete.restored.decodedAtMs = 60000; healthy(complete);
+    for (const edit of [x => x.restored.browser.continuedToMs = 119999, x => x.restored.browser.continuedToMs = 125001, x => x.restored.browser.firstDecodedAtMs++, x => delete x.restored.browser, x => x.browserRecoveryVerified = false]) { const changed = structuredClone(complete); edit(changed); assert.equal(assessPlayer(changed).passed, false); }
+});
+test('completed stale-media failures explain the frame-boundary gap before the final retry notification', () => {
+    const value = input('dash', 'manifest-rollback'), manifest = value.affectedBrowserResponses[0];
+    body(manifest, '<MPD><Period><AdaptationSet contentType="video"><Representation id="low"><SegmentTemplate media="video-$Number$.m4s" startNumber="3"><SegmentTimeline><S t="6" d="2" r="1"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet><AdaptationSet contentType="audio"><Representation id="en"><SegmentTemplate media="audio-$Number$.m4s" startNumber="3"><SegmentTimeline><S t="6" d="2" r="1"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>');
+    const urls = advertisedMedia(manifest, 'dash'), targets = [urls[0], urls[2]]; value.browserResponses = [];
+    for (const [track, target] of targets.entries()) for (let attempt = 0; attempt < 4; attempt++) value.browserResponses.push({ url: target, method: 'GET', status: 410, requestId: 'wire-' + track + '-' + attempt, requestResourceId: 'resource-' + track, receivedEpochMs: epoch + 44578 + attempt * 1000, completedEpochMs: epoch + 44579 + attempt * 1000, scenarioElapsedMs: 44578 + attempt * 1000, bytes: 25, bodySha256: 'a'.repeat(64) });
+    value.metrics.errors.push({ kind: 'dash', atMs: 47592, code: 27, url: targets[0], message: targets[0] + ' is not available' }); value.metrics.gaps.push({ from: 44552.9, to: 50640 });
+    const result = assessPlayer(value); assert.equal(result.passed, true, result.failures.join('; ')); assert.equal(result.expectedFaultGaps.length, 1); assert.equal(result.staleMediaFailures.length, 8);
+    for (const edit of [x => x.browserResponses.forEach(r => r.url = 'http://127.0.0.1:12345/unadvertised'), x => delete x.affectedBrowserResponses[0].bodyText, x => delete x.affectedBrowserResponses[0].bodySha256, x => delete x.affectedBrowserResponses[0].completedEpochMs, x => x.browserResponses.forEach(r => delete r.requestId), x => x.browserResponses.forEach(r => delete r.requestResourceId), x => x.browserResponses.forEach(r => delete r.completedEpochMs), x => x.browserResponses.forEach(r => delete r.bytes), x => x.browserResponses.forEach(r => delete r.bodySha256), x => x.browserResponses.forEach(r => delete r.scenarioElapsedMs), x => x.browserResponses.forEach(r => r.scenarioElapsedMs += 10000), x => x.browserResponses.forEach((r, i) => { r.receivedEpochMs = epoch + 61000 + i; r.completedEpochMs = r.receivedEpochMs + 1; r.scenarioElapsedMs = 61000 + i; })]) { const changed = structuredClone(value); edit(changed); assert.equal(staleMediaFailures(changed).length, 0); assert.equal(assessPlayer(changed).passed, false); }
+    const duplicate = structuredClone(value); duplicate.browserResponses.push(structuredClone(duplicate.browserResponses[0])); assert.ok(!staleMediaFailures(duplicate).some(r => r.requestId === 'wire-0-0'));
+    const late = structuredClone(value); late.browserResponses.forEach(r => r.completedEpochMs += 1000); assert.equal(assessPlayer(late).passed, false, 'one-second-late HTTP completion does not explain an earlier frame gap');
+});
+test('a stale text resource is a real HTTP failure but cannot explain an unrelated rendered-video stall', () => {
+    const value=input('dash','manifest-rollback'),manifest=value.affectedBrowserResponses[0];
+    body(manifest,'<MPD><Period><AdaptationSet contentType="text"><Representation id="en" mimeType="application/mp4"><SegmentTemplate media="opaque-$Number$.m4s" startNumber="3"><SegmentTimeline><S t="6" d="2"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>');
+    const url=advertisedMedia(manifest,'dash')[0];value.browserResponses=[{url,method:'GET',status:410,requestId:'text-failure',requestResourceId:'text-resource',receivedEpochMs:epoch+40000,completedEpochMs:epoch+40001,scenarioElapsedMs:40000,bytes:25,bodySha256:'a'.repeat(64)}];
+    assert.equal(staleMediaFailures(value).length,1);assert.equal(staleMediaFailures(value)[0].trackKind,'text');healthy(value);value.metrics.gaps=[{from:40000,to:45001}];assert.equal(assessPlayer(value).passed,false);
+    value.metrics.errors=[{kind:'dash',atMs:40020,url,code:27,message:url+' is not available'}];value.metrics.gaps=[{from:41000,to:46001}];assert.equal(assessPlayer(value).passed,false,'a text notification is not an alternate video-gap cause');
+});
+test('media kinds come from advertised track metadata and ambiguous MP4 or conflicting kinds stay unknown',()=>{
+    const value=input('dash','manifest-rollback'),manifest=value.affectedBrowserResponses[0];
+    body(manifest,'<MPD><Period>'+['video/mp4','audio/mp4','text/vtt','application/mp4'].map((mime,i)=>'<AdaptationSet><Representation id="r'+i+'" mimeType="'+mime+'"><SegmentTemplate media="opaque-'+i+'-$Number$" startNumber="3"><SegmentTimeline><S t="6" d="2"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet>').join('')+'</Period></MPD>');
+    assert.deepEqual(advertisedResources(manifest,'dash').map(r=>r.trackKind),['video','audio','text',undefined]);assert.deepEqual(advertisedMedia(manifest,'dash'),advertisedResources(manifest,'dash').map(r=>r.url));
+    body(manifest,'<MPD><Period><AdaptationSet contentType="text"><Representation id="r" mimeType="video/mp4"><SegmentTemplate media="opaque-$Number$"><SegmentTimeline><S t="0" d="2"/></SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>');assert.equal(advertisedResources(manifest,'dash')[0].trackKind,undefined);
+    const hls=input('hls','manifest-rollback');assert.equal(advertisedResources(hls.affectedBrowserResponses[0],'hls')[0].trackKind,'video');
 });
