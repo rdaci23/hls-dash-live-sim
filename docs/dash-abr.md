@@ -74,6 +74,14 @@ prove adaptation must start after the relevant profile application. The check
 rejects unexplained frame gaps over four seconds, late seeks, jumps, regressions,
 player errors, unexpected HTTP failures and attempted external requests.
 
+The frame probe compares rendered media time and the media element's clock with
+elapsed callback time. Queued presentations may catch up using previously
+measured lag; normal frames cannot repeatedly spend fresh timing slack. Excess
+advance, backward time and seeks after rendering remain failures. A bounded,
+complete callback history is replayed independently by acceptance; missing,
+altered or truncated history requires a new run. Earlier traces without this
+history are not retrospectively qualified by the corrected check.
+
 A high-fragment abandonment is expected only when the player's ABR abandon event,
 browser cancellation, response fault ID and server disconnect all agree during
 the restriction. A single last-frame startup fragment may be recorded separately

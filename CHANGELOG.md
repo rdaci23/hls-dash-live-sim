@@ -123,6 +123,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Browser verification accounts for measured DASH frame catch-up and HLS
+  delayed-join caption time origins. Subtitle-switch aborts require causal
+  loading-attempt evidence; unrelated errors and genuine discontinuities still
+  fail. Original failed traces remain retained and require fresh verification.
+
 - Clarify delivered HTTP faults, outstanding same-download retries and verified
   retry results in the control UI. Explain possible rendition fallback without
   claiming observed playback recovery; preserve strict retry matching and show

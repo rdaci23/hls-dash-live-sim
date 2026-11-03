@@ -1,11 +1,13 @@
 /* Observe native dash.js ABR decisions; no quality setters, seeks or restarts. */
 (async () => {
+  await new Promise((resolve, reject) => { const script = document.createElement('script'); script.src = '/frame-timing.js'; script.onload = resolve; script.onerror = () => reject(Error('Frame timing probe unavailable')); document.head.append(script); });
   const config = await (await fetch('/config')).json(), video = document.getElementById('video');
   const start = performance.now(), now = () => performance.now() - start;
   const m = { runId: config.runId, startEpochMs: Date.now(), firstFrameMs: null, lastFrameMs: null, firstMediaTime: null, mediaTime: null,
     frames: 0, maxFrameGapMs: 0, levels: [], fragments: [], runs: [], phases: [], gaps: [], regressions: [], jumps: [], seeks: [],
     emergencyAborts: [], streamInitializations: [], playerErrors: [], videoErrors: [], probeErrors: [], switches: [], failures: [], complete: false, utcSettings: null, utcCorsDate: null };
   const player = dashjs.MediaPlayer().create();
+  const timing = window.SimFrameTiming.create();
   m.utcSettings = player.getSettings().streaming.utcSynchronization;
   const automatic = () => player.getSettings().streaming.abr.autoSwitchBitrate.video;
   player.addResponseInterceptor(response => {
@@ -37,12 +39,20 @@
   video.addEventListener('seeking', () => m.seeks.push({ atMs: now(), mediaTime: video.currentTime }));
   function frame(_at, data) {
     const at = now();
+    const result = timing.observe({ atMs: at, mediaTime: data.mediaTime, currentTime: video.currentTime, playbackRate: video.playbackRate,
+      seeking: video.seeking, seekCount: m.seeks.length, presentedFrames: data.presentedFrames, callbackMs: _at - start,
+      expectedDisplayTimeMs: data.expectedDisplayTime - start, droppedVideoFrames: video.getVideoPlaybackQuality().droppedVideoFrames,
+      processingDurationMs: data.processingDuration * 1000 });
+    for (const issue of result.issues) {
+      if (issue.kind === 'forward') m.jumps.push(issue);
+      else if (issue.kind === 'backward') m.regressions.push(issue);
+      else if (issue.kind === 'invalid') m.probeErrors.push(issue.reason);
+    }
+    if (result.truncated && !m.probeErrors.includes('Frame timing evidence limit reached')) m.probeErrors.push('Frame timing evidence limit reached');
     if (data.mediaTime !== m.mediaTime) {
-      if (m.mediaTime !== null && data.mediaTime < m.mediaTime - 0.005) m.regressions.push({ atMs: at });
       if (m.lastFrameMs !== null) {
         const gap = at - m.lastFrameMs; m.maxFrameGapMs = Math.max(m.maxFrameGapMs, gap);
         if (gap > 500) m.gaps.push({ startMs: m.lastFrameMs, endMs: at, durationMs: gap });
-        if (data.mediaTime - m.mediaTime > Math.max(0.5, gap / 1000 + 0.25)) m.jumps.push({ atMs: at, from: m.mediaTime, to: data.mediaTime });
       }
       if (m.firstFrameMs === null) { m.firstFrameMs = at; m.firstMediaTime = data.mediaTime; }
       m.lastFrameMs = at; m.mediaTime = data.mediaTime; m.frames++;
@@ -85,7 +95,7 @@
     } catch (error) { m.probeErrors.push(String(error)); }
     finally { advancing = false; }
   }
-  window.simSnapshot = () => ({ ...m, elapsedMs: now(), autoLevelEnabled: automatic(), state: video.paused ? 'paused' : 'playing',
+  window.simSnapshot = () => ({ ...m, frameTiming: timing.snapshot(), elapsedMs: now(), autoLevelEnabled: automatic(), state: video.paused ? 'paused' : 'playing',
     quality: { totalVideoFrames: video.getVideoPlaybackQuality().totalVideoFrames, droppedVideoFrames: video.getVideoPlaybackQuality().droppedVideoFrames } });
   async function report() {
     await advance(); const data = window.simSnapshot();

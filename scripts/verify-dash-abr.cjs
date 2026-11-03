@@ -41,7 +41,7 @@ async function main() {
     // Isolate rendition adaptation from the separate multi-Period compatibility case.
     session = await startLivesim2({ port: await port(), asset: 'abr', noPull: true, faultConfigPath: faults, diagnosticsFile: path.join(directory, 'requests.jsonl'), scenarioFile, signal: abort.signal });
     profiles.push({ name: 'baseline', bandwidthKbps: test === 'bandwidth' ? PROFILES.baseline : 0, appliedEpochMs: Date.now() });
-    const files = { '/': path.join(__dirname, 'browser/player.html'), '/metrics.js': path.join(__dirname, 'browser/dash-abr-metrics.js'),
+    const files = { '/': path.join(__dirname, 'browser/player.html'), '/metrics.js': path.join(__dirname, 'browser/dash-abr-metrics.js'), '/frame-timing.js': path.join(__dirname, 'browser/frame-timing.js'),
       '/player.js': path.join(root, 'node_modules/dashjs/dist/modern/umd/dash.all.debug.js') };
     web = http.createServer(async (req, res) => {
       try {

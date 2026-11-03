@@ -1,6 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { evaluate, normalize, PROFILES } = require('../scripts/dash-abr/acceptance.cjs');
+const frameTiming = require('../scripts/browser/frame-timing.js');
+const { probeFrames } = require('./fixtures/dash-abr-frame-probe.cjs');
 function input(test = 'bandwidth') {
   const epoch = 1000000;
   const phase = (name, at) => ({ name, requestMs: at, acknowledgedMs: at + 20, appliedEpochMs: epoch + at + 10, bandwidthKbps: PROFILES[name] });
@@ -32,6 +34,7 @@ function input(test = 'bandwidth') {
     audit.push({kind:'response',requestId:'failed',url,status:503,faultIds:'targeted',epochMs:epoch+60000});
     scenario={result:'passed',rules:[{kind:'outage',target:{track:'video:1'},beforeMs:150000}]};
   }
+  const timing=frameTiming.create();for(let i=0;i<m.frames;i++){const progress=i/(m.frames-1),atMs=m.firstFrameMs+(m.lastFrameMs-m.firstFrameMs)*progress,mediaTime=m.firstMediaTime+(m.mediaTime-m.firstMediaTime)*progress;timing.observe({atMs,mediaTime,currentTime:mediaTime,playbackRate:1,seeking:false,seekCount:0});}m.frameTiming=timing.snapshot();
   return {test,metrics:m,events,audit,scenario,profiles:[{name:'baseline',bandwidthKbps:1500,appliedEpochMs:epoch},...phases.map(p=>({name:p.name,bandwidthKbps:p.bandwidthKbps,appliedEpochMs:p.appliedEpochMs}))]};
 }
 test('DASH adaptation requires rendered and served high/low/high plus normal local UTC',()=>{
@@ -41,6 +44,19 @@ test('DASH adaptation requires rendered and served high/low/high plus normal loc
     x=>{x.metrics.autoLevelEnabled=false;},x=>{x.metrics.playerErrors.push({code:27});},x=>{x.events=x.events.filter(e=>e.event!=='fault.applied');}]){
     const data=input();edit(data);assert.equal(evaluate(data).passed,false,edit.toString());
   }
+});
+
+test('actual DASH callback catch-up passes complete ABR acceptance without weakening other gates',async()=>{
+  const samples=[{atMs:1000,mediaTime:0,currentTime:0},{atMs:1699.9,mediaTime:.125,currentTime:.6999},{atMs:1716.1,mediaTime:.708333,currentTime:.7161}];
+  for(let atMs=1750;atMs<136000;atMs+=42)samples.push({atMs,mediaTime:(atMs-1000)/1000,currentTime:(atMs-1000)/1000});samples.push({atMs:136000,mediaTime:135,currentTime:135});
+  const measured=await probeFrames(samples),data=input();
+  for(const key of ['firstFrameMs','lastFrameMs','firstMediaTime','mediaTime','frames','maxFrameGapMs','gaps','jumps','regressions','seeks','frameTiming'])data.metrics[key]=measured[key];
+  const result=evaluate(data);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.frameTiming.catchUps.length,1);
+  for(const mutate of [x=>{x.metrics.runs[1].confirmed=[];},x=>{x.metrics.utcSettings.enabled=false;},x=>{x.metrics.seeks.push({atMs:1500});},x=>{x.metrics.frameTiming.samples[2][1]+=1;},x=>{delete x.metrics.frameTiming;},x=>{x.metrics.frameTiming.droppedSamples=1;}]){const changed=structuredClone(data);mutate(changed);const rejected=evaluate(changed);assert.equal(rejected.passed,false,mutate.toString());}
+});
+
+test('legacy DASH evidence without complete callback history requires a new run in either ABR mode',()=>{
+  for(const mode of ['bandwidth','fallback']){const data=input(mode);delete data.metrics.frameTiming;const result=evaluate(data);assert.equal(result.passed,false);assert.match(result.failures.join('; '),/Incomplete DASH frame timing evidence; new rendered-frame run required/);}
 });
 test('only a single last-frame startup fragment is excluded from the measured sustained spans',()=>{
   const data=input(); const f={...data.metrics.runs[0].confirmed[0],frames:1,firstFrameMs:1000,lastFrameMs:1000,firstMediaTime:1.96,mediaTime:1.96,start:0,end:2};

@@ -1,4 +1,5 @@
 const shared = require('../browser/abr-acceptance.cjs');
+const frameTiming = require('../browser/frame-timing.js');
 const { GATES, PROFILES } = shared;
 function startupBoundary(m, f) {
   return f.frames === 1 && f.firstFrameMs === m.firstFrameMs && f.lastFrameMs === f.firstFrameMs &&
@@ -22,6 +23,8 @@ function evaluate(input) {
     return { passed: false, releaseReady: false, failures: ['Missing ladder identity or rendered-frame measurements'] };
   const captured = audit.filter(e => e.epochMs <= m.startEpochMs + m.elapsedMs);
   const failures = [], check = (ok, why) => { if (!ok) failures.push(why); };
+  const frameEvidence = frameTiming.evaluate(m.frameTiming, m); failures.push(...frameEvidence.failures);
+  check(!m.seeks.some(event => event.atMs > m.firstFrameMs), 'DASH seek after rendered playback began');
   const normalized = normalize(m);
   const clock = captured.some(e => e.kind === 'response' && e.method === 'HEAD' && new URL(e.url).pathname === '/static/time.txt' && !new URL(e.url).search && e.status === 200 && Number.isFinite(Date.parse(e.date)));
   const clockVerified = m.utcSettings?.enabled === true && Number.isFinite(Date.parse(m.utcCorsDate)) && clock;
@@ -31,7 +34,7 @@ function evaluate(input) {
     check(m.runs.every(r => r.confirmed.every(f => f.track === 'video' && f.width === r.width && f.height === r.height &&
       m.levels[r.level]?.id === f.representationId)), 'Rendered representation identity mismatch');
     check(clockVerified, 'Normal local UTC synchronization not verified');
-    return { ...result, passed: !failures.length, failures, verification: 'Automatic bandwidth-driven DASH downshift/upshift', startupBoundaryFragments: m.runs.flatMap(r => r.confirmed.filter(f => startupBoundary(m,f)).map(f => ({requestId:f.requestId,atMs:f.firstFrameMs}))), fixtureLevels: m.levels };
+    return { ...result, passed: !failures.length, failures, frameTiming: frameEvidence, verification: 'Automatic bandwidth-driven DASH downshift/upshift', startupBoundaryFragments: m.runs.flatMap(r => r.confirmed.filter(f => startupBoundary(m,f)).map(f => ({requestId:f.requestId,atMs:f.firstFrameMs}))), fixtureLevels: m.levels };
   }
   // Keep HTTP-error fallback distinct from bandwidth adaptation and simulator delivery.
   const at = e => Date.parse(e.timestamp) - m.startEpochMs;
@@ -78,7 +81,7 @@ function evaluate(input) {
   check(!captured.some(e => e.kind === 'console' && e.level === 'error' && !captured.some(r => r.kind === 'response' && matched.some(f => f.requestId === r.requestId) && e.text.includes('503') && (e.location === r.url || e.text.includes(r.url)) && Math.abs(e.epochMs-r.epochMs) <= 1000)), 'Unexplained browser console error');
   check(!captured.some(e => e.kind === 'external' || e.kind === 'pageerror' || e.kind === 'requestfailed'), 'Unexplained browser/network failure');
   check(!captured.some(e => e.kind === 'response' && e.status >= 400 && !matched.some(f => f.requestId === e.requestId)), 'Unexpected HTTP failure');
-  return { passed: !failures.length, releaseReady: false, failures, selectiveFaultDeliveryVerified: delivered,
+  return { passed: !failures.length, releaseReady: false, failures, frameTiming: frameEvidence, selectiveFaultDeliveryVerified: delivered,
     verification: 'Optional client HTTP-error rendition fallback', firstFrameMs: m.firstFrameMs, faultMs,
     fallbackMs: low ? low.confirmed[0].firstFrameMs - faultMs : null, lowRenderedMs: low ? low.confirmed.at(-1).lastFrameMs - low.confirmed[0].firstFrameMs : 0,
     expectedHttp503: matched.length, playerErrors: m.playerErrors, longestFrameGapMs: Math.max(m.maxFrameGapMs, m.elapsedMs - m.lastFrameMs) };

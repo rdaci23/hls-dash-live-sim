@@ -51,7 +51,7 @@ The optional source also has an authored 0.4-second white corner / audio-amplitu
 pulse every eight seconds for [independent endurance timing](endurance.md). The
 continuous 440/880 Hz signals stay distinguishable between pulses.
 
-The authored caption schedule repeats in media time:
+The authored caption schedule repeats in source media time:
 
 | Position within an eight-second cycle | Expected output |
 | --- | --- |
@@ -59,6 +59,13 @@ The authored caption schedule repeats in media time:
 | 2.00–4.00 s | Valid, fully empty caption interval. |
 | 4.25–5.50 s | Cue 3. |
 | 6.25–7.50 s | Cue 4. |
+
+An HLS viewer joining a sliding live window can have a different presentation
+time origin. The browser check records advertised main-fragment sequence/start
+timing and independently checks it against hls.js initialization timestamps. It
+maps the authored schedule into that presentation timeline for each caption
+sample. Cue content and observed cue offsets never determine the expected clock;
+missing or inconsistent clock evidence fails the HLS caption check.
 
 The DASH text path uses application/mp4 with wvtt and explicit sample durations/
 sizes, including timed empty `vtte` samples. It is tested through the pinned
@@ -135,12 +142,13 @@ recovery tests that prohibit harness intervention.
 
 The pinned hls.js subtitle controller explicitly aborts its current fragment on
 subtitle switches; its loader reports that cancellation as a nonfatal network
-`aborted` event. The verifier retains such events separately only when they are
-subtitle aborts within 500 ms of both an explicit selection and a player subtitle
-switch, or synchronous automatic switches with the same subtitle-track ID within
-1 ms. The pinned controller also emits same-track switches for LIVE native-track
-updates after a long freeze; no manual action is required for that path. Fatal
-errors, unrelated tracks/timestamps and ordinary load failures remain failures.
+`aborted` event. New runs record the native switch, the actual fragment abort and
+its loading-attempt identity, then correlate the later promise error with that
+exact abort. A nearby switch alone cannot qualify an unrelated error, and a
+retried loading attempt cannot reuse an earlier abort's evidence. The pinned
+controller also emits same-track switches for LIVE native-track updates after a
+long freeze; no manual action is required for that path. Fatal errors, unrelated
+tracks/requests and ordinary load failures remain failures.
 Every raw error is retained; this classifies the client cancellation and does not
 alter player recovery or hide decoded-audio/caption requirements.
 [Switch path](https://raw.githubusercontent.com/video-dev/hls.js/v1.7.3/src/controller/subtitle-stream-controller.ts),
