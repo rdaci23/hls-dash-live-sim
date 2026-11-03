@@ -75,3 +75,19 @@ restoration. Message-only historical traces cannot qualify. Other exceptions
 remain blocking, and this classification never verifies decoded recovery.
 [Pinned capabilities filter](https://github.com/Dash-Industry-Forum/dash.js/blob/v5.2.1/src/streaming/utils/CapabilitiesFilter.js),
 [pinned manifest update](https://github.com/Dash-Industry-Forum/dash.js/blob/v5.2.1/src/streaming/controllers/StreamController.js).
+
+Pinned DASH decoder-reset and wrong-initialization console messages may be
+classified only when their exact logger source, player/browser version, phase
+and timestamp match an independently identified native media error and delivered
+payload fault. Generic MediaError output additionally needs the adjacent typed
+wrong-initialization message. Unknown console output remains blocking. Re-reading
+retained evidence recomputes the observation rather than feeding old classification
+flags back into the classifier. Original reports and raw outcomes stay intact.
+
+Caption faults do not establish audio/video failure or recovery. The current
+HLS late-caption trace includes a fatal subtitle 404 followed by an audio abort
+and stopped rendering; its exact cancellation cause is not captured. A DASH
+text-outage trace also contains a rendered-video stall without independently
+identified audio/video failure. These remain unqualified player observations
+until explained by direct causal evidence; healthy HTTP restoration alone cannot
+qualify their playback behavior.

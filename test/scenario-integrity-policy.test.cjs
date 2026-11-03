@@ -73,5 +73,47 @@ test('directory qualification recomputes fixed evidence and rejects loss, missin
   await write();assert.equal((await read(directory,{expectedCommit:commit})).passed,true);
   await fs.appendFile(path.join(dir,'raw.json'),' ');assert.equal((await read(directory,{expectedCommit:commit})).passed,false);
   for(const edit of [x=>delete x.raw.audit,x=>delete x.raw.auditDropped,x=>x.entry.cleanup.network={},x=>x.raw.report.startup=true,x=>x.events.find(e=>e.event==='request.completed'&&e.requestId==='restored-manifest').timestamp=new Date(66000).toISOString()]){await write(edit);assert.equal((await read(directory,{expectedCommit:commit})).passed,false);}
+
+  const recovered=({raw,events})=>{
+   Object.assign(raw.report,{observationCaptured:true,error:'Previous integrity summary',browserRecoveryVerified:false});delete raw.report.recoveryError;
+   Object.assign(raw.report.restored,{decodedAtMs:56000,browser:{firstDecodedAtMs:56000,continuedToMs:116100}});
+   Object.assign(raw.metrics,{elapsedMs:116200,lastFrameMs:116190,frames:2800,mediaTime:116.2,snapshotTiming:{requestedEpochMs:181199,completedEpochMs:181220,elapsedMs:21,probeTimeoutMs:1000}});
+   events.at(-1).timestamp=new Date(181300).toISOString();
+  };
+  await write(recovered);const recomputed=await read(directory,{expectedCommit:commit});assert.equal(recomputed.passed,true,recomputed.failures.join('; '));assert.equal(recomputed.cases[0].player.browserRecoveryVerified,true);
+  await write(value=>{recovered(value);value.raw.audit.push({kind:'console',level:'error',epochMs:120000,scenarioElapsedMs:55000,message:'Unrelated application failure'});});
+  const unknown=await read(directory,{expectedCommit:commit});assert.equal(unknown.passed,false);assert.ok(unknown.failures.some(f=>f.includes('Unrelated application failure')));assert.ok(!unknown.failures.some(f=>f.includes('Sixty seconds')),'A derived integrity flag cannot erase retained completed continuation');
+  await write(value=>{recovered(value);Object.assign(value.raw.report,{observationCaptured:false,error:'Browser instrumentation failed'});});
+  const instrumentation=await read(directory,{expectedCommit:commit});assert.equal(instrumentation.passed,false);assert.ok(instrumentation.failures.includes('Browser instrumentation failed'));
+  await write(value=>{recovered(value);value.raw.report.recoveryError='Browser telemetry probe timed out';});
+  const telemetry=await read(directory,{expectedCommit:commit});assert.equal(telemetry.passed,false);assert.ok(telemetry.failures.some(f=>f.includes('Browser telemetry probe timed out')));
  }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
+
+function payloadInput(kind='damaged-media'){
+ const value=input(),{DEMUX,WRONG_INIT}=require('../scripts/browser/scenario-player-policy.cjs');
+ Object.assign(value,{kind,browserRecoveryVerified:true,recoveryError:undefined});
+ Object.assign(value.metrics,{elapsedMs:116200,lastFrameMs:116190,frames:2800,mediaTime:116.2,errors:[{kind:'video',atMs:35003,code:3,message:DEMUX}]});
+ Object.assign(value.restored,{decodedAtMs:56000,browser:{firstDecodedAtMs:56000,continuedToMs:116100}});
+ Object.assign(value.affectedBrowserResponses[0],{resource:'media',track:'video:0'});
+ const location={url:'http://127.0.0.1:18080/player.js',lineNumber:19746,columnNumber:18};
+ value.audit=[{kind:'console',level:'error',closing:false,location,epochMs:100003,scenarioElapsedMs:35003,message:'[35003][StreamController] A MEDIA_ERR_DECODE occured: Resetting the MediaSource '}];
+ if(kind==='wrong-track-init'){
+  Object.assign(value,{startup:true,faultWindowBrowser:{fromMs:0,toMs:15000},browserRecoveryVerified:false,recoveryError:'Startup initialization observation: decoded recovery is not qualified by this check'});
+  Object.assign(value.metrics,{elapsedMs:16000,frames:0,errors:[{kind:'video',atMs:42.6,code:4,message:WRONG_INIT},{kind:'dash',atMs:42.9,code:4,message:'MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+')'}]});
+  Object.assign(value.restored,{atMs:15500,decodedAtMs:undefined,browser:undefined});for(const r of[value.restored.manifest,...value.restored.controls])Object.assign(r,{scenarioElapsedMs:15500,completedEpochMs:80500});
+  Object.assign(value.affectedBrowserResponses[0],{resource:'init',track:'video:1',receivedEpochMs:65038,scenarioElapsedMs:38});
+  value.audit=[{kind:'console',level:'error',closing:false,location,epochMs:65045,scenarioElapsedMs:45,message:'[42][StreamController] Video Element Error: MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+') '},{kind:'console',level:'error',closing:false,location,epochMs:65045,scenarioElapsedMs:45.2,message:'[42][StreamController] [object MediaError] '}];
+ }
+ return value;
+}
+test('pinned DASH native payload console lines require already-identified primary errors and exact logger context',()=>{
+ for(const kind of['damaged-media','wrong-track-init']){const result=assess(payloadInput(kind));assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.expectedNativeMediaConsole.length,kind==='damaged-media'?1:2);}
+});
+test('arbitrary native console signatures, missing source/clock ownership and unmatched payloads remain blocking',()=>{
+ const edits=[x=>x.playerVersion='5.2.2',x=>x.browserVersion='156.0.8078.79',x=>x.audit[0].location.url='http://127.0.0.1/unrelated.js',x=>x.audit[0].location.lineNumber=19745,x=>x.audit[0].location.columnNumber=19,x=>x.audit[0].closing=true,x=>x.audit[0].contextUnavailable=true,x=>x.audit[0].message='[35003][StreamController] unrelated MEDIA_ERR_DECODE ',x=>x.audit[0].scenarioElapsedMs=34000,x=>x.audit[0].epochMs+=20,x=>x.metrics.errors[0].atMs+=30,x=>x.metrics.errors[0].code=2,x=>x.metrics.errors[0].message='Unrelated decoder error',x=>x.affectedBrowserResponses[0].fault='scenario.status',x=>x.affectedBrowserResponses[0].track='audio:0',x=>x.affectedBrowserResponses[0].resource='init',x=>x.affectedBrowserResponses[0].receivedEpochMs=100004,x=>x.audit.push(structuredClone(x.audit[0]))];
+ for(const edit of edits){const value=payloadInput();edit(value);assert.equal(assess(value).passed,false,edit.toString());}
+});
+test('generic MediaError output requires its adjacent typed wrong-init console and the same qualified primary',()=>{
+ for(const edit of[x=>x.audit.shift(),x=>x.audit[0].message='[42][StreamController] unrelated error ',x=>x.audit[1].message='[50][StreamController] [object MediaError] ',x=>x.audit[1].epochMs+=10,x=>x.audit[1].scenarioElapsedMs+=10,x=>x.audit[1].location={...x.audit[1].location,url:'http://127.0.0.1:18081/player.js'},x=>x.metrics.errors=x.metrics.errors.filter(e=>e.kind!=='video'),x=>x.audit.push(structuredClone(x.audit[1]))]){const value=payloadInput('wrong-track-init');edit(value);const result=assess(value);assert.equal(result.passed,false,edit.toString());assert.ok(result.failures.some(f=>f.includes('Unexplained browser console')));}
 });
