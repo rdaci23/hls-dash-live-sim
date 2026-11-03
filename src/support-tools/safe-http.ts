@@ -283,7 +283,7 @@ export function sessionServer(
     trace?: RequestTrace,
   ) => Promise<void>,
   diagnostics?: SessionDiagnostics,
-): { server: http.Server; close(): Promise<void>; cancelRun(runId: string): Promise<void>;ownership():{activeRequests:number;pendingWork:number} } {
+): { server: http.Server; close(): Promise<void>; cancelRun(runId: string): Promise<void>;cancelManual():Promise<void>;ownership():{activeRequests:number;pendingWork:number} } {
   const controllers = new Set<AbortController>();
   const records = new Map<AbortController, { res: http.ServerResponse; trace?: RequestTrace; work?: Promise<void> }>();
   const pending = new Set<Promise<void>>();
@@ -298,7 +298,7 @@ export function sessionServer(
       trace?.cancel(
         controller.signal.reason === "session_shutdown"
           ? "session_shutdown"
-          : controller.signal.reason === "scenario_reset" ? "scenario_reset" : "client_disconnect",
+          : controller.signal.reason === "scenario_reset" ? "scenario_reset" : controller.signal.reason === "control_reset" ? "control_reset" : "client_disconnect",
       );
     controller.signal.addEventListener("abort", abort, { once: true });
     const cleanup = () => {
@@ -340,6 +340,13 @@ export function sessionServer(
     async cancelRun(runId) {
       const affected = [...records].filter(([, value]) => value.trace?.runId === runId && value.trace.affectedByRun());
       for (const [controller, value] of affected) { controller.abort("scenario_reset"); value.res.destroy(); }
+      await Promise.allSettled(affected.map(([, value]) => value.work));
+    },
+    async cancelManual() {
+      // This server owns one simulator session. Leave healthy requests and all
+      // separately identified scenario work alone when clearing manual effects.
+      const affected = [...records].filter(([, value]) => value.trace && !value.trace.runId && value.trace.hasFault());
+      for (const [controller, value] of affected) { controller.abort("control_reset"); value.res.destroy(); }
       await Promise.allSettled(affected.map(([, value]) => value.work));
     },
     close() {
@@ -422,7 +429,8 @@ export function preflight(
     send(res, 403, "Only local player origins may access this session");
     return true;
   }
-  const controls = scenarioControls && /^\/scenario\/(arm|start|reset|access)$/.test(new URL(req.url ?? "/", "http://localhost").pathname);
+  const controlPath = new URL(req.url ?? "/", "http://localhost").pathname;
+  const controls = scenarioControls && (/^\/scenario\/(arm|start|reset|stop|access)$/.test(controlPath) || /^\/session-control\/(mode|apply|inject|clear|arm|start|stop)$/.test(controlPath));
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",

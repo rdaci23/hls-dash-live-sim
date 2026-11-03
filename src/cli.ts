@@ -126,6 +126,7 @@ const startOptions = (builder) =>
         "Run immutable resource fault rules and network timelines from a scenario JSON file",
     })
     .option("scenario-start", { choices: ["auto", "manual"], default: "auto", description: "Auto-start a definition, or expose authenticated manual scenario controls" })
+    .option("control-token", { type: "string", description: "Simulator session control token (or HLS_DASH_CONTROL_TOKEN); at least 16 characters for writes" })
     .option("diagnostics-rotate-files",{type:"number",description:"Opt-in append-only diagnostic rotation, 2–256 files, 10 MiB each; no eviction"})
     .option("diagnostics-file", {
       type: "string",
@@ -165,6 +166,7 @@ async function runTemplate(name: string, args) {
           diagnosticsFile: args["diagnostics-file"],diagnosticsRotateFiles:args["diagnostics-rotate-files"],
           scenarioFile: args.scenario,
         scenarioStart: args["scenario-start"],
+        controlToken: args["control-token"],
           verbose: args.verbose,
           port: args.port,
           host: args.host,
@@ -183,6 +185,7 @@ async function runTemplate(name: string, args) {
           diagnosticsFile: args["diagnostics-file"],diagnosticsRotateFiles:args["diagnostics-rotate-files"],
           scenarioFile: args.scenario,
         scenarioStart: args["scenario-start"],
+        controlToken: args["control-token"],
           verbose: args.verbose,
           port: args.port,
           host: args.host,
@@ -345,6 +348,7 @@ const program = yargs(hideBin(process.argv))
         diagnosticsFile: args["diagnostics-file"],diagnosticsRotateFiles:args["diagnostics-rotate-files"],
         scenarioFile: args.scenario,
         scenarioStart: args["scenario-start"],
+        controlToken: args["control-token"],
         verbose: args.verbose,
         ...auth(args),
       };

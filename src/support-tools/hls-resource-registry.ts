@@ -19,13 +19,15 @@ export class HlsResourceRegistry {
     { ids: Set<string>; retention: number; cache?: RewriteCache }
   >();
   private prunedAt = -Infinity;
+  private kinds = new Map<Kind,number>();
   constructor(
     private clock = () => performance.now(),
     private capacity = 100000,
   ) {}
 
   snapshot(){this.prune(true);return{registryResources:this.resources.size,registryPlaylists:this.playlists.size};}
-  close(){this.resources.clear();this.playlists.clear();}
+  close(){this.resources.clear();this.playlists.clear();this.kinds.clear();}
+  has(kind:Kind):boolean { this.prune();return (this.kinds.get(kind)??0)>0; }
   private release(owner: string, now: number): void {
     const previous = this.playlists.get(owner);
     if (!previous) return;
@@ -43,6 +45,7 @@ export class HlsResourceRegistry {
     this.resources.forEach((resource,id)=>{
       if (!resource.owners.size && resource.expires <= now) {
         this.resources.delete(id);
+        this.kinds.set(resource.kind,(this.kinds.get(resource.kind)??1)-1);
         if (resource.kind === "playlist") this.release(resource.url, now);
       }
     });
@@ -108,6 +111,7 @@ export class HlsResourceRegistry {
       if (!resource) {
         resource = { ...value, owners: new Set(), expires: 0 };
         this.resources.set(id, resource);
+        this.kinds.set(value.kind,(this.kinds.get(value.kind)??0)+1);
       }
       resource.owners.add(owner);
     }

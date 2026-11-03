@@ -21,8 +21,7 @@ import {
 } from "./safe-http.js";
 import { ownershipArgs, assertOwnedContainer } from "./container-ownership.js";
 import {
-  getFaultConfig,
-  isFaultLoggingVerbose,
+  SessionFaultConfigSource,
   setFaultConfigPath,
   applyConfigOverride,
 } from "./live-stream-fault-config.js";
@@ -37,6 +36,7 @@ import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
 import { loadScenario, ScenarioEngine } from "./scenario.js";
 import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
+import { SessionControls } from "./session-controls.js";
 
 export interface HLSStartOptions {
   lifecycleHooks?:LifecycleHooks;
@@ -152,7 +152,9 @@ export async function startHlsim(
   options.signal?.throwIfAborted();
   validateScenarioStart(options.scenarioStart, options.controlToken);
   const manual = options.scenarioStart === "manual";
+  const controlToken = options.controlToken ?? process.env.HLS_DASH_CONTROL_TOKEN ?? "";
   const definition = loadScenario(options.scenarioFile);
+  const interactive = manual || !definition && controlToken.length >= 16;
   if ((definition || manual) && options.proxy === false)
     throw new Error("Scenarios require the HLS Node proxy");
   if (options.proxy === false && (options.diagnosticsFile || options.verbose))
@@ -256,24 +258,31 @@ export async function startHlsim(
     else
       return resources.get(url.pathname.match(/^\/r\/([a-f0-9]{32})\./)?.[1]);
   }
-  const diagnostics = new SessionDiagnostics("hls", {
+  const configSource = new SessionFaultConfigSource();
+  let diagnostics:SessionDiagnostics;
+  try { diagnostics = new SessionDiagnostics("hls", {
     file: options.diagnosticsFile,rotateFiles:options.diagnosticsRotateFiles,maxFileBytes:options.diagnosticsMaxFileBytes,
-    verbose: isFaultLoggingVerbose,
-  });
+    verbose: () => configSource.isVerbose(),
+  }); } catch(error) { configSource.close();throw error; }
   let scenario: ScenarioEngine | undefined;
   try {
     if (definition && !manual) scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks);
   } catch (error) {
-    diagnostics.close();
+    diagnostics.close(); configSource.close();
     throw error;
   }
-  let faults = new FaultRuntime(Math.random, scenario?.timeline);
-  const scenarioIndex = (scenario || manual) && !dummy ? new HlsScenarioIndex(options.manifestUrl,
-    manual || !!definition?.lifecycle || (definition?.http?.target.resource === "init" || definition?.cache?.target.resource === "init") || !!definition?.rules.some(rule => rule.target.resource === "init"),10000,options.ownedFixture) : undefined;
-  if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();throw new Error("Publication actors require a live/event sample"); }
-  const snapshots = new ManifestSnapshots<string>(128, !scenario && !manual);
+  const controls = new SessionControls({ diagnostics, protocol:"hls", token:controlToken, source:configSource, legacyManual:manual, externallyManaged:!!definition&&!manual,
+    supportsKeys:()=>!dummy&&(options.ownedAes||resources.has("key")),
+    manualSnapshot:()=>faults.snapshot(),
+    resetManual:async()=>{ faults.close(); await transport.cancelManual(); snapshots.setFrozen(false); faults=new FaultRuntime(Math.random,undefined,configSource); },
+  });
+  let faults = new FaultRuntime(Math.random, scenario?.timeline, configSource);
+  const scenarioIndex = (scenario || interactive) && !dummy ? new HlsScenarioIndex(options.manifestUrl,
+    interactive || !!definition?.lifecycle || (definition?.http?.target.resource === "init" || definition?.cache?.target.resource === "init") || !!definition?.rules.some(rule => rule.target.resource === "init"),10000,options.ownedFixture) : undefined;
+  if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();configSource.close();throw new Error("Publication actors require a live/event sample"); }
+  const snapshots = new ManifestSnapshots<string>(128, !scenario, configSource);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
+  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
     publicationAvailable: (kind,track,count) => dummy ? mode !== "vod" && (kind !== "rendition-lag" || (options.windowSegments ?? 6) > (count ?? 1)) : scenarioIndex?.publicationAvailable(kind,track,count) ?? false,
     advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
@@ -285,11 +294,17 @@ export async function startHlsim(
     } }, async (next, previousRunId) => {
     scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
     if (previousRunId) await transport.cancelRun(previousRunId);
-    faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline);
+    faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline, configSource);
     unsubscribeTimeline = next?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  }, options.controlToken, definition) : undefined;
-  } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();throw error; } })();
-  const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
+  }, controlToken, manual ? definition : undefined, {
+    manualConflict:()=>configSource.hasManualConflict(), enabled:()=>controls.allowsScenarioDelivery(),
+    httpControlAllowed:()=>controls.allowsLegacyScenarioWrites(), onChanged:()=>controls.scenarioChanged(),
+    serviceAccessAllowed:()=>controls.allowsServiceAccess(),
+    createEngine:def=>new ScenarioEngine(def,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks,()=>configSource.hasManualConflict()),
+  }) : undefined;
+  } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();configSource.close();throw error; } })();
+  controls.attachRuns(runs);
+  const context = () => ({ scenario: runs?.transitioning || controls.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
     let { scenario, faults } = context();
     const sendMedia: FaultRuntime["sendMedia"] = async (response, status, body, headers, method, signal, trace, enabled) => {
@@ -298,7 +313,7 @@ export async function startHlsim(
       await faults.sendMedia(response, ordinary.status, ordinary.body, ordinary.headers, method, signal, trace, enabled);
     };
     try {
-      if (preflight(req, res, host, !!runs)) return;
+      if (preflight(req, res, host, true)) return;
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const rootPreview = requestUrl.pathname === "/proxy.m3u8";
       const childPreview = dummy
@@ -306,6 +321,7 @@ export async function startHlsim(
         : /^\/r\/[a-f0-9]{32}\.m3u8$/.test(requestUrl.pathname) && lookupResource(requestUrl)?.kind === "playlist";
       const observing = manifestPreview(req, res, rootPreview || childPreview, trace);
       if (observing) scenario = undefined;
+      if (await controls.handle(req,res)) return;
       if (runs && await runs.handle(req, res)) return;
       if (scenario && runs) trace.run(runs.runId);
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -318,6 +334,7 @@ export async function startHlsim(
             mode: dummy ? mode : "proxy",
             status: "ready",
             manifestPreview: MANIFEST_PREVIEW,
+            sessionControl: {version:1,available:controls.available},
             scenario: scenario?.report().result,
             scenarioRun: runs?.report(),
             pendingNetwork:faults.ownership(),
@@ -515,7 +532,7 @@ export async function startHlsim(
         return;
       }
       if (resource.kind === "playlist" && !observing) snapshots.assertCapacity(resource.url);
-      const config = !scenario && resource.kind === "key" && req.method !== "HEAD" ? getFaultConfig() : undefined;
+      const config = !scenario && resource.kind === "key" && req.method !== "HEAD" ? configSource.get() : undefined;
       const failure =
         scenario || req.method === "HEAD"
           ? 0
@@ -581,7 +598,7 @@ export async function startHlsim(
         resource.kind === "key" &&
         req.method !== "HEAD" &&
         faults.trigger(
-          config?.drm?.keyRotationMismatch,
+          configSource.get().drm?.keyRotationMismatch,
           "key-mismatch",
           resource.url,
           trace,
@@ -620,7 +637,7 @@ export async function startHlsim(
     unsubscribeTimeline?.();
     await transport.close();
     scenario?.close();
-    diagnostics.close();
+    diagnostics.close(); configSource.close();
     throw error;
   }
   const url = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
@@ -651,9 +668,12 @@ export async function startHlsim(
       snapshots.close();
       unsubscribeTimeline?.();
       await transport.close();
+      // An already accepted control action may have replaced the runtime while
+      // shutdown drained its handler. Close the final owner as well.
+      faults.close(); unsubscribeTimeline?.();
       resources.close();scenarioIndex?.close();
       scenario?.close();
-      diagnostics.close();
+      controls.close(); diagnostics.close();
     },
   };
 }

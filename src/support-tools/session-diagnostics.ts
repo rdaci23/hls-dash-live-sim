@@ -48,6 +48,7 @@ type EventType =
   | "scenario.profile"
   | "scenario.closed"
   | "scenario.run"
+  | "control.changed"
   | "http.response"
   | "edge.decision"
   | "publication.decision"
@@ -55,7 +56,7 @@ type EventType =
   | "lifecycle.response";
 type ResourceKind = "manifest" | "segment" | "init" | "key" | "other";
 type ResourceSource = "sample" | "origin" | "livesim2" | "local";
-type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset";
+type CancelReason = "client_disconnect" | "session_shutdown" | "handler_error" | "transport_deadline" | "scenario_reset" | "control_reset";
 export interface DiagnosticFields {
   lifecycleKind?: "encoder-restart" | "event-completion" | "unannounced-timestamp-reset" | "sequence-rollback" | "reused-url-incompatible-media";
   lifecycleState?: "scheduled" | "active" | "completed" | "restored";
@@ -168,6 +169,7 @@ const values = {
     "session_shutdown",
     "transport_deadline",
     "scenario_reset",
+    "control_reset",
     "handler_error",
     "resource_rejected",
     "origin_failure",

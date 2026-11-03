@@ -421,6 +421,7 @@ export class ScenarioEngine {
     private capacity = 10000,
     lifecycleHooks?: LifecycleHooks,
     serviceHooks?: ServiceHooks,
+    private manualConflict: () => boolean = manualFaultConflict,
   ) {
     this.definition = immutable(parseScenario(definition));
     // Human labels are intentionally omitted from fingerprints and diagnostics.
@@ -450,7 +451,7 @@ export class ScenarioEngine {
   }
   assertCompatible(): void {
     if (this.settled && !this.invalid && !this.definition.timeline && !this.definition.http && !this.definition.cache && !this.definition.publication && !this.definition.lifecycle && !this.definition.services) return;
-    if (manualFaultConflict())
+    if (this.manualConflict())
       this.invalid = "manual_fault_conflict";
     if (this.invalid)
       throw new HttpError(

@@ -1,73 +1,118 @@
-# Manual scenario runs
+# Interactive scenario runs
 
-Automatic scenario startup remains the default. Manual mode lets you load a
-player, arm a supported preset, and choose when its elapsed-time clock starts.
-Publication, retention and local UTC keep their real-time clocks during resets.
-The repository and npm package remain private.
+The normal UI uses [session-scoped controls](session-controls.md). A developer or
+QA tester connects a running simulator, opens its playback URL in an external
+player, prepares a preset and chooses when fault delivery starts. Publication,
+retention and local UTC keep advancing during Stop and mode changes. Repository
+and npm publication remain separately controlled; these commands do not publish.
 
 ## Setup
 
-Use an isolated, healthy fault file. The token below is generated locally; use the
-same value for the control page and the stream. Do not put tokens in URLs,
-screenshots, commits or shared shell transcripts.
+Use an isolated healthy starting file and configure a simulator control token:
 
 ```sh
 npm run build
+mkdir -p output
+cp examples/configurations/healthy.json output/session-base.json
 export HLS_DASH_CONTROL_TOKEN="$(node -p 'require("node:crypto").randomBytes(24).toString("hex")')"
-node dist/cli.js fault-control --fault-config ./output/manual-faults.json
+printf 'Simulator control token: %s\n' "$HLS_DASH_CONTROL_TOKEN"
+npm run hls -- --fixture tracks --fault-config output/session-base.json
 ```
 
-In a second terminal, export that same token and run one of:
+For the optional local DASH tracks source, use `npm run dash -- --fixture tracks
+--fault-config output/session-base.json`. Start `npm run fault-control` in another
+terminal and open its printed URL. The normal UI does not require its legacy
+fault file or token to match the simulator's. Connect the manifest URL, then
+enter the **simulator** token under Control access and unlock controls. Tokens
+stay in page memory and must not appear in playback URLs or exported settings.
 
-```sh
-node dist/cli.js livesim --sim-type hls --scenario-start manual --fault-config ./output/manual-faults.json
-node dist/cli.js livesim --sim-type dash --asset abr --scenario-start manual --fault-config ./output/manual-faults.json
-```
+Ordinary tokenless simulators still allow playback/inspection, with read-only
+controls and setup guidance. Supplying a token enables the new interactive
+capability on ordinary sources without changing automatic startup. An automatic
+`--scenario` definition remains externally managed/read-only. To expose a custom
+startup definition for interactive preparation, also pass `--scenario-start
+manual`; it appears as the `loaded` catalog item.
 
-Open the printed control URL, enter the token, and select **Connect**. Load the
-stream's printed manifest URL. **Scenario runs** shows the preset catalog,
-requirements, resource targets, expected effect, current run ID and outcome.
-Arming binds the definition to a fresh run ID; another arm creates a new ID even
-if the previous definition was never started. Unsupported presets explain why they cannot be armed; metadata-dependent
-targets require loading the advertised manifest/child playlist first. Refresh Run
-after inspecting a new child playlist. Start validates that inventory again,
-without fetching a target or consuming a fault; HLS TS has no separate
-initialization object. Select **Arm Preset**, prepare your player, then **Start
-Scenario**. **Refresh Run** and **Load/Refresh Manifest** do not consume faults. The manifest
-viewer displays a fresh [baseline preview](manifest-preview.md), bypassing local
-faults without changing freeze/cache snapshots. Playback URLs still exercise the
-real scenario, including frozen or malformed responses.
+## Prepare, start and stop
 
-**Reset Run** cancels only this run's affected in-flight responses, removes its
-timers and freeze snapshots, archives its result and creates a new run ID. It
-leaves the selected preset armed for replay. Healthy transfers and publication
-continue. A cancelled response remains a cancelled/failed observation; reset does
-not turn it into a pass. Up to ten previous results are retained; older-result
-drops are counted explicitly. Download evidence before exceeding that limit.
+**Scenarios** offers compatible presets first, search/categories and an optional
+unavailable filter. Requirements and expected effects are part of each preset.
+The connection step discovers advertised HLS child playlists through bounded
+baseline previews; DASH discovers declared tracks from its MPD. This metadata
+discovery does not download media/init/keys or establish cache/freeze/retry
+prerequisites. Some effects still require ordinary requests from your player.
 
-**Download Run Evidence** includes current/previous results and the existing
-redacted bounded diagnostic snapshot. It contains no control token or arbitrary
-source path. Consult diagnostic drop counters before treating an export as
-complete; this snapshot does not replace the later endurance evidence gate.
-HTTP delivery and browser playback/recovery are separate results.
+1. Choose a compatible preset and select **Prepare test**. If necessary, the
+   explicitly labeled action first stops manual faults and changes control mode.
+   Preparing binds an immutable definition and fresh run ID; no fault starts.
+2. Review the prepared fault, target and timing. A new selection remains separate
+   from the prepared definition and requires preparation again.
+3. Select **Start test** when your external player is ready. Start revalidates
+   advertised capabilities without fetching targets or consuming faults.
+4. Observe automatically refreshed run state and active effects. **Stop test**
+   cancels only that run's affected work, removes its timers/freeze state and
+   disarms the definition. Prepare explicitly before another run.
 
-## API
+Switching tabs never changes modes or starts/replays faults. Switching between
+Manual faults and Scenarios is explicit and stops the prior test first. The UI
+never seeks or restarts the external player. A cancelled response remains a
+cancelled/incomplete observation, rather than becoming a delivered-fault pass.
 
-GET/HEAD `/scenario`, `/scenario/catalog` and `/scenario/evidence` observe the
-connected session. POST `/scenario/arm`, `/scenario/start` and `/scenario/reset`
-require `Authorization: Bearer …`, `X-Sim-Session-Id`, JSON `Content-Type` and the
-current `runId` in their body. Arm also requires a catalog `presetId`; start/reset
-accept no other fields. Old session/run IDs return 409; missing/wrong tokens
-return 401. The body limit is 64 KiB, with a ten-second read deadline.
-The local host/origin policy still applies. No endpoint accepts a server file
-path or fetch URL. Start with `--scenario` to expose a validated custom
-startup definition as the `loaded` catalog item; run definitions are immutable.
+The Manifest tab displays a stable [baseline preview](manifest-preview.md), not
+the last faulted playback response. Refreshing or selecting another playlist is
+inert; actual playback URLs still exercise frozen/malformed/status responses.
+Copy/download use the original snapshot text even with display formatting.
 
-All saved manual faults must be off before arm/start. Reset remains available to
-clean up a run if the shared file was edited during playback. These endpoints do
-not exist in automatic mode; its legacy `/scenario` result shape is unchanged.
-The optional CLI/API `scenarioStart: "manual"` requires the default proxy and a
-control token of at least 16 characters even on loopback.
+Evidence includes current/previous scenario reports, bounded manual settings
+changes/results and the existing redacted diagnostic window. Up to ten previous
+scenario results and ten manual tests are retained. Manual changes are bounded
+to 32 per test, with explicit drop counters. Export before those limits when a
+complete sequence is needed; inspect diagnostic drop counters too. This snapshot
+does not replace complete rotated-file endurance evidence. Simulator delivery
+and player playback/recovery remain separate results.
+
+## Scoped API
+
+GET/HEAD `/session-control`, `/session-control/catalog` and
+`/session-control/evidence` observe the connected session without taking control.
+POST `/session-control/mode`, `/apply`, `/inject`, `/clear`, `/arm`, `/start` and
+`/stop` use the same prefix and require its token, session ID and current revision.
+Scenario mutations additionally require the current run ID. See the complete
+[session-control API](session-controls.md#api-reference).
+
+An initial `mode: "scenario"` claim on an existing healthy manual-start session
+preserves an already prepared/active definition. A true mode change stops the old
+test and clears manual delivery. Writes never persist scoped settings into a
+shared file. Browser reconnection retains server state; simulator restart creates
+a new identity and discards it. Settings are never silently replayed.
+
+## Legacy scenario API
+
+`--scenario-start manual` remains supported for existing clients. It requires the
+default proxy and a token of at least 16 characters even on loopback. Set that
+token with `HLS_DASH_CONTROL_TOKEN`, the streaming CLI's `--control-token`, or the
+programmatic `controlToken` option. In this legacy workflow, all watched manual
+faults must remain off; the normal scoped mode isolates its settings after an
+explicit takeover.
+
+GET/HEAD `/scenario`, `/scenario/catalog` and `/scenario/evidence` retain their
+existing report shapes. Before scoped takeover, POST `/scenario/arm`,
+`/scenario/start` and `/scenario/reset` require Authorization, `X-Sim-Session-Id`,
+JSON Content-Type and the current `runId`; arm also requires a catalog `presetId`.
+Old session/run IDs return 409 and wrong tokens return 401. The body limit is
+64 KiB with a ten-second read deadline. No action accepts an arbitrary URL or
+server path. Start does not perform discovery; custom definitions remain immutable.
+
+Legacy Reset cancels affected run work, archives started results and leaves the
+preset armed with a new ID. This differs from the new UI's Stop, which disarms.
+After scoped takeover, legacy arm/start/reset POSTs return 409 so clients cannot
+bypass revision checks. Legacy reads stay available.
+
+The existing `/scenario/access` POST is a narrow service exception: only an active
+local token-expiry scenario may issue/renew player access credentials. It retains
+token/session/current-run validation, rejects manual/stopped/transitioning states
+and does not change the control revision or scenario lifecycle. Credential bodies
+are never part of reports or exported evidence. [Local-service scope](local-services.md).
 
 ## Verification
 
@@ -76,10 +121,11 @@ npm run controls:verify -- --output output/manual-controls
 npm run test:ui
 ```
 
-The isolated verifier covers both adapters, authentication/session/run rejection,
-unsupported inputs, inert reads, armed-but-inactive delivery, start/retry,
-affected-transfer cancellation, healthy-transfer survival, retained results and
-secret-free export. DASH needs the pinned local Docker image. `--protocol hls`
-is Node-only. Tests additionally cover bounded history, immutable definitions,
-capability rejection and browser arm/start/reset/download flows for both protocols.
-CI retains reports and diagnostics with the candidate commit and dirty-tree flag.
+The legacy isolated verifier covers both adapters, token/session/run rejection,
+unsupported inputs, inert reads, prepare/start/retry, affected-transfer cancellation,
+healthy-transfer survival and retained results. DASH's engine verifier needs the
+pinned local Docker image; `--protocol hls` is Node-only. Focused tests separately
+exercise scoped authentication, revision conflicts, private source isolation,
+one-shot preservation/rearm, mode transitions, bounded history and legacy-route
+compatibility. Inspect the exact candidate's reports for executed browser checks;
+the presence of a test or workflow is not qualification evidence.

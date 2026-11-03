@@ -147,6 +147,10 @@ function merge(base: FaultConfig, patch: FaultConfig): FaultConfig {
     _oneShot: { ...base._oneShot, ...patch._oneShot },
   };
 }
+/** Fresh normalized defaults; callers never receive the shared template. */
+export function createDefaultFaultConfig(): FaultConfig {
+  return merge(DEFAULT_CONFIG, {});
+}
 export function faultModes(config: FaultConfig) {
   return {
     missing: config.segment?.missing,
@@ -175,10 +179,10 @@ function arm(
   return next;
 }
 let activeConfig = merge(DEFAULT_CONFIG, {});
-function manualConflict(config: FaultConfig): boolean {
-  return Object.entries(config.segment ?? {}).some(([key, value]) => key === "latencyMs" ? Number(value) > 0 : value !== "off") || Object.values(config.drm ?? {}).some(value => value !== "off") || config.manifest?.freeze !== "off" || Object.values(config.network ?? {}).some(value => Number(value) > 0);
+export function faultConfigHasManualConflict(config: FaultConfig): boolean {
+  return Object.entries(config.segment ?? {}).some(([key, value]) => key === "latencyMs" ? Number(value) > 0 : value !== "off") || Object.values(config.drm ?? {}).some(value => value !== "off") || config.manifest?.freeze === "always" || Object.values(config.network ?? {}).some(value => Number(value) > 0);
 }
-let activeManualConflict = manualConflict(activeConfig);
+let activeManualConflict = faultConfigHasManualConflict(activeConfig);
 let activePath = path.resolve(process.cwd(), ".hls-dash-faults.json");
 let watcher: fs.FSWatcher | undefined;
 let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -187,7 +191,7 @@ const listeners = new Set<(config: FaultConfig) => void>();
 function update(config: FaultConfig) {
   if (JSON.stringify(config) === JSON.stringify(activeConfig)) return;
   activeConfig = config;
-  activeManualConflict = manualConflict(config);
+  activeManualConflict = faultConfigHasManualConflict(config);
   for (const listener of listeners) listener(getFaultConfig());
 }
 let lastDiskText = "";
@@ -313,5 +317,108 @@ export function persistFaultConfig(
   } finally {
     fs.closeSync(fd);
     fs.rmSync(lock, { force: true });
+  }
+}
+
+/** A session consumer reads settings without knowing whether they come from a file. */
+export interface FaultConfigSource {
+  get(): FaultConfig;
+  subscribe(listener: (config: FaultConfig) => void): () => void;
+  isVerbose(): boolean;
+  hasManualConflict(): boolean;
+}
+
+/** Existing callers retain watched-file behavior unless they inject a source. */
+export const legacyFaultConfigSource: FaultConfigSource = Object.freeze({
+  get: getFaultConfig,
+  subscribe: onFaultConfigChange,
+  isVerbose: isFaultLoggingVerbose,
+  hasManualConflict: hasManualFaultConflict,
+});
+
+/**
+ * Follows legacy settings until an authorized control action explicitly isolates
+ * this session. Reads, subscriptions and rejected patches never take control.
+ * Once isolated, no update reads or writes the shared file or notifies its peers.
+ */
+export class SessionFaultConfigSource implements FaultConfigSource {
+  private config: FaultConfig;
+  private conflict: boolean;
+  private privateSettings: boolean;
+  private closed = false;
+  private readonly listeners = new Set<(config: FaultConfig) => void>();
+  private unsubscribeParent?: () => void;
+
+  constructor(
+    initial?: FaultConfig,
+    private readonly parent: FaultConfigSource = legacyFaultConfigSource,
+  ) {
+    const first = initial === undefined ? parent.get() : initial;
+    validateFaultConfig(first);
+    this.config = merge(DEFAULT_CONFIG, structuredClone(first));
+    this.conflict = faultConfigHasManualConflict(this.config);
+    this.privateSettings = initial !== undefined;
+    if (!this.privateSettings)
+      this.unsubscribeParent = parent.subscribe(next => this.set(next));
+  }
+
+  get isolated(): boolean { return this.privateSettings; }
+  get(): FaultConfig { return structuredClone(this.config); }
+  isVerbose(): boolean { return this.config.logging?.verbose === true; }
+  hasManualConflict(): boolean { return this.conflict; }
+
+  subscribe(listener: (config: FaultConfig) => void): () => void {
+    this.assertOpen();
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  /** Pin the most recent settings without rearming or otherwise changing them. */
+  isolate(): void {
+    this.assertOpen();
+    if (this.privateSettings) return;
+    const current = this.parent.get();
+    this.unsubscribeParent?.();
+    this.unsubscribeParent = undefined;
+    this.privateSettings = true;
+    this.set(current);
+  }
+
+  update(
+    patch: Partial<FaultConfig>,
+    { rearmOnce = false }: { rearmOnce?: boolean } = {},
+  ): FaultConfig {
+    this.assertOpen();
+    // Validate before isolating: a rejected write must preserve legacy following.
+    validateFaultConfig(patch);
+    const copy = structuredClone(patch);
+    this.isolate();
+    this.set(arm(this.config, copy, rearmOnce));
+    return this.get();
+  }
+
+  reset(): FaultConfig {
+    this.isolate();
+    this.set(createDefaultFaultConfig());
+    return this.get();
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.unsubscribeParent?.();
+    this.unsubscribeParent = undefined;
+    this.listeners.clear();
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new ConfigConflictError("Session configuration is closed");
+  }
+
+  private set(next: FaultConfig): void {
+    if (this.closed || JSON.stringify(next) === JSON.stringify(this.config)) return;
+    this.config = structuredClone(next);
+    this.conflict = faultConfigHasManualConflict(this.config);
+    for (const listener of this.listeners) listener(this.get());
   }
 }

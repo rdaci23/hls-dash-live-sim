@@ -94,6 +94,18 @@ export function validateScenarioStart(mode: string | undefined, token?: string):
   if (mode !== undefined && !["auto", "manual"].includes(mode)) throw new Error("scenarioStart must be auto or manual");
   if (mode === "manual" && (token ?? process.env.HLS_DASH_CONTROL_TOKEN ?? "").length < 16) throw new Error("Manual scenario controls require a token of at least 16 characters");
 }
+export interface ScenarioRunsOptions {
+  /** The effective configuration belongs to the session, not necessarily a file. */
+  manualConflict?: () => boolean;
+  /** Delivery is disabled while the scoped controller is in manual mode. */
+  enabled?: () => boolean;
+  /** Preserve legacy HTTP control until explicit scoped takeover only. */
+  httpControlAllowed?: () => boolean;
+  /** Credential renewal is separate from fault-control writes and revisioning. */
+  serviceAccessAllowed?: () => boolean;
+  onChanged?: () => void;
+  createEngine?: (definition: ScenarioDefinition) => ScenarioEngine;
+}
 export class ScenarioRuns {
   readonly token: string;
   runId = randomUUID();
@@ -104,13 +116,17 @@ export class ScenarioRuns {
   private history: unknown[] = [];
   private dropped = 0;
   constructor(private diagnostics: SessionDiagnostics, private capabilities: ScenarioCapabilities,
-    private replace: (next?: ScenarioEngine, previousRunId?: string) => Promise<void>, token?: string, private loaded?: ScenarioDefinition) {
+    private replace: (next?: ScenarioEngine, previousRunId?: string) => Promise<void>, token?: string, private loaded?: ScenarioDefinition,
+    private options: ScenarioRunsOptions = {}) {
     this.token = token ?? process.env.HLS_DASH_CONTROL_TOKEN ?? "";
     if (this.token.length < 16) throw new Error("Manual scenario controls require HLS_DASH_CONTROL_TOKEN or controlToken with at least 16 characters");
     this.loaded = loaded ? parseScenario(loaded) : undefined;
     if (loaded) { checkScenarioCapabilities(loaded, { ...capabilities, resourceAvailable: undefined, advancingManifest: undefined, publicationAvailable: undefined }); this.armed = parseScenario(loaded); this.presetId = "loaded"; }
   }
-  assertHealthy(): void { if (manualFaultConflict()) throw new HttpError(409, "Scenario controls require all manual faults off"); }
+  assertHealthy(): void {
+    if (this.options.enabled && !this.options.enabled()) return;
+    if ((this.options.manualConflict ?? manualFaultConflict)()) throw new HttpError(409, "Scenario controls require all manual faults off");
+  }
   private load(id: string): ScenarioDefinition {
     if (id === "loaded" && this.loaded) return parseScenario(this.loaded);
     const entry = presets.find(value => value[0] === id && (value[2] === "both" || value[2] === this.capabilities.protocol));
@@ -136,6 +152,7 @@ export class ScenarioRuns {
   }
   async action(name: string, body: { runId?: string; presetId?: string }) {
     if (this.transitioning) throw new HttpError(409, "A scenario transition is already in progress");
+    if (this.options.enabled && !this.options.enabled()) throw new HttpError(409, "Switch explicitly to scenario mode before controlling a run");
     if (body.runId !== this.runId) throw new HttpError(409, "Scenario run changed; refresh before controlling it");
     if (Object.keys(body).some(key => !(name === "arm" ? ["runId", "presetId"] : ["runId"]).includes(key))) throw new HttpError(400, "Unsupported scenario control field");
     if (name !== "reset") this.assertHealthy();
@@ -152,7 +169,7 @@ export class ScenarioRuns {
       } else if (name === "start") {
         if (this.active || !this.armed) throw new HttpError(409, "Arm a preset before starting a new run");
         checkScenarioCapabilities(this.armed, this.capabilities);
-        const engine = new ScenarioEngine(this.armed,this.diagnostics,undefined,undefined,this.capabilities.lifecycleHooks,this.capabilities.serviceHooks);
+        const engine = this.options.createEngine ? this.options.createEngine(this.armed) : new ScenarioEngine(this.armed,this.diagnostics,undefined,undefined,this.capabilities.lifecycleHooks,this.capabilities.serviceHooks);
         try { await this.replace(engine); this.active = engine; } catch (error) { engine.close(); throw error; }
       } else if (name === "reset") {
         const previous = this.active;
@@ -161,6 +178,24 @@ export class ScenarioRuns {
         this.active = undefined; this.runId = randomUUID();
       } else throw new HttpError(404, "Unknown scenario action");
       this.diagnostics.record("scenario.run", { runId: this.runId, scenarioId: this.active?.scenarioId });
+      this.options.onChanged?.();
+    } finally { this.transitioning = false; }
+    return this.report();
+  }
+  /** Scoped Stop ends delivery and preparation; legacy Reset still rearms. */
+  async stop() {
+    if (this.transitioning) throw new HttpError(409, "A scenario transition is already in progress");
+    this.transitioning = true;
+    try {
+      const previous = this.active;
+      await this.replace(undefined, this.runId);
+      if (previous || this.armed) {
+        this.history.push({ runId: this.runId, presetId: this.presetId, scenario: previous?.report(), stopped: true, started: !!previous });
+        if (this.history.length > 10) { this.history.shift(); this.dropped++; }
+      }
+      this.active = undefined; this.armed = undefined; this.presetId = undefined; this.runId = randomUUID();
+      this.diagnostics.record("scenario.run", { runId: this.runId });
+      this.options.onChanged?.();
     } finally { this.transitioning = false; }
     return this.report();
   }
@@ -175,6 +210,7 @@ export class ScenarioRuns {
       return true;
     }
     if (req.method !== "POST") throw new HttpError(405, "Method not allowed");
+    if (pathname !== "/scenario/access" && this.options.httpControlAllowed && !this.options.httpControlAllowed()) throw new HttpError(409, "This session uses scoped controls; refresh its session-control state");
     const supplied = Buffer.from(req.headers.authorization ?? ""), expected = Buffer.from("Bearer " + this.token);
     if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) throw new HttpError(401, "Scenario control token required");
     if (req.headers["x-sim-session-id"] !== this.diagnostics.sessionId) throw new HttpError(409, "Connected stream session changed");
@@ -187,7 +223,7 @@ export class ScenarioRuns {
     try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new HttpError(400, "Scenario control body must be JSON"); }
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new HttpError(400, "Scenario control body must be an object");
     if(pathname==="/scenario/access"){
-      const value=body as {runId?:string};if(Object.keys(value).some(k=>k!=="runId")||value.runId!==this.runId)throw new HttpError(409,"Current runId required");if(this.transitioning||!this.active?.services||this.active.services.definition.kind!=="token-expiry")throw new HttpError(409,"No active local token-expiry run");send(res,200,JSON.stringify(this.active.services.issue()),{"Content-Type":"application/json","Cache-Control":"no-store"});return true;
+      const value=body as {runId?:string};if(Object.keys(value).some(k=>k!=="runId")||value.runId!==this.runId)throw new HttpError(409,"Current runId required");if(this.options.serviceAccessAllowed&&!this.options.serviceAccessAllowed()||this.transitioning||!this.active?.services||this.active.services.definition.kind!=="token-expiry")throw new HttpError(409,"No active local token-expiry run");send(res,200,JSON.stringify(this.active.services.issue()),{"Content-Type":"application/json","Cache-Control":"no-store"});return true;
     }
     const data = await this.action(pathname.slice("/scenario/".length), body);
     send(res, 200, JSON.stringify(data), { "Content-Type": "application/json" }); return true;

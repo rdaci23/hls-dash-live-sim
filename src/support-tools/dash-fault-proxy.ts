@@ -11,13 +11,14 @@ import {
   sessionServer,
   HttpError,
 } from "./safe-http.js";
-import { getFaultConfig, isFaultLoggingVerbose } from "./live-stream-fault-config.js";
+import { SessionFaultConfigSource } from "./live-stream-fault-config.js";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ScenarioEngine, ScenarioDefinition, parseScenario } from "./scenario.js";
 import { DashScenarioIndex } from "./dash-scenario-index.js";
 import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
+import { SessionControls } from "./session-controls.js";
 export interface DashFaultProxyOptions {
   lifecycleHooks?:LifecycleHooks;
   serviceHooks?:ServiceHooks;
@@ -47,7 +48,9 @@ export async function startDashFaultProxy(
 ): Promise<DashFaultProxy> {
   validateScenarioStart(options.scenarioStart, options.controlToken);
   const manual = options.scenarioStart === "manual";
+  const controlToken=options.controlToken??process.env.HLS_DASH_CONTROL_TOKEN??"";
   const definition = options.scenario ? parseScenario(options.scenario) : undefined;
+  const interactive=manual||!definition&&controlToken.length>=16;
   if (definition?.rules.some(rule => rule.target.resource === "manifest" && !["root", "any"].includes(rule.target.track)))
     throw new Error("DASH has one root MPD; manifest targets must use track root or any");
   if (definition?.rules.some(rule => rule.target.resource === "init" && rule.target.track === "root"))
@@ -55,45 +58,58 @@ export async function startDashFaultProxy(
   if (definition?.cache?.target.resource === "manifest" && definition.cache.target.track !== "root") throw new Error("DASH cache manifest targets require root");
   const upstreamBase = `http://127.0.0.1:${options.upstreamPort}`;
   const policy = new OriginPolicy(upstreamBase);
-  const diagnostics = new SessionDiagnostics("dash", {
+  const configSource = new SessionFaultConfigSource();
+  let diagnostics:SessionDiagnostics;
+  try { diagnostics = new SessionDiagnostics("dash", {
     file: options.diagnosticsFile,rotateFiles:options.diagnosticsRotateFiles,maxFileBytes:options.diagnosticsMaxFileBytes,
-    verbose: isFaultLoggingVerbose,
-  });
+    verbose:()=>configSource.isVerbose(),
+  }); } catch(error) { configSource.close();throw error; }
   let scenario: ScenarioEngine | undefined;
   try {
     if (definition && !manual)
       scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks);
   } catch (error) {
-    diagnostics.close();
+    diagnostics.close(); configSource.close();
     throw error;
   }
-  const needsMediaIdentity = manual || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.services?.kind==="token-expiry" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
-  const needsIndex = manual || scenario && (needsMediaIdentity || scenario.definition.publication?.kind === "rendition-lag" || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
+  const needsMediaIdentity = interactive || scenario && ((scenario.definition.http?.target.resource === "media" || scenario.definition.cache?.target.resource === "media" || scenario.definition.publication?.kind === "segment-delay") || scenario.definition.lifecycle || scenario.definition.services?.kind==="token-expiry" || scenario.definition.timeline || scenario.definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media"));
+  const needsIndex = interactive || scenario && (needsMediaIdentity || scenario.definition.publication?.kind === "rendition-lag" || (scenario.definition.http?.target.resource === "init" || scenario.definition.cache?.target.resource === "init") || scenario.definition.rules.some(rule => rule.target.resource === "init"));
   const scenarioIndex = needsIndex ? new DashScenarioIndex(undefined, undefined,
-    manual || !!scenario?.definition.lifecycle || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init"),!!options.lifecycleHooks) : undefined;
-  let faults = new FaultRuntime(Math.random, scenario?.timeline);
+    interactive || !!scenario?.definition.lifecycle || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init"),!!options.lifecycleHooks) : undefined;
+  const controls=new SessionControls({diagnostics,protocol:"dash",token:controlToken,source:configSource,legacyManual:manual,externallyManaged:!!definition&&!manual,
+    supportsKeys:()=>false,manualSnapshot:()=>faults.snapshot(),
+    resetManual:async()=>{faults.close();await transport.cancelManual();snapshots.setFrozen(false);faults=new FaultRuntime(Math.random,undefined,configSource);},
+  });
+  let faults = new FaultRuntime(Math.random, scenario?.timeline,configSource);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
-  }>(128, !scenario && !manual);
+  }>(128, !scenario,configSource);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return manual ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: true, initialization: true, videoTracks: options.videoTracks,
+  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: true, initialization: true, videoTracks: options.videoTracks,
     publicationAvailable: (kind,track) => scenarioIndex?.publicationAvailable(kind,track) ?? false,
     advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
     scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
     if (previousRunId) await transport.cancelRun(previousRunId);
-    faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline);
+    faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline,configSource);
     unsubscribeTimeline = next?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  }, options.controlToken, definition) : undefined;
-  } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();throw error; } })();
-  const context = () => ({ scenario: runs?.transitioning ? undefined : scenario, faults });
+  }, controlToken, manual?definition:undefined, {
+    manualConflict:()=>configSource.hasManualConflict(),enabled:()=>controls.allowsScenarioDelivery(),
+    httpControlAllowed:()=>controls.allowsLegacyScenarioWrites(),onChanged:()=>controls.scenarioChanged(),
+    serviceAccessAllowed:()=>controls.allowsServiceAccess(),
+    createEngine:def=>new ScenarioEngine(def,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks,()=>configSource.hasManualConflict()),
+  }) : undefined;
+  } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();configSource.close();throw error; } })();
+  controls.attachRuns(runs);
+  const context = () => ({ scenario: runs?.transitioning || controls.transitioning ? undefined : scenario, faults });
   const transport = sessionServer(async (req, res, signal, trace) => {
     let { scenario, faults } = context();
     try {
-      if (preflight(req, res, options.host, !!runs)) return;
+      if (preflight(req, res, options.host, true)) return;
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const observing = manifestPreview(req,res,requestUrl.pathname === new URL(options.manifestPath ?? "/manifest.mpd",upstreamBase).pathname,trace);
       if (observing) scenario = undefined;
+      if (await controls.handle(req,res)) return;
       if (runs && await runs.handle(req, res)) return;
       if (scenario && runs) trace.run(runs.runId);
       const request = new URL(req.url ?? "/", "http://localhost");
@@ -105,6 +121,7 @@ export async function startDashFaultProxy(
             protocol: "dash",
             status: "ready",
             manifestPreview: MANIFEST_PREVIEW,
+            sessionControl:{version:1,available:controls.available},
             scenario: scenario?.report().result,
             scenarioRun: runs?.report(),
             pendingNetwork:faults.ownership(),
@@ -283,7 +300,7 @@ export async function startDashFaultProxy(
     unsubscribeTimeline?.();
     await transport.close();
     scenario?.close();
-    diagnostics.close();
+    diagnostics.close(); configSource.close();
     throw error;
   }
   return {
@@ -298,9 +315,10 @@ export async function startDashFaultProxy(
       snapshots.close();
       unsubscribeTimeline?.();
       await transport.close();
+      faults.close(); unsubscribeTimeline?.();
       scenarioIndex?.close();
       scenario?.close();
-      diagnostics.close();
+      controls.close(); diagnostics.close();
     },
   };
 }

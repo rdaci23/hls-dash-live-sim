@@ -1,0 +1,10 @@
+{
+  "type": "hls-dash-manual-settings",
+  "version": 1,
+  "settings": {
+    "segment": { "malformed": "off", "forbidden": "off", "missing": "off", "latencyMs": 0 },
+    "network": { "bandwidthKbps": 500, "jitterMs": 150 },
+    "drm": { "licenseFailure": "off", "keyRotationMismatch": "off" },
+    "manifest": { "freeze": "off" }
+  }
+}

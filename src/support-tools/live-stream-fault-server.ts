@@ -70,7 +70,7 @@ export async function startFaultServer(
       return;
     }
     // The public shell contains no configuration or credential. API access is protected.
-    if (["/", "/control.js"].includes(req.path) && req.method === "GET")
+    if (["/", "/control.js", "/legacy-control.js"].includes(req.path) && req.method === "GET")
       return next();
     const origin = req.headers.origin;
     if (origin) {
@@ -83,6 +83,7 @@ export async function startFaultServer(
         return;
       }
     }
+    if (req.path === "/ui-info" && ["GET", "HEAD"].includes(req.method)) return next();
     if (token) {
       const provided = Buffer.from(String(req.headers.authorization ?? ""));
       const expected = Buffer.from(`Bearer ${token}`);
@@ -107,19 +108,22 @@ export async function startFaultServer(
     res.sendFile(path.resolve(__dirname, "assets/fault-control/control.js"));
   });
 
+  app.get("/legacy-control.js", (_req, res) => {
+    res.sendFile(path.resolve(__dirname, "assets/fault-control/legacy-control.js"));
+  });
+
+  const manifestHosts = () => ["localhost", "127.0.0.1", "[::1]", ...Object.values(os.networkInterfaces()).flatMap(entries =>
+    (entries ?? []).map(entry => entry.family === "IPv6" ? `[${entry.address}]` : entry.address))];
+  app.get("/ui-info", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({manifestHosts:manifestHosts()});
+  });
+
   app.get("/config", (_req, res) => {
     // Discovery stays behind API authentication. Manifest reads happen directly
     // in the browser; the control server is never an arbitrary URL proxy.
-    const manifestHosts = [
-      "localhost", "127.0.0.1", "[::1]",
-      ...Object.values(os.networkInterfaces()).flatMap(entries =>
-        (entries ?? []).map(entry =>
-          entry.family === "IPv6" ? `[${entry.address}]` : entry.address,
-        ),
-      ),
-    ];
     res.json({
-      path: getFaultConfigPath(), config: getFaultConfig(), manifestHosts,
+      path: getFaultConfigPath(), config: getFaultConfig(), manifestHosts:manifestHosts(),
     });
   });
 
