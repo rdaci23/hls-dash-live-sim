@@ -12,9 +12,18 @@ function frozen(metrics, gap) {
   if (captions.length < 4 || audio.length < 4 || captions[0].atMs > gap.from + 500 || captions.at(-1).atMs < gap.to - 500 || audio[0].atMs > gap.from + 500 || audio.at(-1).atMs < gap.to - 500) return false;
   const continuous = samples => samples.every((s, i) => finite(s.atMs) && (!i || s.atMs > samples[i - 1].atMs && s.atMs - samples[i - 1].atMs <= 300));
   if (!continuous(captions) || !continuous(audio) || !captions.every(c => empty(c) && Number.isSafeInteger(c.frameCount) && c.frameCount === captions[0].frameCount && finite(c.lastFrameMs) && Math.abs(c.lastFrameMs - gap.from) <= 1 && Math.abs(c.mediaTime - captions[0].mediaTime) <= 0.1)) return false;
-  if (!audio.every(a => finite(a.mediaTime) && Math.abs(a.mediaTime - captions[0].mediaTime) <= 0.1 && finite(a.contextTime) && finite(a.rms) && a.rms >= 0 && a.rms <= 0.0001 && a.frameCount === captions[0].frameCount)) return false;
+  const waiting = list(metrics.events).find(e => e.kind === 'waiting' && finite(e.atMs) && e.atMs >= gap.from && e.atMs <= Math.min(captions[0].atMs, audio[0].atMs) && Math.abs(e.mediaTime - captions[0].mediaTime) <= 0.1);
+  if (!waiting) return false;
+  // Time-domain data contains the most recent fftSize sample-frames. A first
+  // read can still contain audio from before native waiting. Only that measured
+  // analysis history is excluded from the silence test; output latency is not
+  // a grace period. The owned harness uses 4096, with a maximum 128ms window.
+  const configuration = a => Number.isSafeInteger(a.fftSize) && a.fftSize >= 32 && a.fftSize <= 4096 && (a.fftSize & (a.fftSize - 1)) === 0 && Number.isSafeInteger(a.sampleRate) && a.sampleRate >= 32000 && a.sampleRate <= 192000;
+  if (!audio.every(a => configuration(a) && a.fftSize === audio[0].fftSize && a.sampleRate === audio[0].sampleRate && finite(a.mediaTime) && Math.abs(a.mediaTime - captions[0].mediaTime) <= 0.1 && finite(a.contextTime) && finite(a.rms) && a.rms >= 0 && a.rms <= 1 && a.frameCount === captions[0].frameCount)) return false;
+  const silence = audio.filter(a => a.atMs - waiting.atMs >= a.fftSize / a.sampleRate * 1000);
+  if (silence.length < 4 || !silence.every(a => a.rms <= 0.0001)) return false;
   const wall = audio.at(-1).atMs - audio[0].atMs, clock = (audio.at(-1).contextTime - audio[0].contextTime) * 1000;
-  return wall >= 1000 && clock >= wall * 0.8 && clock <= wall * 1.2 && list(metrics.events).some(e => e.kind === 'waiting' && e.atMs >= gap.from && e.atMs <= gap.to && Math.abs(e.mediaTime - captions[0].mediaTime) <= 0.1);
+  return wall >= 1000 && clock >= wall * 0.8 && clock <= wall * 1.2;
 }
 
 function retryDefaults(input) {

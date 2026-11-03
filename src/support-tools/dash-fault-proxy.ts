@@ -247,7 +247,9 @@ export async function startDashFaultProxy(
         text = text.replaceAll(upstreamBase, "");
         remote.body = Buffer.from(text);
         if (remote.status === 200) {
-          if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled))
+          // Publication keeps advancing after finite fault rules settle. Retain
+          // advertised identity for new resources through the bounded index.
+          if (scenarioIndex)
             scenarioIndex.observe(text, remote.url);
           if (scenarioIndex) scenario?.manifestBindings(trace,scenarioIndex.manifestBindings());
           const choice = observing ? {value:remote,action:undefined} : snapshots.observe(manifestKey, remote);

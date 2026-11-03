@@ -41,3 +41,41 @@ test('HLS advertised media with a playlist extension is rejected as a preview re
  const ordinary=await fetch(media);assert.equal(ordinary.status,200);assert.deepEqual(Buffer.from(await ordinary.arrayBuffer()),origin.files.get('/chunk-0-1.m4s'));
  const init=new URL(playlist.match(/#EXT-X-MAP:URI="([^"]+)"/)[1],child);assert.equal((await fetch(init)).status,503);assert.equal((await fetch(init)).status,200);
 });
+for(const protocol of ['hls','dash'])test(protocol+' fresh advertised media retains closed logical identity after a finite fault has settled',async t=>{
+ const {catalog}=require('../scripts/resource-scenarios/verify.cjs'),{read:closed}=require('../scripts/browser/complete-diagnostics.cjs');
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'settled-dash-index-')),origin=await createOrigin();let session;
+ t.after(async()=>{await session?.close();await origin.close();await fs.rm(dir,{recursive:true,force:true});});
+ config.setFaultConfigPath(path.join(dir,'faults.json'));config.applyConfigOverride({segment:{malformed:'off',forbidden:'off',missing:'off',latencyMs:0},network:{bandwidthKbps:0,jitterMs:0},manifest:{freeze:'off'},drm:{licenseFailure:'off',keyRotationMismatch:'off'}});
+ const listenPort=await port(),base='http://127.0.0.1:'+listenPort,diagnosticsFile=path.join(dir,'requests.jsonl'),scenario={version:1,rules:[{target:{resource:'media',track:'video:0',segment:'next'},status:503,expectRetry:true}]};
+ if(protocol==='dash')session=await startDashFaultProxy({listenPort,upstreamPort:Number(new URL(origin.url).port),diagnosticsFile,scenario});
+ else{const{startHlsim}=require('../dist/support-tools/hls-sim-runner.js'),scenarioFile=path.join(dir,'scenario.json');await fs.writeFile(scenarioFile,JSON.stringify(scenario));session=await startHlsim({port:listenPort,manifestUrl:origin.url+'/master.m3u8',dummyContent:false,ownedFixture:true,diagnosticsFile,scenarioFile,faultConfigPath:path.join(dir,'faults.json')});}
+ const rootUrl=protocol==='dash'?base+'/manifest.mpd':session.url,sourceRoot=origin.url+(protocol==='dash'?'/manifest.mpd':'/master.m3u8');
+ const read=async url=>{const r=await fetch(url),body=Buffer.from(await r.arrayBuffer());return{status:r.status,body,requestId:r.headers.get('x-sim-request-id'),faultIds:r.headers.get('x-sim-fault-ids')};};
+ const initialRoot=await read(rootUrl),originalMpd=origin.files.get('/manifest.mpd'),originalHls=new Map([0,1,2].map(id=>[id,origin.files.get('/track-'+id+'.m3u8')])),initial=await catalog(initialRoot.body.toString(),rootUrl,protocol),video=initial.find(r=>r.track==='video:0');
+ const failed=await read(video.media);assert.equal(failed.status,503);assert.ok(failed.faultIds);
+ const retry=await read(video.media);assert.equal(retry.status,200);assert.equal(session.scenario.report().result,'passed');
+ const tracked=session.scenario.report().trackedDownloads,probes=[];
+ // Existing manual fault settings must stay excluded after scenario settlement.
+ config.applyConfigOverride({segment:{missing:'always',malformed:'always'}});
+ for(let generation=1;generation<=3;generation++){
+  const prefix='fresh-'+generation+'-';
+  for(const[name,bytes]of [...origin.files])if(name.startsWith('/chunk-'))origin.files.set('/'+prefix+name.slice(1),bytes);
+  origin.files.set('/manifest.mpd',Buffer.from(originalMpd.toString().replaceAll('media="chunk-','media="'+prefix+'chunk-')));
+  for(const[id,body]of originalHls)origin.files.set('/track-'+id+'.m3u8',Buffer.from(body.toString().replaceAll('chunk-'+id+'-',prefix+'chunk-'+id+'-')));
+  const root=await read(rootUrl);assert.equal(root.status,200);
+  const advertised=await catalog(root.body.toString(),rootUrl,protocol),source=await read(sourceRoot),controls=await catalog(source.body.toString(),sourceRoot,protocol);
+  for(const resource of advertised)for(const targetKind of ['init','media']){
+   const probe=await read(resource[targetKind]);assert.equal(probe.status,200);assert.equal(probe.faultIds,null);
+   const control=await read(controls.find(r=>r.track===resource.track)[targetKind]);assert.deepEqual(probe.body,control.body);
+   probes.push({...probe,trackId:resource.track,targetKind});
+  }
+  assert.ok(session.resourceOwnership().indexEntries<100,'fresh bounded manifest metadata is retained, not an unbounded transfer history');
+  assert.equal(session.scenario.report().trackedDownloads,tracked,'completed finite rules do not allocate new attempt records');
+ }
+ await session.close();
+ const diagnostics=await closed(diagnosticsFile,session.diagnostics.snapshot());
+ for(const probe of probes){const done=diagnostics.events.find(e=>e.event==='request.completed'&&e.requestId===probe.requestId);assert.ok(done);if(protocol==='dash'||probe.targetKind==='media'){assert.equal(done.trackId,probe.trackId,'fresh advertised track identity must survive scenario settlement');assert.equal(done.targetKind,probe.targetKind);}assert.equal(done.bodyBytes,probe.body.length);}
+ assert.equal(diagnostics.events.filter(e=>e.event==='fault.applied').length,1,'settlement does not replay the fault or enable manual faults');
+ assert.equal(session.resourceOwnership().indexEntries,0);assert.equal(session.resourceOwnership().indexTracks,0);
+ assert.ok(Object.values(session.networkOwnership()).every(n=>n===0),'owned transfers/timers drain after close');
+});

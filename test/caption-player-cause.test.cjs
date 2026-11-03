@@ -12,7 +12,7 @@ function fixture(protocol = 'dash', kind = protocol === 'hls' ? 'late-captions' 
   const from = protocol === 'hls' ? 40000 : 44000, to = protocol === 'hls' ? 66020 : 50000, captions = [], audio = [];
   for (let atMs = from + 100; atMs <= to - 100; atMs += 100) {
     captions.push({ atMs, mediaTime: 50, renderedMediaTime: 49.958333, frameCount: 1000, lastFrameMs: from, readyState: 2, paused: false, seeking: false, buffered: [[20, 49.999999]] });
-    audio.push({ atMs, mediaTime: 50, frameCount: 1000, contextTime: atMs / 1000, rms: 0, selected: 'en' });
+    audio.push({ atMs, mediaTime: 50, frameCount: 1000, contextTime: atMs / 1000, rms: 0, selected: 'en', fftSize: 4096, sampleRate: 48000 });
   }
   const marker = { kind: 'causal-probe-disposed', protocol, atMs: 66000, dropped: 0 };
   const metrics = { protocol, startEpochMs: epoch, elapsedMs: 66020, firstFrameMs: 200, lastFrameMs: protocol === 'hls' ? from : 66000, dropped: 0, causalityDropped: 0, causalProbe: true, causalProbeCompleted: true,
@@ -97,6 +97,31 @@ test('HLS asynchronous audio abort is delivered in its own exact dispatch after 
     x => x.input.metrics.errors.at(-1).atMs = 36001.02
   ]) {
     const changed = withAudioAbort(); edit(changed);
+    assert.equal(classifyCaption(changed.input, changed.options).verified, false, edit.toString());
+  }
+});
+test('native waiting permits only an explicitly measured FFT window containing the last audio frames', () => {
+  const value = fixture('hls'), m = value.input.metrics, from = m.lastFrameMs;
+  m.events.find(e => e.kind === 'waiting').atMs = from + 78.9;
+  m.audio = m.audio.map((a, i) => ({ ...a, atMs: from + 144.3 + i * 100, contextTime: (from + 144.3 + i * 100) / 1000, rms: i === 0 ? 0.027 : 0 })).filter(a => a.atMs <= m.elapsedMs - 100);
+  const result = classifyCaption(value.input, value.options);
+  assert.equal(result.verified, true, result.failures.join('; '));
+  for (const edit of [
+    x => x.input.metrics.audio[1].rms = 0.005,
+    x => delete x.input.metrics.audio[0].fftSize,
+    x => x.input.metrics.audio[0].fftSize = 4095,
+    x => x.input.metrics.audio.forEach(a => a.fftSize = 8192),
+    x => x.input.metrics.audio.forEach(a => a.fftSize = 2048),
+    x => x.input.metrics.audio[0].sampleRate = 0,
+    x => x.input.metrics.audio.forEach(a => a.sampleRate = 8000),
+    x => x.input.metrics.audio[0].sampleRate = 1000000,
+    x => x.input.metrics.audio[0].sampleRate = NaN,
+    x => { const a = x.input.metrics.audio[0], waiting = x.input.metrics.events.find(e => e.kind === 'waiting'); a.atMs = waiting.atMs + a.fftSize / a.sampleRate * 1000 + 0.01; },
+    x => x.input.metrics.events.find(e => e.kind === 'waiting').atMs = x.input.metrics.audio[0].atMs + 1,
+    x => x.input.metrics.captions[2].paused = true,
+    x => x.input.explicitUserActions = [{ kind: 'pause', atMs: 45000 }]
+  ]) {
+    const changed = structuredClone(value); edit(changed);
     assert.equal(classifyCaption(changed.input, changed.options).verified, false, edit.toString());
   }
 });

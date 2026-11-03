@@ -579,7 +579,9 @@ export async function startHlsim(
           resource.url,
           policy,
         );
-        if (scenarioIndex && (!scenario || scenario.http || scenario.cache || scenario.publication || scenario.lifecycle || scenario.services || !scenario.settled)) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
+        // Keep new published resources attributable after finite fault rules
+        // settle; the index retains its existing capacity and expiry bounds.
+        if (scenarioIndex) scenarioIndex.observe(remote.body.toString("utf8"), remote.url, resource.url);
         const choice = observing ? {value:body as string,action:undefined} : snapshots.observe(resource.url, body as string);
         body = choice.value;
         if (choice.action) faults.frozen(trace, choice.action === "capture");

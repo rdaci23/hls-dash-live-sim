@@ -128,6 +128,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- DASH keeps fresh media attributed to advertised tracks after a timed fault
+  ends. Caption stall verification measures the audio analyser's trailing
+  window instead of treating its final sound sample as continued playback.
+
 - Preserve explicit XML boolean values in DASH rendition-lag manifests. Reject
   malformed publication MPDs in HTTP verification before checking their timelines.
 

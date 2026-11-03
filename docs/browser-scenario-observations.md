@@ -107,6 +107,12 @@ native handlers identify this player effect. A/V samples must demonstrate the
 buffer drain and continued sampling; later recovery still requires decoded
 A/V, scheduled captions and a healthy 60-second continuation.
 
+Frozen-frame audio proof uses the recorded analyser window and sample rate.
+Samples whose analysis window still overlaps the native `waiting` transition
+can contain the final audio tail; silence is required once that measured window
+has elapsed. Missing analysis metadata or later non-silent samples fail the
+proof. This does not change the rendered-gap threshold or recovery deadlines.
+
 These mechanisms qualify only with fresh causal identities, exact player
 versions, intact wire proofs and a complete observer lifecycle. Timestamp
 coincidence, a generic text error, old classification flags or a missing probe
