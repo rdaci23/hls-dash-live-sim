@@ -60,14 +60,37 @@ function expectedConsole(event,responses,kind){
 
 // These exact pinned StreamController lines are secondary reports of an already
 // identified payload failure. A console timestamp alone never identifies a fault.
+function removedBufferMessage(message){return /^\[(\d+)\]\[SourceBufferSink\]\[(video|audio)\] getAllBufferRanges exception: Failed to read the 'buffered' property from 'SourceBuffer': This SourceBuffer has been removed from the parent media source\. $/.exec(message??'');}
 function expectedNativeConsole(event,input,player,used){
  if(input.protocol!=='dash'||!reviewedIdentity('causality',input)||!['damaged-media','wrong-track-init'].includes(input.kind)||event.kind!=='console'||event.level!=='error'||event.closing!==false||event.contextUnavailable)return;
  const location=event.location;let url;try{url=new URL(location?.url);}catch{return;}
  if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.pathname!=='/player.js'||url.search||url.hash||(location.lineNumber??location.line)!==19746||(location.columnNumber??location.column)!==18)return;
  const {DEMUX,WRONG_INIT}=require('./scenario-player-policy.cjs'),startup=input.kind==='wrong-track-init',window=input.faultWindowBrowser;
  if(!Number.isFinite(input.metrics?.startEpochMs)||!Number.isFinite(event.epochMs)||!Number.isFinite(event.scenarioElapsedMs)||!Number.isFinite(window?.fromMs)||!Number.isFinite(window?.toMs))return;
- const sourceEpoch=input.metrics.startEpochMs+window.fromMs-(startup?0:35000);
+ let sourceEpoch=input.metrics.startEpochMs+window.fromMs-(startup?0:35000);
+ if(input.clockAnchor!==undefined){
+  const a=input.clockAnchor;
+  if(![a?.epochMs,a?.scenarioElapsedMs,a?.browserElapsedMs].every(Number.isFinite)||a.scenarioElapsedMs<0||a.browserElapsedMs<0||Math.abs(a.browserElapsedMs-a.scenarioElapsedMs-(window.fromMs-(startup?0:35000)))>1)return;
+  // Console receipt and scenarioElapsedMs are sampled together in Node. The
+  // browser snapshot can precede its RPC response; do not mix that delay into
+  // their source-clock projection.
+  sourceEpoch=a.epochMs-a.scenarioElapsedMs;
+ }
  if(Math.abs(event.epochMs-sourceEpoch-event.scenarioElapsedMs)>10||event.scenarioElapsedMs<(startup?0:35000)||event.scenarioElapsedMs>=(startup?15000:50000))return;
+ const removed=removedBufferMessage(event.message);
+ if(removed&&startup){
+  const index=input.audit.indexOf(event),typedText='Video Element Error: MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+') ',typedIndex=input.audit.findIndex((e,i)=>i>index&&typeof e.message==='string'&&e.message.endsWith('][StreamController] '+typedText)),typedEvent=input.audit[typedIndex];
+  if(index<0)return;
+  const paired=typedEvent&&expectedNativeConsole(typedEvent,input,player,new Set());
+  if(!paired||paired.id!=='dashjs-5.2.1-wrong-init-typed-error'||typedEvent.location.url!==location.url||event.epochMs>typedEvent.epochMs||event.scenarioElapsedMs>typedEvent.scenarioElapsedMs||Number(removed[1])>paired.loggedMs)return;
+  const response=(input.affectedBrowserResponses??[]).find(r=>r.requestId===paired.faultRequestId&&r.faultIds===paired.faultIds);
+  if(!response||response.receivedEpochMs>event.epochMs)return;
+  const group=input.audit.slice(0,typedIndex).filter(e=>{const m=removedBufferMessage(e.message);return m&&m[2]===removed[2]&&e.location?.url===location.url;});
+  if(group.length>2||!group.includes(event))return;
+  const id='dashjs-5.2.1-wrong-init-buffer-read',key=id+':'+paired.primaryErrorAtMs+':'+removed[2]+':'+group.indexOf(event);
+  if(used.has(key))return;
+  return{...paired,id,key,event,loggedMs:Number(removed[1]),trackKind:removed[2]};
+ }
  const match=/^\[(\d+)\]\[StreamController\] (.*) $/.exec(event.message??'');if(!match)return;
  const reset=match[2]==='A MEDIA_ERR_DECODE occured: Resetting the MediaSource',typed=match[2]==='Video Element Error: MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+')',object=match[2]==='[object MediaError]';
  if(input.kind==='damaged-media'?!reset:!typed&&!object)return;
@@ -83,7 +106,7 @@ function expectedNativeConsole(event,input,player,used){
   return{...paired,id,key,event,loggedMs:Number(match[1])};
  }
  const primary=player.expectedFaultErrors.find(item=>item.signature==='dash-'+input.kind&&item.error.kind==='video'&&item.error.code===(startup?4:3)&&item.error.message===(startup?WRONG_INIT:DEMUX)&&
-  Number.isFinite(item.error.atMs)&&item.error.atMs>=window.fromMs&&item.error.atMs<window.toMs&&Math.abs(Number(match[1])-item.error.atMs)<=5&&Math.abs(event.epochMs-input.metrics.startEpochMs-item.error.atMs)<=10);
+  Number.isFinite(item.error.atMs)&&item.error.atMs>=window.fromMs&&item.error.atMs<window.toMs&&Math.abs(Number(match[1])-item.error.atMs)<=5);
  if(!primary)return;
  const response=(input.affectedBrowserResponses??[]).find(r=>r.requestId===primary.faultRequestId&&r.faultIds===primary.faultIds&&r.fault==='scenario.payload'&&r.status===200&&r.resource===(startup?'init':'media')&&
   (startup?['video:0','video:1'].includes(r.track):r.track==='video:0')&&typeof r.requestId==='string'&&!!r.requestId&&typeof r.faultIds==='string'&&!!r.faultIds&&Number.isFinite(r.receivedEpochMs)&&r.receivedEpochMs<=event.epochMs&&event.epochMs-r.receivedEpochMs<=5000);

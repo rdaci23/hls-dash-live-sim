@@ -215,6 +215,25 @@ test('Chrome 157 adjacent MediaError inherits its qualified typed report instead
  const result=assess(value);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.expectedNativeMediaConsole.length,2);
  for(const edit of [x=>x.audit[1].epochMs=65189,x=>x.audit[1].message='[177][StreamController] [object MediaError] ',x=>x.audit.shift(),x=>x.audit[1].location={...x.audit[1].location,url:'http://127.0.0.1/unrelated.js'},x=>x.metrics.errors[0].message='Unrelated video error']){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false);}
 });
+test('console receipt time uses its Node source anchor instead of treating RPC latency as browser clock drift',()=>{
+ const value=payloadInput();value.browserVersion='157.0.8103.38';value.clockAnchor={browserElapsedMs:1000,scenarioElapsedMs:1000,epochMs:66020};value.audit[0].epochMs+=20;
+ assert.equal(assess(value).passed,true);
+ for(const edit of [x=>x.clockAnchor.epochMs+=100,x=>x.clockAnchor.scenarioElapsedMs+=100,x=>delete x.clockAnchor.epochMs,x=>x.audit[0].message='unrelated']){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false);}
+});
+test('wrong-init removed-buffer diagnostics require the same typed primary and bounded track-specific cleanup group',()=>{
+ const value=payloadInput('wrong-track-init');value.browserVersion='157.0.8103.38';
+ const prefix="getAllBufferRanges exception: Failed to read the 'buffered' property from 'SourceBuffer': This SourceBuffer has been removed from the parent media source. ";
+ const reads=['video','video','audio','audio'].map((track,i)=>({...structuredClone(value.audit[0]),epochMs:65039+i,scenarioElapsedMs:39+i,message:'['+(39+i)+'][SourceBufferSink]['+track+'] '+prefix}));value.audit.unshift(...reads);
+ const result=assess(value);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.expectedNativeMediaConsole.length,6);
+ for(const edit of [x=>x.audit[0].message=x.audit[0].message.replace('[video]','[text]'),x=>x.audit[0].message+='unrelated',x=>x.audit[0].epochMs=65000,x=>x.audit[0].location={...x.audit[0].location,url:'http://127.0.0.1/other.js'},x=>x.audit.splice(4,2),x=>x.audit.unshift(structuredClone(x.audit[0])),x=>x.metrics.errors[0].message='unrelated']){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false);}
+});
+test('the pinned SourceBufferSink catches a removed buffered getter and emits the reviewed diagnostic',()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),bundle=fs.readFileSync(require('node:path').join(__dirname,'../node_modules/dashjs/dist/modern/umd/dash.all.debug.js'),'utf8');
+ const marker="logger.error('getAllBufferRanges exception: ' + e.message);",position=bundle.indexOf(marker),start=bundle.lastIndexOf('function getAllBufferRanges()',position),end=bundle.indexOf('\n  }',position)+4;
+ assert.ok(position>start&&start>0&&end>position);const messages=[],removed={get buffered(){throw new DOMException("Failed to read the 'buffered' property from 'SourceBuffer': This SourceBuffer has been removed from the parent media source.",'InvalidStateError');}};
+ const getter=vm.runInNewContext('('+bundle.slice(start,end)+')',{buffer:removed,logger:{error:m=>messages.push(m)}});assert.equal(getter(),null);assert.equal(messages.length,1);assert.equal(messages[0],"getAllBufferRanges exception: Failed to read the 'buffered' property from 'SourceBuffer': This SourceBuffer has been removed from the parent media source.");
+ const ranges={length:1};assert.equal(vm.runInNewContext('('+bundle.slice(start,end)+')',{buffer:{buffered:ranges},logger:{error:()=>assert.fail('healthy buffer logged an error')}})(),ranges);
+});
 test('arbitrary native console signatures, missing source/clock ownership and unmatched payloads remain blocking',()=>{
  const edits=[x=>x.playerVersion='5.2.2',x=>x.browserVersion='156.0.8078.79',x=>x.audit[0].location.url='http://127.0.0.1/unrelated.js',x=>x.audit[0].location.lineNumber=19745,x=>x.audit[0].location.columnNumber=19,x=>x.audit[0].closing=true,x=>x.audit[0].contextUnavailable=true,x=>x.audit[0].message='[35003][StreamController] unrelated MEDIA_ERR_DECODE ',x=>x.audit[0].scenarioElapsedMs=34000,x=>x.audit[0].epochMs+=20,x=>x.metrics.errors[0].atMs+=30,x=>x.metrics.errors[0].code=2,x=>x.metrics.errors[0].message='Unrelated decoder error',x=>x.affectedBrowserResponses[0].fault='scenario.status',x=>x.affectedBrowserResponses[0].track='audio:0',x=>x.affectedBrowserResponses[0].resource='init',x=>x.affectedBrowserResponses[0].receivedEpochMs=100004,x=>x.audit.push(structuredClone(x.audit[0]))];
  for(const edit of edits){const value=payloadInput();edit(value);assert.equal(assess(value).passed,false,edit.toString());}

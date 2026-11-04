@@ -1,0 +1,38 @@
+name: Browser payload qualification
+run-name: Browser payload qualification / ${{ github.ref_name }}
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: browser-payload-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  payload:
+    name: Payload / ${{ matrix.kind }} / Chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        kind: [damaged-media, wrong-track-init]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chrome
+      - run: google-chrome --version
+      - run: npm run browser:scenarios -- --kind ${{ matrix.kind }} --output output/ci-payload
+      - name: Retain complete payload evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: payload-${{ matrix.kind }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ci-payload/
+          if-no-files-found: error
+          retention-days: 7

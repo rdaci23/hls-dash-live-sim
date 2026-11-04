@@ -31,6 +31,19 @@ same primary error and fault identity, within a five-millisecond
 pairing window. It is not independently timed against the first DOM callback.
 An unpaired object, unrelated message or missing payload proof remains blocking.
 
+Console receipt and source-phase timestamps use their recorded Node clock anchor;
+the asynchronous console callback is not treated as the browser's DOM-event
+timestamp. Player log timestamps remain matched to the primary player error.
+For startup wrong-init only, the exact caught `SourceBufferSink` removed-buffer
+diagnostic may precede that same qualified typed error, at most twice per audio
+or video track. It must follow the named bad-init response. Other buffer errors,
+unrelated player errors and baseline console errors remain blocking.
+
+The manual **Browser payload qualification** workflow runs damaged-media and
+wrong-track-init checks directly for both protocols, records the installed Chrome
+version and retains closed evidence. It does not run on ordinary pushes or
+replace the full release matrix.
+
 ## Retained results and remaining checks
 
 Re-evaluating those unchanged native files with the reviewed identities qualifies
