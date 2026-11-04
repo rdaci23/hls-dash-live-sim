@@ -18,6 +18,7 @@ function create({limit=10000,now=Date.now,context=()=>({})}={}){
   if(event.url!==undefined)event.url=resourceUrl(event.url);
   if(event.location)event.location={...event.location,url:resourceUrl(event.location.url)};
   events.push(event);
+  return event;
  };
  return{events,record,dropped:()=>dropped};
 }

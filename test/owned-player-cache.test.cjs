@@ -2,7 +2,7 @@ const{test}=require('node:test'),assert=require('node:assert/strict'),fs=require
 const directory=path.resolve(__dirname,'../scripts/browser'),file=path.join(directory,'owned-player.cjs');
 async function player(options={}){
  const callbacks=new Map();let cacheDisabled=false,route;
- const page={on(){},goto:async()=>{},evaluate:async()=>({})},context={newPage:async()=>page,on:(name,fn)=>callbacks.set(name,fn),route:async(_pattern,fn)=>{cacheDisabled=true;route=fn;}};
+ const page={on(){},goto:async()=>{},evaluate:async()=>({})},context={newPage:async()=>page,newCDPSession:async()=>({on(){},send:async()=>{}}),on:(name,fn)=>callbacks.set(name,fn),route:async(_pattern,fn)=>{cacheDisabled=true;route=fn;}};
  const browser={newContext:async()=>context,version:()=> '156.0.8078.80',close:async()=>{}},web={listening:true,closeAllConnections(){},close(callback){this.listening=false;callback();}};
  const realRequire=createRequire(file),module={exports:{}};
  const requireMock=name=>name==='playwright'?{chromium:{launch:async()=>browser}}:name==='./owned-server.cjs'?{serve:async()=>({server:web,origin:'http://127.0.0.1:18080'})}:realRequire(name);

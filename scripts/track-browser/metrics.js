@@ -1,6 +1,6 @@
 (async()=>{
  'use strict';const config=await(await fetch('/config')).json(),video=document.getElementById('video'),started=performance.now(),startEpochMs=Date.now();let seeks,player,mainFragment,sourceEpochMs,causality,causalProbeCompleted=false,causalFinishedAtMs;const mainPTS=new Map(),audioProbe=OwnedAudioProbe.create(video);
- const state={protocol:config.protocol,startEpochMs,firstFrameMs:null,frames:0,mediaTime:0,heights:[],gaps:[],audio:[],captions:[],pulses:[],errors:[],events:[],dashCausality:[],dropped:0,audioSelection:null,textSelection:null};
+ const state={protocol:config.protocol,startEpochMs,browserClock:{schemaVersion:1,timeOriginMs:performance.timeOrigin,startedMs:started},firstFrameMs:null,frames:0,mediaTime:0,heights:[],gaps:[],audio:[],captions:[],pulses:[],errors:[],events:[],dashCausality:[],dropped:0,audioSelection:null,textSelection:null};
  const add=(key,value)=>{if(state[key].length<5000)state[key].push(value);else state.dropped++;};
  const elapsed=()=>performance.now()-started;
  const publicUrl=value=>{try{const url=new URL(value);if(!['http:','https:'].includes(url.protocol))return;url.username='';url.password='';url.search='';url.hash='';return url.href;}catch{}};

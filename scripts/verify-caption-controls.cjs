@@ -7,6 +7,7 @@ const {definition:shippedDefinition}=require('./browser/scenario-observations.cj
 const {validateCausalCompletion}=require('./browser/causal-completion.cjs');
 const {validateWireEvidence}=require('./browser/caption-wire-probes.cjs');
 const {resourceUrl}=require('./browser/audit.cjs');
+const {startControlScenario,validStartBoundary}=require('./browser/caption-start-boundary.cjs');
 const kinds=['healthy-captions','text-disabled'],sha=body=>createHash('sha256').update(body).digest('hex');
 function definition(protocol,kind){
  assert.ok(['hls','dash'].includes(protocol)&&kinds.includes(kind));
@@ -68,7 +69,7 @@ function assessControl(input){
   need(!!m&&languageEvidence(m,first?.elapsedMs,'en').verified,'Scheduled active cues or valid empty-caption interval missing');
  }else{
   need(isDeepStrictEqual(input.definition,definition(protocol,kind)),'Disabled control changed the shipped fault');
-  need(Number.isFinite(scenarioStartBrowserMs)&&actions?.every(a=>a.atMs<=scenarioStartBrowserMs)&&Number.isFinite(faultWindowBrowser?.fromMs)&&Number.isFinite(faultWindowBrowser?.toMs)&&Math.abs(faultWindowBrowser.fromMs-scenarioStartBrowserMs-35000)<250&&Math.abs(faultWindowBrowser.toMs-scenarioStartBrowserMs-50000)<250,'Missing original fault timing or post-start player action');
+  need(validStartBoundary(input)&&Number.isFinite(faultWindowBrowser?.fromMs)&&Number.isFinite(faultWindowBrowser?.toMs)&&Math.abs(faultWindowBrowser.fromMs-scenarioStartBrowserMs-35000)<250&&Math.abs(faultWindowBrowser.toMs-scenarioStartBrowserMs-50000)<250,'Missing original fault timing or post-start player action');
   need(healthyMetrics?.elapsedMs-first?.elapsedMs>=30000&&healthyMetrics.mediaTime-first.mediaTime>=29&&decodedTone(healthyMetrics,first.elapsedMs)&&healthyMetrics.dropped===0&&healthyMetrics.causalityDropped===0&&['errors','events','gaps'].every(k=>Array.isArray(healthyMetrics[k]))&&!healthyMetrics.errors.some(e=>!expectedCancellation(e,healthyMetrics.events))&&!healthyMetrics.gaps.some(g=>g.to-g.from>4000),'Thirty-second decoded healthy lead-in missing');
   const disabledSamples=(m?.captions??[]).filter(c=>c.atMs>actions?.[1]?.atMs+500);
   need(m?.textSelection===null&&disabledSamples.every(c=>c.selected===null&&Array.isArray(c.tracks)&&!c.tracks.some(t=>t.mode==='showing'))&&disabledSamples.some(c=>c.atMs>=faultWindowBrowser?.fromMs&&c.atMs<faultWindowBrowser?.toMs)&&disabledSamples.some(c=>c.atMs>=faultWindowBrowser?.toMs),'Captions were not disabled before the fault');
@@ -90,8 +91,8 @@ function assessControl(input){
 }
 async function verify(session,protocol,kind,signal,dir){
  const {open}=require('./browser/owned-player.cjs'),{createWireProbe}=require('./browser/caption-wire-probes.cjs'),{tracks}=require('./track-scenarios/verify.cjs');
- const wire=createWireProbe(session,protocol),runOptions={causalProbe:true,markerProbe:false,retryOverride:false,responseRewriting:false,sourceClock:'real-time'};
- const browserRequests=[],browserResponses=[],responseErrors=[],pending=new Set(),actions=[],advertisedText=[];let responseDropped=0,closing=false,ui,metrics,first,healthyMetrics,scenarioStartBrowserMs,faultWindowBrowser,textProbe,error,causalCompletion;
+ const wire=createWireProbe(session,protocol),runOptions={causalProbe:true,markerProbe:false,retryOverride:false,responseRewriting:false,sourceClock:'real-time',startBoundaryProbe:kind==='text-disabled'};
+ const browserRequests=[],browserResponses=[],responseErrors=[],pending=new Set(),actions=[],advertisedText=[];let responseDropped=0,closing=false,ui,metrics,first,healthyMetrics,scenarioStartBrowserMs,scenarioStartTiming,faultWindowBrowser,textProbe,error,causalCompletion;
  const response=response=>{if(closing||new URL(response.url()).origin!==new URL(session.url).origin)return;if(browserResponses.length+pending.size>=5000){responseDropped++;return;}const epochMs=Date.now(),job=response.allHeaders().then(headers=>{const url=new URL(response.url());browserResponses.push({url:resourceUrl(response.url()),method:response.request().method(),status:response.status(),receivedEpochMs:epochMs,requestId:headers['x-sim-request-id'],requestResourceId:session.diagnostics.resourceId(url.pathname+url.search)});});pending.add(job);job.then(()=>pending.delete(job),e=>{pending.delete(job);if(responseErrors.length<100)responseErrors.push(e.message);else responseDropped++;});};
  try{
   ui=await open(session,protocol,signal,{causalProbe:true,markerProbe:false,onResponse:response});
@@ -101,7 +102,7 @@ async function verify(session,protocol,kind,signal,dir){
   await ui.page.evaluate(text=>window.selectTracks({audio:'en',text,videoIndex:0}),kind==='healthy-captions'?'en':false);
   const selected=await ui.snapshot(),selection=selected.events.filter(e=>e.kind==='selection').at(-1);actions.push({kind:'select-tracks',audio:'en',text:kind==='healthy-captions'?'en':false,videoIndex:0,atMs:selection.atMs});
   if(kind==='text-disabled'){
-   await session.runs.action('start',{runId:session.runs.runId});const anchor=await ui.snapshot();scenarioStartBrowserMs=anchor.elapsedMs-session.scenario.report().elapsedMs;faultWindowBrowser={fromMs:scenarioStartBrowserMs+35000,toMs:scenarioStartBrowserMs+50000};
+   ({scenarioStartBrowserMs,scenarioStartTiming,faultWindowBrowser}=await startControlScenario(session,ui));
   }
   if(kind==='healthy-captions')await wire.capture('before');
   if(kind==='text-disabled'){
@@ -122,7 +123,7 @@ async function verify(session,protocol,kind,signal,dir){
  }catch(e){error=e.message;}
  finally{if(ui){try{causalCompletion=await ui.finishCausalProbe?.();}catch(e){error??=e.message;}try{metrics=await ui.snapshot();if(metrics)metrics.causalCompletion=causalCompletion;}catch(e){error??=e.message;}await Promise.allSettled([...pending]);closing=true;await ui.close();}await Promise.allSettled([...pending]);}
  const diagnosticMetadata={...session.diagnostics.snapshot(),events:undefined};for(const request of browserRequests)request.atMs=request.epochMs-metrics?.startEpochMs;
- const input={protocol,kind,definition:definition(protocol,kind)??null,runOptions,actions,first,healthyMetrics,metrics,scenarioStartBrowserMs,faultWindowBrowser,advertisedText,textProbe,browserRequests,browserResponses,responseErrors,responseDropped,audit:ui?.audit,auditDropped:ui?.auditDropped?.(),wire:wire.finish(),error,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion};
+ const input={protocol,kind,definition:definition(protocol,kind)??null,runOptions,actions,first,healthyMetrics,metrics,scenarioStartBrowserMs,scenarioStartTiming,faultWindowBrowser,advertisedText,textProbe,browserRequests,browserResponses,responseErrors,responseDropped,audit:ui?.audit,auditDropped:ui?.auditDropped?.(),wire:wire.finish(),error,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion};
  const assessment=assessControl({...input,closedEvents:session.diagnostics.snapshot().events});
  const report={protocol,kind,...assessment,observationCaptured:!error,playerVersion:input.playerVersion,browserVersion:input.browserVersion,retrySettings:metrics?.retrySettings,scope:kind==='text-disabled'?'Diagnostic caption-disabled counterfactual; no recovery or support claim':'Three-minute owned fixture baseline with decoded audio and scheduled/empty captions',stallCheckpointMeaning:kind==='text-disabled'?'Fixed in-fault wire comparison; no stall is induced':undefined,releaseReady:false};
  const bytes=Buffer.from(JSON.stringify({...input,diagnosticMetadata,report},null,2)+'\n');report.evidence={raw:{bytes:bytes.length,sha256:sha(bytes)}};await fs.writeFile(path.join(dir,'raw.json'),bytes,{mode:0o600});

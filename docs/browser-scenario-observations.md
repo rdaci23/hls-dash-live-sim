@@ -84,6 +84,14 @@ wrong-initialization message. Unknown console output remains blocking. Re-readin
 retained evidence recomputes the observation rather than feeding old classification
 flags back into the classifier. Original reports and raw outcomes stay intact.
 
+New owned-player traces retain Chrome's `Runtime.consoleAPICalled` timestamp,
+joined to the exact console message and source location, and the browser metrics'
+performance-clock origin. The five-millisecond native-error correlation stays
+unchanged. The integer printed by dash.js is relative to its later `Debug`
+initialization, so it is not directly compared to the metrics clock. Missing or
+duplicate clock evidence cannot qualify a new trace; legacy traces retain their
+original strict timestamp checks.
+
 Caption faults do not establish audio/video server failure. Caption investigations
 record four independent AV checkpoints (before, during, stalled interval and
 after), comparing advertised source/proxy initialization and media hashes,
@@ -135,5 +143,11 @@ healthy A/V throughout. They are diagnosis controls, not recovery or text-suppor
 claims. Neither control changes retry settings or intervenes during recovery.
 Disabled-caption controls allow the shared DASH MPD to refresh. Dedicated text
 playlists and text initialization/media downloads remain excluded.
+The disabled control retains bounded browser snapshots before and after Start,
+the Start call's timestamps and its original source journal event. Initial
+actions must precede the pre-Start snapshot, without an ordering grace period.
+The fault window is projected from that source event rather than subtracting
+scenario elapsed time sampled after a browser RPC. Closed-file qualification
+checks these boundaries again. Old traces are not retimed or repaired in place.
 Full manual CI and local release review retain these controls; routine CI remains
 docs, types and unit tests on Linux/Node 24.

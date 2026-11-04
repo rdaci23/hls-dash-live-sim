@@ -61,6 +61,13 @@ function expectedConsole(event,responses,kind){
 // These exact pinned StreamController lines are secondary reports of an already
 // identified payload failure. A console timestamp alone never identifies a fault.
 function removedBufferMessage(message){return /^\[(\d+)\]\[SourceBufferSink\]\[(video|audio)\] getAllBufferRanges exception: Failed to read the 'buffered' property from 'SourceBuffer': This SourceBuffer has been removed from the parent media source\. $/.exec(message??'');}
+function nativeConsoleTime(event,input,legacyTime){
+ const clock=input.metrics?.browserClock,call=event.browserConsole;
+ if(clock===undefined&&call===undefined)return legacyTime;
+ if(clock?.schemaVersion!==1||![clock.timeOriginMs,clock.startedMs].every(Number.isFinite)||clock.timeOriginMs<=0||clock.startedMs<0||Math.abs(clock.timeOriginMs+clock.startedMs-input.metrics.startEpochMs)>10||call?.schemaVersion!==1||call.source!=='Runtime.consoleAPICalled'||!Number.isSafeInteger(call.eventId)||call.eventId<1||!Number.isFinite(call.epochMs)||call.epochMs>event.epochMs+10||input.audit.filter(e=>e.browserConsole?.eventId===call.eventId).length!==1)return NaN;
+ const atMs=call.epochMs-clock.timeOriginMs-clock.startedMs;
+ return atMs>=0&&atMs<=input.metrics.elapsedMs?atMs:NaN;
+}
 function expectedNativeConsole(event,input,player,used){
  if(input.protocol!=='dash'||!reviewedIdentity('causality',input)||!['damaged-media','wrong-track-init'].includes(input.kind)||event.kind!=='console'||event.level!=='error'||event.closing!==false||event.contextUnavailable)return;
  const location=event.location;let url;try{url=new URL(location?.url);}catch{return;}
@@ -92,6 +99,7 @@ function expectedNativeConsole(event,input,player,used){
   return{...paired,id,key,event,loggedMs:Number(removed[1]),trackKind:removed[2]};
  }
  const match=/^\[(\d+)\]\[StreamController\] (.*) $/.exec(event.message??'');if(!match)return;
+ const consoleAtMs=nativeConsoleTime(event,input,Number(match[1]));if(!Number.isFinite(consoleAtMs))return;
  const reset=match[2]==='A MEDIA_ERR_DECODE occured: Resetting the MediaSource',typed=match[2]==='Video Element Error: MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+')',object=match[2]==='[object MediaError]';
  if(input.kind==='damaged-media'?!reset:!typed&&!object)return;
  if(object){
@@ -100,20 +108,20 @@ function expectedNativeConsole(event,input,player,used){
   // Bind the untyped second line to that already-qualified first line; its
   // later console delivery must not be timed against the first DOM callback.
   if(!paired||paired.id!=='dashjs-5.2.1-wrong-init-typed-error'||!used.has(paired.key)||previous.location.url!==location.url||
-   event.epochMs<previous.epochMs||event.epochMs-previous.epochMs>5||Math.abs(event.scenarioElapsedMs-previous.scenarioElapsedMs)>5||Number(match[1])<paired.loggedMs||Number(match[1])-paired.loggedMs>5)return;
+   event.epochMs<previous.epochMs||event.epochMs-previous.epochMs>5||Math.abs(event.scenarioElapsedMs-previous.scenarioElapsedMs)>5||Number(match[1])<paired.loggedMs||Number(match[1])-paired.loggedMs>5||consoleAtMs<paired.consoleAtMs||consoleAtMs-paired.consoleAtMs>5)return;
   const id='dashjs-5.2.1-wrong-init-error-object',key=id+':'+paired.primaryErrorAtMs;
   if(used.has(key))return;
-  return{...paired,id,key,event,loggedMs:Number(match[1])};
+  return{...paired,id,key,event,loggedMs:Number(match[1]),consoleAtMs};
  }
  const primary=player.expectedFaultErrors.find(item=>item.signature==='dash-'+input.kind&&item.error.kind==='video'&&item.error.code===(startup?4:3)&&item.error.message===(startup?WRONG_INIT:DEMUX)&&
-  Number.isFinite(item.error.atMs)&&item.error.atMs>=window.fromMs&&item.error.atMs<window.toMs&&Math.abs(Number(match[1])-item.error.atMs)<=5);
+  Number.isFinite(item.error.atMs)&&item.error.atMs>=window.fromMs&&item.error.atMs<window.toMs&&Math.abs(consoleAtMs-item.error.atMs)<=5);
  if(!primary)return;
  const response=(input.affectedBrowserResponses??[]).find(r=>r.requestId===primary.faultRequestId&&r.faultIds===primary.faultIds&&r.fault==='scenario.payload'&&r.status===200&&r.resource===(startup?'init':'media')&&
   (startup?['video:0','video:1'].includes(r.track):r.track==='video:0')&&typeof r.requestId==='string'&&!!r.requestId&&typeof r.faultIds==='string'&&!!r.faultIds&&Number.isFinite(r.receivedEpochMs)&&r.receivedEpochMs<=event.epochMs&&event.epochMs-r.receivedEpochMs<=5000);
  if(!response)return;
  const id=reset?'dashjs-5.2.1-payload-decode-reset':'dashjs-5.2.1-wrong-init-typed-error',key=id+':'+primary.error.atMs;
  if(used.has(key))return;
- return{id,key,event,loggedMs:Number(match[1]),primaryErrorAtMs:primary.error.atMs,faultRequestId:response.requestId,faultIds:response.faultIds};
+ return{id,key,event,loggedMs:Number(match[1]),consoleAtMs,primaryErrorAtMs:primary.error.atMs,faultRequestId:response.requestId,faultIds:response.faultIds};
 }
 function expectedStaleConsole(event,input,player,used){
  if(input.kind!=='manifest-rollback'||!Number.isFinite(event.epochMs)||!Number.isFinite(event.scenarioElapsedMs))return;

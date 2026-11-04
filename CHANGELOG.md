@@ -9,6 +9,14 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 `v0.2.0` tag, GitHub release and public announcement are pending. Install from a
 [source checkout](docs/getting-started.md); no npm release is published.
 
+### Verification fixes
+
+- Bind caption-control setup to measured pre/post-Start snapshots and the original
+  source journal event, preserving strict action ordering and fault windows.
+- Correlate DASH payload-error console calls using Chrome's native timestamp and
+  the metrics clock origin, preserving the five-millisecond error-pairing limit,
+  exact logger identity and independently verified fault delivery/restoration.
+
 ### Added
 
 - Independent caption-fault causal traces, source/proxy AV byte and timing

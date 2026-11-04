@@ -220,6 +220,15 @@ test('console receipt time uses its Node source anchor instead of treating RPC l
  assert.equal(assess(value).passed,true);
  for(const edit of [x=>x.clockAnchor.epochMs+=100,x=>x.clockAnchor.scenarioElapsedMs+=100,x=>delete x.clockAnchor.epochMs,x=>x.audit[0].message='unrelated']){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false);}
 });
+test('native Chrome console time shares the metrics origin even when the DASH logger starts later',()=>{
+ const value=payloadInput('wrong-track-init');value.browserVersion='157.0.8103.38';
+ value.metrics.browserClock={schemaVersion:1,timeOriginMs:64000,startedMs:1000};
+ value.metrics.errors[0].atMs=231.5;value.metrics.errors[1].atMs=232;
+ Object.assign(value.audit[0],{epochMs:65234,scenarioElapsedMs:234,message:value.audit[0].message.replace('[42]','[223]'),browserConsole:{schemaVersion:1,source:'Runtime.consoleAPICalled',eventId:1,epochMs:65231.8}});
+ Object.assign(value.audit[1],{epochMs:65235,scenarioElapsedMs:235,message:'[224][StreamController] [object MediaError] ',browserConsole:{schemaVersion:1,source:'Runtime.consoleAPICalled',eventId:2,epochMs:65232.8}});
+ const result=assess(value);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.expectedNativeMediaConsole.length,2);
+ for(const edit of [x=>delete x.audit[0].browserConsole,x=>x.audit[0].browserConsole.epochMs+=5,x=>x.audit[0].browserConsole.source='untrusted',x=>x.audit[0].browserConsole.eventId=2,x=>x.metrics.browserClock.startedMs+=30,x=>delete x.metrics.browserClock.startedMs,x=>x.audit[1].browserConsole.epochMs+=5,x=>x.metrics.errors[0].atMs+=6]){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false,edit.toString());}
+});
 test('wrong-init removed-buffer diagnostics require the same typed primary and bounded track-specific cleanup group',()=>{
  const value=payloadInput('wrong-track-init');value.browserVersion='157.0.8103.38';
  const prefix="getAllBufferRanges exception: Failed to read the 'buffered' property from 'SourceBuffer': This SourceBuffer has been removed from the parent media source. ";
