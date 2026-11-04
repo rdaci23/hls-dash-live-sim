@@ -9,7 +9,7 @@ async function serve(session, protocol, options = {}) {
         redirect = url.href;
     }
     const files = { '/': path.join(root, 'scripts/track-browser/player.html'), '/metrics.js': path.join(root, 'scripts/track-browser/metrics.js'),
-        '/caption-clock.js': path.join(root, 'scripts/track-browser/caption-clock.js'), '/cancellation.js': path.join(root, 'scripts/track-browser/cancellation.js'),
+        '/caption-clock.js': path.join(root, 'scripts/track-browser/caption-clock.js'), '/audio-probe.js': path.join(root, 'scripts/track-browser/audio-probe.js'), '/cancellation.js': path.join(root, 'scripts/track-browser/cancellation.js'),
         '/hls-causality.js':path.join(root,'scripts/track-browser/hls-causality.js'), '/dash-causality.js':path.join(root,'scripts/track-browser/dash-causality.js'),
         '/player.js': path.join(root, 'node_modules', protocol === 'hls' ? 'hls.js/dist/hls.min.js' : 'dashjs/dist/modern/umd/dash.all.debug.js') };
     const source = new URL(session.url).origin;

@@ -9,14 +9,16 @@ async function snapshot(evaluate,{now=Date.now,monotonic=()=>performance.now(),t
 }
 async function wait(read,predicate,{timeoutMs,label,signal,now=Date.now,monotonic=()=>performance.now(),sleep=pause,probeTimeoutMs=1000}={}){
  const startedEpochMs=now(),began=monotonic(),deadline=began+timeoutMs;let lastProbe;
- while(monotonic()<deadline){
-  signal?.throwIfAborted();const started=now(),probeBegan=monotonic(),metrics=await read();
-  lastProbe={startedEpochMs:started,endedEpochMs:now(),elapsedMs:monotonic()-probeBegan};
-  if(monotonic()<=deadline&&metrics&&predicate(metrics))return metrics;
+ for(;;){
+  signal?.throwIfAborted();const started=now(),probeBegan=monotonic();
+  if(probeBegan>=deadline)break;
+  const metrics=await read(),probeEnded=monotonic();
+  lastProbe={startedEpochMs:started,endedEpochMs:now(),elapsedMs:probeEnded-probeBegan,startedAfterMs:probeBegan-began,endedAfterMs:probeEnded-began};
+  if(probeEnded<=deadline&&metrics&&predicate(metrics)&&monotonic()<=deadline)return metrics;
   const remaining=deadline-monotonic();if(remaining>0)await sleep(Math.min(100,remaining));
  }
  const error=Error(label+' timed out');
- error.waitTiming={schemaVersion:1,label,timeoutMs,startedEpochMs,deadlineEpochMs:startedEpochMs+timeoutMs,endedEpochMs:now(),elapsedMs:monotonic()-began,lastProbe,pollIntervalMs:100,probeTimeoutMs};
+ error.waitTiming={schemaVersion:2,label,timeoutMs,startedEpochMs,deadlineEpochMs:startedEpochMs+timeoutMs,endedEpochMs:now(),elapsedMs:monotonic()-began,lastProbe,pollIntervalMs:100,probeTimeoutMs};
  throw error;
 }
 module.exports={snapshot,wait};

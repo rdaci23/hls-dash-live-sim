@@ -25,3 +25,8 @@ test('a delayed timer cannot allow an over-budget telemetry result to succeed',a
  let time=0;await assert.rejects(poll.snapshot(async()=>{time=1001;return{};},{now:()=>time,monotonic:()=>time}),/telemetry probe timed out/);
 });
 test('a larger diagnostic RPC budget never accepts success after the playback wait deadline',async()=>{let time=0,error;try{await poll.wait(async()=>{time=2000;return{frames:1};},m=>m.frames>0,{timeoutMs:1500,label:'first rendered frame',probeTimeoutMs:3000,now:()=>time,monotonic:()=>time});}catch(e){error=e;}assert.equal(error.message,'first rendered frame timed out');assert.equal(error.waitTiming.timeoutMs,1500);assert.equal(error.waitTiming.probeTimeoutMs,3000);assert.equal(error.waitTiming.lastProbe.elapsedMs,2000);});
+
+test('predicate work cannot turn success after the playback deadline into acceptance',async()=>{
+ let time=0;
+ await assert.rejects(poll.wait(async()=>({frames:1}),()=>{time=151;return true;},{timeoutMs:150,label:'first rendered frame',now:()=>time,monotonic:()=>time}),/first rendered frame timed out/);
+});

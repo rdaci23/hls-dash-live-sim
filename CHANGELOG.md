@@ -128,6 +128,13 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Record the bounded recovery-start snapshot separately from the 250 ms Node
+  handoff, and retain monotonic poll offsets for deadline checks. The 15-second
+  recovery window and existing telemetry budgets remain unchanged.
+- Activate the owned testing player's audio context before routing a playing
+  video into it. Suspended audio activation no longer causes the probe itself
+  to stop the media clock. Healthy-stream errors remain release blockers.
+
 - Keep shared-limiter request/fault ownership across healthy-to-starved profile
   transitions when an active body is cancelled. Require matching source and
   browser cancellation evidence; cancelled bodies never prove phase delivery.

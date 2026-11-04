@@ -65,8 +65,42 @@ requires a complete successful final review and explicit publication approval.
 
 ## Player-page assets
 
+The decoded-audio probe activates its context before connecting the playing video
+to the analysis graph. Connecting an element to a suspended context can stop its
+media clock despite a full buffer. The activation-delay verifier uses the real
+browser, pinned SDKs and owned fixtures, with normal and 1.8-second delayed audio
+activation. It requires continued video progress during activation, decoded tone
+and scheduled captions afterward, and no unexplained errors:
+
+```sh
+npm run browser:audio-probe -- --protocol both --repeat 3 --output output/audio-startup
+```
+
+The manual **Browser caption qualification** workflow repeats that regression,
+language/rendition selection, healthy and disabled-text controls, late captions
+and text outages for both protocols. It does not expand routine push CI.
+
 Track and lifecycle verifiers use the common fixed-route player server. Every
 script referenced by their actual HTML is fetched by regression tests for both
 protocols. Helper scripts are served even when causal probing is disabled;
 the page must not produce baseline 404 errors. Files outside the server's fixed
 allowlist remain inaccessible.
+
+## Recovery boundary evidence
+
+New recovery waits use measurement schema version 2. The verifier retains the
+start-snapshot RPC, binds the browser sample to that RPC, then measures the
+unchanged 250 ms handoff from its completion to Node's wait start. Snapshot latency
+must remain inside its existing 1,000/3,000 ms telemetry budget. It cannot be
+silently charged to the handoff or removed from the record.
+
+The 15-second recovery deadline uses measured monotonic offsets. Integer epoch
+timestamps can round a pre-deadline poll to the deadline; a poll needs its actual
+monotonic start strictly before the deadline. A successful result must be observed
+before expiration, including predicate work. Overrun, final-snapshot and causal
+completion checks retain their existing bounds. Timed-out decoded recovery
+remains a failed player outcome even when its observation is valid.
+
+Version-1 retained measurements keep their original strict policy. A historical
+failure without the new RPC/monotonic evidence cannot be retroactively qualified;
+run the exact candidate again to collect complete evidence.

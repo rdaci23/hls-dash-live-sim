@@ -62,6 +62,7 @@
     "fixtures:tracks": "node scripts/generate-track-fixture.cjs",
     "tracks:verify": "npm run build && node scripts/verify-track-scenarios.cjs",
     "browser:tracks": "npm run build && node scripts/verify-track-browser.cjs",
+    "browser:audio-probe": "npm run build && node scripts/verify-audio-probe-browser.cjs",
     "lifecycle:verify": "npm run build && node scripts/verify-lifecycle-scenarios.cjs",
     "browser:lifecycle": "npm run build && node scripts/verify-lifecycle-browser.cjs",
     "lifecycle:invalid": "npm run build && node scripts/verify-invalid-lifecycle.cjs",

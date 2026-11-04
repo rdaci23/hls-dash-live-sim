@@ -79,6 +79,7 @@ async function verify(session, protocol, kind, signal, dir) {
             try {
                 const from = await ui.snapshot();
                 restored.recoveryStartedAtMs=from.elapsedMs;
+                restored.recoveryStartSnapshot={...from.snapshotTiming,sampleEpochMs:from.startEpochMs+from.elapsedMs};
                 const decoded = await ui.wait(m => m.frames > from.frames + 3 && m.mediaTime > from.mediaTime + 1 && languageEvidence(m, from.elapsedMs, 'en').verified, 15000, 'automatic decoded restoration');
                 restored.decodedAtMs=decoded.elapsedMs;
                 const last = await ui.wait(m => m.elapsedMs >= decoded.elapsedMs + 60000 && m.mediaTime >= decoded.mediaTime + 55, 65000, '60-second continuation');
