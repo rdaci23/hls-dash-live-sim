@@ -2,6 +2,7 @@ const fs=require('node:fs/promises'),path=require('node:path'),{createHash}=requ
 const{resourceUrl}=require('./audit.cjs'),{read:closedDiagnostics}=require('./complete-diagnostics.cjs');
 const{XMLValidator}=require('fast-xml-parser'),{languageEvidence}=require('../track-browser/acceptance.cjs');
 const{assessPlayer}=require('./scenario-player-policy.cjs');
+const{reviewedIdentity}=require('./reviewed-identity.cjs');
 const MALFORMED_MPD='<?xml version="1.0"?><MPD><Period';
 const sha=body=>createHash('sha256').update(body).digest('hex');
 const captionCase=kind=>['text-outage','late-captions'].includes(kind);
@@ -41,8 +42,8 @@ function restoredControls(restored){
   restored.controls.every(c=>c.status===200&&c.bytes>0&&typeof c.requestId==='string'&&!!c.requestId);
 }
 function knownException(event,input){
- const{protocol,kind,playerVersion,browserVersion,affectedBrowserResponses:responses=[],healthyLeadIn,restored}=input;
- if(protocol!=='dash'||kind!=='malformed-manifest'||playerVersion!=='5.2.1'||!['156.0.8078.79','156.0.8078.80'].includes(browserVersion)||!healthyLeadIn?.decodedVerified||!restoredControls(restored))return;
+ const{protocol,kind,affectedBrowserResponses:responses=[],healthyLeadIn,restored}=input;
+ if(protocol!=='dash'||kind!=='malformed-manifest'||!reviewedIdentity('scenario',input)||!healthyLeadIn?.decodedVerified||!restoredControls(restored))return;
  if(event.message!=="Cannot read properties of undefined (reading 'forEach')"||typeof event.stack!=='string'||
   !/player\.js:76159:28/.test(event.stack)||!/_getConfigurationsToCheck/.test(event.stack)||! /filterUnsupportedFeatures/.test(event.stack)||!/_onManifestUpdated/.test(event.stack)||!Number.isFinite(event.epochMs)||!Number.isFinite(event.scenarioElapsedMs))return;
  const response=responses.find(r=>r.status===200&&r.fault==='scenario.payload'&&r.track==='root'&&r.resource==='manifest'&&r.bodyText===MALFORMED_MPD&&r.bodySha256===sha(MALFORMED_MPD)&&r.bytes===Buffer.byteLength(MALFORMED_MPD)&&
@@ -60,7 +61,7 @@ function expectedConsole(event,responses,kind){
 // These exact pinned StreamController lines are secondary reports of an already
 // identified payload failure. A console timestamp alone never identifies a fault.
 function expectedNativeConsole(event,input,player,used){
- if(input.protocol!=='dash'||input.playerVersion!=='5.2.1'||input.browserVersion!=='156.0.8078.80'||!['damaged-media','wrong-track-init'].includes(input.kind)||event.kind!=='console'||event.level!=='error'||event.closing!==false||event.contextUnavailable)return;
+ if(input.protocol!=='dash'||!reviewedIdentity('causality',input)||!['damaged-media','wrong-track-init'].includes(input.kind)||event.kind!=='console'||event.level!=='error'||event.closing!==false||event.contextUnavailable)return;
  const location=event.location;let url;try{url=new URL(location?.url);}catch{return;}
  if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.pathname!=='/player.js'||url.search||url.hash||(location.lineNumber??location.line)!==19746||(location.columnNumber??location.column)!==18)return;
  const {DEMUX,WRONG_INIT}=require('./scenario-player-policy.cjs'),startup=input.kind==='wrong-track-init',window=input.faultWindowBrowser;
@@ -70,19 +71,25 @@ function expectedNativeConsole(event,input,player,used){
  const match=/^\[(\d+)\]\[StreamController\] (.*) $/.exec(event.message??'');if(!match)return;
  const reset=match[2]==='A MEDIA_ERR_DECODE occured: Resetting the MediaSource',typed=match[2]==='Video Element Error: MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+')',object=match[2]==='[object MediaError]';
  if(input.kind==='damaged-media'?!reset:!typed&&!object)return;
+ if(object){
+  const previous=input.audit[input.audit.indexOf(event)-1],paired=previous&&expectedNativeConsole(previous,input,player,new Set());
+  // The pinned _onPlaybackError logs the typed error, then the same MediaError.
+  // Bind the untyped second line to that already-qualified first line; its
+  // later console delivery must not be timed against the first DOM callback.
+  if(!paired||paired.id!=='dashjs-5.2.1-wrong-init-typed-error'||!used.has(paired.key)||previous.location.url!==location.url||
+   event.epochMs<previous.epochMs||event.epochMs-previous.epochMs>5||Math.abs(event.scenarioElapsedMs-previous.scenarioElapsedMs)>5||Number(match[1])<paired.loggedMs||Number(match[1])-paired.loggedMs>5)return;
+  const id='dashjs-5.2.1-wrong-init-error-object',key=id+':'+paired.primaryErrorAtMs;
+  if(used.has(key))return;
+  return{...paired,id,key,event,loggedMs:Number(match[1])};
+ }
  const primary=player.expectedFaultErrors.find(item=>item.signature==='dash-'+input.kind&&item.error.kind==='video'&&item.error.code===(startup?4:3)&&item.error.message===(startup?WRONG_INIT:DEMUX)&&
   Number.isFinite(item.error.atMs)&&item.error.atMs>=window.fromMs&&item.error.atMs<window.toMs&&Math.abs(Number(match[1])-item.error.atMs)<=5&&Math.abs(event.epochMs-input.metrics.startEpochMs-item.error.atMs)<=10);
  if(!primary)return;
  const response=(input.affectedBrowserResponses??[]).find(r=>r.requestId===primary.faultRequestId&&r.faultIds===primary.faultIds&&r.fault==='scenario.payload'&&r.status===200&&r.resource===(startup?'init':'media')&&
   (startup?['video:0','video:1'].includes(r.track):r.track==='video:0')&&typeof r.requestId==='string'&&!!r.requestId&&typeof r.faultIds==='string'&&!!r.faultIds&&Number.isFinite(r.receivedEpochMs)&&r.receivedEpochMs<=event.epochMs&&event.epochMs-r.receivedEpochMs<=5000);
  if(!response)return;
- const id=reset?'dashjs-5.2.1-payload-decode-reset':typed?'dashjs-5.2.1-wrong-init-typed-error':'dashjs-5.2.1-wrong-init-error-object',key=id+':'+primary.error.atMs;
+ const id=reset?'dashjs-5.2.1-payload-decode-reset':'dashjs-5.2.1-wrong-init-typed-error',key=id+':'+primary.error.atMs;
  if(used.has(key))return;
- if(object){
-  const previous=input.audit[input.audit.indexOf(event)-1],paired=previous&&expectedNativeConsole(previous,input,player,new Set());
-  if(!paired||paired.id!=='dashjs-5.2.1-wrong-init-typed-error'||paired.primaryErrorAtMs!==primary.error.atMs||!used.has(paired.key)||previous.location.url!==location.url||
-   Math.abs(event.epochMs-previous.epochMs)>5||event.epochMs<previous.epochMs||Math.abs(event.scenarioElapsedMs-previous.scenarioElapsedMs)>5||Number(match[1])<paired.loggedMs||Number(match[1])-paired.loggedMs>2)return;
- }
  return{id,key,event,loggedMs:Number(match[1]),primaryErrorAtMs:primary.error.atMs,faultRequestId:response.requestId,faultIds:response.faultIds};
 }
 function expectedStaleConsole(event,input,player,used){

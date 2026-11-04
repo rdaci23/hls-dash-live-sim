@@ -1,12 +1,14 @@
 const fs = require('node:fs/promises'), path = require('node:path'), { createHash } = require('node:crypto');
 const { languageEvidence, expectedCancellation } = require('../track-browser/acceptance.cjs');
+const { reviewedIdentity, DVR_IDENTITIES } = require('./reviewed-identity.cjs');
 const KINDS = ['pause-and-seek', 'join-during-outage', 'long-manifest-freeze'];
 const CASES = ['hls', 'dash'].flatMap(protocol => KINDS.map(kind => protocol + '-' + kind));
 // Exact retained DVR identities, not a browser-family wildcard. New versions need
 // an independently reviewed observation before their limitations can qualify.
 // Chrome .80 was reviewed after the independent 2026-11-03 join/freeze probes;
 // their dirty working-tree reports remain unqualified as release evidence.
-const APPROVED_IDENTITIES = Object.freeze({ hls: { player: '1.7.3', browsers: ['156.0.8078.76', '156.0.8078.79', '156.0.8078.80'] }, dash: { player: '5.2.1', browsers: ['156.0.8078.76', '156.0.8078.79', '156.0.8078.80'] } });
+// Chrome 157 review and remaining limitations: docs/browser-qualification.md.
+const APPROVED_IDENTITIES = DVR_IDENTITIES;
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const finite = Number.isFinite, nonempty = value => typeof value === 'string' && value.length > 0;
 const list = value => Array.isArray(value) ? value : [];
@@ -87,7 +89,7 @@ function evaluateCase({ report = {}, raw = {}, diagnostics, identity = {}, evide
     if (kind === 'long-manifest-freeze' && (!first || !healthy || !finite(healthy.currentTime) || healthy.elapsedMs - first.elapsedMs < 30000 || healthy.mediaTime - first.mediaTime < 29 || browserStart + healthy.elapsedMs - sessionEpoch - (scenarioStart?.elapsedMs ?? 0) >= 35000)) failures.push('Thirty healthy seconds before freeze not verified');
   }
   if (kind === 'pause-and-seek' && (!report.observations?.inside || !['clamped-or-returned-to-window', 'rendered-previously-buffered-media'].includes(report.observations?.outside?.outcome) || raw.actions?.map(a => a.action).join(',') !== 'pause,seek-inside-and-play,seek-outside')) failures.push('User-directed pause/seek evidence incomplete');
-  const approved = APPROVED_IDENTITIES[protocol], identityApproved = !!approved && report.browserName === 'chromium' && report.browserChannel === 'chrome' && approved.player === report.playerVersion && approved.browsers.includes(report.browserVersion);
+  const identityApproved = report.browserName === 'chromium' && report.browserChannel === 'chrome' && reviewedIdentity('dvr',report);
   const joinLimit = kind === 'join-during-outage' && report.phase === 'joining' && report.error === 'first rendered frame timed out' && metrics?.firstFrameMs === null && metrics?.frames === 0 && metrics?.elapsedMs >= 30000;
   const freezeLimit = protocol === 'dash' && kind === 'long-manifest-freeze' && report.phase === 'restored-live-window' && report.error === 'automatic rendering in the restored live window timed out' && finite(report.observations?.restoredSourceLowerBound) && finite(report.observations?.restoration?.atMs) && report.observations.restoration.atMs >= 80000 && metrics?.elapsedMs - report.observations.restoration.browserAtMs >= 30000;
   const limitationCandidate = report.passed === false && report.browserBehaviorVerified === false && report.playerRecoveryVerified === false && (joinLimit || freezeLimit);

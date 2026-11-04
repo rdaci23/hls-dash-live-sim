@@ -116,7 +116,8 @@ proof. This does not change the rendered-gap threshold or recovery deadlines.
 These mechanisms qualify only with fresh causal identities, exact player
 versions, intact wire proofs and a complete observer lifecycle. Timestamp
 coincidence, a generic text error, old classification flags or a missing probe
-cannot explain a rendered gap. Historical traces lacking causal evidence stay
+cannot explain a rendered gap. See the [reviewed browser identities](browser-qualification.md)
+for the exact builds and evidence scopes. Historical traces lacking causal evidence stay
 unqualified. Diagnostic RPCs have a measured three-second bound; playback
 startup, recovery deadlines and stall limits are unchanged. Disposal and final
 snapshot timings are retained separately, not granted an unmeasured grace.

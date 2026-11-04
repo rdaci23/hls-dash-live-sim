@@ -3,6 +3,7 @@ const { resourceUrl } = require('./audit.cjs'), { expectedCancellation } = requi
 const { kinds } = require('./scenario-observations.cjs');
 const { classifyCaption } = require('./caption-player-cause.cjs');
 const { isDeepStrictEqual } = require('node:util');
+const { reviewedIdentity } = require('./reviewed-identity.cjs');
 const MALFORMED = { hls: '#EXTM3U\n#EXT-X-TARGETDURATION:invalid\n#EXTINF:invalid,\n', dash: '<?xml version="1.0"?><MPD><Period' };
 const DEMUX = 'PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: RunSegmentParserLoop: stream parsing failed. append_window_start=0 append_window_end=inf';
 const WRONG_INIT = 'PipelineStatus::CHUNK_DEMUXER_ERROR_APPEND_FAILED: audio object type 0x40 does not match what is specified in the mimetype.';
@@ -95,8 +96,8 @@ function staleMediaFailures(input) {
 }
 function assessPlayer(input) {
     const { protocol, kind, metrics, healthyMetrics, faultWindowBrowser: window, restored } = input, failures = [], expectedFaultErrors = [], expectedCancellations = [], unexplainedErrors = [], expectedFaultGaps = [], unexplainedGaps = [];
-    const startup = kind === 'wrong-track-init', versions = { hls: '1.7.3', dash: '5.2.1' };
-    if (!kinds.includes(kind) || !versions[protocol] || input.startup !== startup || input.playerVersion !== versions[protocol] || !['156.0.8078.79', '156.0.8078.80'].includes(input.browserVersion)) failures.push('Unreviewed scenario/player/browser identity');
+    const startup = kind === 'wrong-track-init';
+    if (!kinds.includes(kind) || input.startup !== startup || !reviewedIdentity('scenario',input)) failures.push('Unreviewed scenario/player/browser identity');
     if (!metrics || metrics.protocol !== protocol || !finite(metrics.startEpochMs) || !finite(metrics.elapsedMs) || metrics.dropped !== 0 || !Array.isArray(metrics.errors) || !Array.isArray(metrics.gaps) || !Array.isArray(metrics.events)) failures.push('Whole-run player evidence missing or truncated');
     if (!startup && (!Number.isSafeInteger(metrics?.frames) || metrics.frames <= 0 || !finite(metrics.lastFrameMs) || metrics.lastFrameMs > metrics.elapsedMs)) failures.push('Final rendered-frame clock missing or invalid');
     if (!startup && (!healthyMetrics || !Array.isArray(healthyMetrics.errors) || !Array.isArray(healthyMetrics.gaps) || !Array.isArray(healthyMetrics.events) || healthyMetrics.dropped !== 0)) failures.push('Healthy-window player evidence missing or truncated');

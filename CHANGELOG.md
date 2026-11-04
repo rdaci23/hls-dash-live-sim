@@ -128,6 +128,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Serve the shared player helper scripts in track and lifecycle verification.
+  Centralize exact Chrome 157 qualification while retaining strict native-error,
+  source-integrity, cancellation and recovery requirements.
+
 - DASH keeps fresh media attributed to advertised tracks after a timed fault
   ends. Caption stall verification measures the audio analyser's trailing
   window instead of treating its final sound sample as continued playback.

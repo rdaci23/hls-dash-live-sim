@@ -5,6 +5,7 @@ const {languageEvidence,expectedCancellation}=require('./track-browser/acceptanc
 const {startTrackFixture}=require('../dist/support-tools/track-fixture-session.js');
 const root=path.resolve(__dirname,'..'),pause=ms=>new Promise(r=>setTimeout(r,ms));
 async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+const{serve:servePlayer}=require('./browser/owned-server.cjs');
 async function run(protocol,directory,signal){
  const commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),initiallyModified=!!execFileSync('git',['status','--porcelain'],{cwd:root,encoding:'utf8'}).trim();
  await fs.mkdir(directory,{mode:0o700});let session,web,browser,page,metrics,error,browserVersion,diagnostics;const audit=[],selections=[];let dropped=0;
@@ -12,8 +13,7 @@ async function run(protocol,directory,signal){
  const wait=async(predicate,timeout,label)=>{const end=Date.now()+timeout;while(Date.now()<end){signal.throwIfAborted();metrics=await page.evaluate(()=>window.trackSnapshot?.());if(metrics&&predicate(metrics))return metrics;await pause(100);}throw Error(label+' did not qualify within '+timeout+'ms');};
  try{
   session=await startTrackFixture({protocol,port:await port(),videoRenditions:3,faultConfigPath:path.join(directory,'faults.json'),diagnosticsFile:path.join(directory,'requests.jsonl'),signal});
-  const files={'/':path.join(__dirname,'track-browser/player.html'),'/metrics.js':path.join(__dirname,'track-browser/metrics.js'),'/caption-clock.js':path.join(__dirname,'track-browser/caption-clock.js'),'/cancellation.js':path.join(__dirname,'track-browser/cancellation.js'),'/player.js':path.join(root,'node_modules',protocol==='hls'?'hls.js/dist/hls.min.js':'dashjs/dist/modern/umd/dash.all.debug.js')};
-  web=http.createServer(async(req,res)=>{try{const p=new URL(req.url,'http://localhost').pathname;res.setHeader('Cache-Control','no-store');if(p==='/config'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({protocol,url:session.url}));}if(p==='/favicon.ico'){res.writeHead(204);return res.end();}if(!files[p]){res.writeHead(404);return res.end();}res.setHeader('Content-Type',p.endsWith('.js')?'text/javascript':'text/html');res.end(await fs.readFile(files[p]));}catch{res.writeHead(500);res.end();}});await new Promise(r=>web.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+web.address().port,allowed=[origin,new URL(session.url).origin];
+  const owned=await servePlayer(session,protocol);web=owned.server;const origin=owned.origin,allowed=[origin,new URL(session.url).origin];
   browser=await chromium.launch({channel:'chrome',headless:true,chromiumSandbox:true});browserVersion=browser.version();const context=await browser.newContext();page=await context.newPage();
   page.on('pageerror',e=>record({kind:'pageerror',message:e.message,stack:e.stack}));page.on('console',e=>{if(['warning','error'].includes(e.type()))record({kind:'console',level:e.type(),message:e.text()});});
   await context.route('**/*',async route=>{if(allowed.includes(new URL(route.request().url()).origin))await route.continue();else{record({kind:'external'});await route.abort();}});
@@ -35,4 +35,5 @@ async function run(protocol,directory,signal){
  await fs.writeFile(path.join(directory,'raw.json'),JSON.stringify({metrics,audit,dropped},null,2)+'\n',{mode:0o600});await fs.writeFile(path.join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});console.log(protocol+' track fixture '+(report.passed?'PASS':'FAIL')+(error?': '+error:''));return report;
 }
 async function main(){const args=require('yargs/yargs')(process.argv.slice(2)).option('protocol',{choices:['hls','dash','both'],default:'both'}).option('output',{type:'string',default:'output/track-browser-'+Date.now()}).strict().parseSync(),dir=path.resolve(args.output);await fs.mkdir(path.dirname(dir),{recursive:true});await fs.mkdir(dir,{mode:0o700});const controller=new AbortController(),stop=()=>controller.abort();process.once('SIGINT',stop);process.once('SIGTERM',stop);const checks=[];try{for(const protocol of args.protocol==='both'?['hls','dash']:[args.protocol]){const r=await run(protocol,path.join(dir,protocol),controller.signal);checks.push(r);if(!r.passed)process.exitCode=1;}}finally{process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);await fs.writeFile(path.join(dir,'report.json'),JSON.stringify({schemaVersion:1,checks,passed:checks.length>0&&checks.every(r=>r.passed),allCasesVerified:checks.length===2,releaseReady:false},null,2)+'\n',{mode:0o600});}}
-main().catch(e=>{console.error(e.message);process.exitCode=1;});
+module.exports={servePlayer};
+if(require.main===module)main().catch(e=>{console.error(e.message);process.exitCode=1;});

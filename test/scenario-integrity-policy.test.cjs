@@ -203,6 +203,18 @@ function payloadInput(kind='damaged-media'){
 test('pinned DASH native payload console lines require already-identified primary errors and exact logger context',()=>{
  for(const kind of['damaged-media','wrong-track-init']){const result=assess(payloadInput(kind));assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.expectedNativeMediaConsole.length,kind==='damaged-media'?1:2);}
 });
+test('Chrome 157 retains exact malformed-MPD and typed payload evidence requirements',()=>{
+ for(const value of [input(),payloadInput('damaged-media'),payloadInput('wrong-track-init')]){value.browserVersion='157.0.8103.38';assert.equal(assess(value).passed,true);
+  for(const edit of [x=>x.browserVersion='157.0.8103.39',x=>x.audit[0].message='Unrelated browser failure',x=>delete x.affectedBrowserResponses[0].faultIds]){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false);}
+ }
+});
+test('Chrome 157 adjacent MediaError inherits its qualified typed report instead of repeating the first callback timing',()=>{
+ const value=payloadInput('wrong-track-init');value.browserVersion='157.0.8103.38';value.metrics.errors[0].atMs=174.2;value.metrics.errors[1].atMs=177.7;
+ Object.assign(value.audit[0],{epochMs:65183,scenarioElapsedMs:183,message:value.audit[0].message.replace('[42]','[171]')});
+ Object.assign(value.audit[1],{epochMs:65187,scenarioElapsedMs:187,message:'[174][StreamController] [object MediaError] '});
+ const result=assess(value);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.expectedNativeMediaConsole.length,2);
+ for(const edit of [x=>x.audit[1].epochMs=65189,x=>x.audit[1].message='[177][StreamController] [object MediaError] ',x=>x.audit.shift(),x=>x.audit[1].location={...x.audit[1].location,url:'http://127.0.0.1/unrelated.js'},x=>x.metrics.errors[0].message='Unrelated video error']){const changed=structuredClone(value);edit(changed);assert.equal(assess(changed).passed,false);}
+});
 test('arbitrary native console signatures, missing source/clock ownership and unmatched payloads remain blocking',()=>{
  const edits=[x=>x.playerVersion='5.2.2',x=>x.browserVersion='156.0.8078.79',x=>x.audit[0].location.url='http://127.0.0.1/unrelated.js',x=>x.audit[0].location.lineNumber=19745,x=>x.audit[0].location.columnNumber=19,x=>x.audit[0].closing=true,x=>x.audit[0].contextUnavailable=true,x=>x.audit[0].message='[35003][StreamController] unrelated MEDIA_ERR_DECODE ',x=>x.audit[0].scenarioElapsedMs=34000,x=>x.audit[0].epochMs+=20,x=>x.metrics.errors[0].atMs+=30,x=>x.metrics.errors[0].code=2,x=>x.metrics.errors[0].message='Unrelated decoder error',x=>x.affectedBrowserResponses[0].fault='scenario.status',x=>x.affectedBrowserResponses[0].track='audio:0',x=>x.affectedBrowserResponses[0].resource='init',x=>x.affectedBrowserResponses[0].receivedEpochMs=100004,x=>x.audit.push(structuredClone(x.audit[0]))];
  for(const edit of edits){const value=payloadInput();edit(value);assert.equal(assess(value).passed,false,edit.toString());}

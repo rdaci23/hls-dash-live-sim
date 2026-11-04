@@ -2,6 +2,7 @@ const { isDeepStrictEqual: equal } = require('node:util');
 const { validateWireEvidence } = require('./caption-wire-probes.cjs');
 const { validateCausalCompletion } = require('./causal-completion.cjs');
 const { expectedCancellation } = require('../track-browser/acceptance.cjs');
+const { reviewedIdentity } = require('./reviewed-identity.cjs');
 const finite = Number.isFinite, list = value => Array.isArray(value) ? value : [];
 const sameFragment = (a, b) => !!a && !!b && ['type', 'sn', 'level', 'url'].every(key => a[key] === b[key]);
 const empty = sample => finite(sample?.mediaTime) && [1, 2].includes(sample.readyState) && sample.paused === false && sample.seeking === false && Array.isArray(sample.buffered) && sample.buffered.every(r => Array.isArray(r) && r.length === 2 && r.every(finite) && r[1] >= r[0]) && !sample.buffered.some(r => r[0] <= sample.mediaTime && r[1] - sample.mediaTime > 0.1);
@@ -109,7 +110,7 @@ function dashCause(input, primary, fault) {
 function classifyCaption(input, { faults = [], primaryErrors = [] } = {}) {
   const failures = [], fail = value => failures.push(value), metrics = input?.metrics, result = { verified: false, expectedErrors: [], expectedGaps: [], failures, evidenceSummary: {} };
   try {
-    if (!input || !metrics || !['text-outage', 'late-captions'].includes(input.kind) || !['hls', 'dash'].includes(input.protocol) || metrics.protocol !== input.protocol || input.playerVersion !== (input.protocol === 'hls' ? '1.7.3' : '5.2.1') || input.browserVersion !== '156.0.8078.80') return { ...result, failures: ['Caption cause requires the reviewed protocol/scenario/player/browser identity'] };
+    if (!input || !metrics || !['text-outage', 'late-captions'].includes(input.kind) || metrics.protocol !== input.protocol || !reviewedIdentity('causality',input)) return { ...result, failures: ['Caption cause requires the reviewed protocol/scenario/player/browser identity'] };
     const window = input.faultWindowBrowser;
     if (!finite(window?.fromMs) || !finite(window?.toMs) || window.toMs - window.fromMs !== 15000 || !finite(metrics.startEpochMs) || !finite(metrics.elapsedMs)) fail('Caption cause clock/window missing');
     if (!retryDefaults(input)) fail('Reviewed default retry/synchronization settings changed');

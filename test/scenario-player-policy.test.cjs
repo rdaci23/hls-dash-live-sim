@@ -19,6 +19,11 @@ function input(protocol = 'hls', kind = 'audio-outage') {
 function body(response, text) { Object.assign(response, { bodyText: text, bytes: Buffer.byteLength(text), bodySha256: createHash('sha256').update(text).digest('hex') }); }
 function error(value, fields = {}) { const response = value.affectedBrowserResponses[0]; return { kind: value.protocol, atMs: response.receivedEpochMs - epoch + 20, url: response.url, requestId: response.requestId, status: response.status, fatal: false, ...fields }; }
 function healthy(value) { const result = assessPlayer(value); assert.equal(result.passed, true, result.failures.join('; ')); return result; }
+test('reviewed Chrome 157 accepts exact pinned players while unrelated errors and other builds still fail',()=>{
+ for(const protocol of ['hls','dash']){const value=input(protocol);value.browserVersion='157.0.8103.38';healthy(value);
+  for(const edit of [x=>x.browserVersion='157.0.8103.39',x=>x.playerVersion='unknown',x=>x.metrics.errors.push({kind:'video',atMs:40000,code:3,message:'unrelated'})]){const changed=structuredClone(value);edit(changed);assert.equal(assessPlayer(changed).passed,false);}
+ }
+});
 test('an error between the healthy snapshot and injection, an unknown in-fault error and an error after resume all fail', () => {
     const value = input(); healthy(value);
     for (const atMs of [32000, 37000, 65000, 124000]) { const changed = structuredClone(value); changed.metrics.errors.push(error(changed, { atMs, type: 'mediaError', details: 'internalException', message: 'unrelated failure' })); assert.equal(assessPlayer(changed).passed, false); }
