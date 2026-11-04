@@ -5,6 +5,12 @@ GitHub repository private and `package.json` set to `private: true`. No CI comma
 publishes the package or changes visibility. Public release needs an explicit
 maintainer decision after the remaining requirements are satisfied.
 
+**Current verification policy, 4 November 2026:** run all checks locally.
+Repository Actions is disabled to preserve the included runner allowance. Do not
+dispatch or re-enable hosted checks without explicit maintainer approval. This
+supersedes earlier CI requirements during private preparation; historical results
+stay attributed to their original commits. [Policy](development.md#github-actions).
+
 The simulator owns valid stream generation, correct fault delivery, service
 restoration and diagnostics. Roku-native recovery behavior is client compatibility
 evidence. Fixing that behavior is outside this repository and is not a simulator
@@ -49,7 +55,8 @@ release requirement.
 - [x] Security-reporting policy documents the planned private route and current
   enablement limitation; actual contact/activation remains a publication step.
 - [x] Current support/limits documentation, quick start and contributor guidance.
-- [x] Routine Linux/Node 24 CI for docs, types and unit tests; manual full checks
+- [x] Preserved, currently disabled Linux/Node 24 routine workflow for docs, types
+  and unit tests; manual full checks
   retain Linux/macOS Node 22/24/26, Chrome UI, pinned DASH engine, HTTP scenarios,
   Roku compilation and production-only package-install smoke.
 - [x] Optional manual CI full-browser gate with retained run evidence.
@@ -87,8 +94,8 @@ that every future commit has passed. For the candidate, inspect the exact
   public announcement. A policy file alone does not activate the feature.
 - [x] Recorded the clean-clone review and all 11 routine CI passes for
   implementation candidate `824c39e`; [scope and evidence](release-review.md).
-- [ ] Run the final publication candidate from a clean clone and confirm routine
-  CI passes; review its exact packaged files before tagging.
+- [ ] Run the final publication candidate from a clean clone with all local
+  checks passing; review its exact packaged files before tagging.
 - [ ] Decide and configure required checks/branch protection for the public repo.
 - [x] Recorded all six full browser playback passes for `824c39e`, tied to the
   [exact reviewed implementation](release-review.md).
@@ -136,8 +143,8 @@ scope. Its later requirements supersede the older narrow-beta feature boundary.
   unchanged 128 MiB memory-growth limits, retention and complete closed evidence.
   Four-hour stress testing is optional and does not block publication.
 - [ ] Every owned process exits and transfer/index/timer counters drain.
-- [ ] Exact-candidate CI executes and passes; an account-level restriction is a
-  blocker even when local checks pass.
+- [ ] Retain complete exact-candidate local evidence and actual environment
+  identities. Hosted CI stays paused; unsupported matrix targets stay unverified.
 
 See [publication preparation](publication-preparation.md) for the cutover settings.
 Remaining release checks and publication decisions cannot be replaced by adding

@@ -60,7 +60,8 @@ user-directed seeks never establish automatic fault recovery. The current change
 adds no timing exemption and does not retroactively manufacture missing proof.
 
 The native files remain attributed to `b7230dc`; re-evaluation does not replace
-new exact-candidate CI. The [release checklist](release-checklist.md) still
+new exact-candidate verification under the current
+[local-only policy](development.md#github-actions). The [release checklist](release-checklist.md) still
 requires a complete successful final review and explicit publication approval.
 
 ## Player-page assets

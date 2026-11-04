@@ -14,12 +14,12 @@ new commits.
    targeted browser observations and ten-minute concurrent smoke. Use an awake,
    dedicated machine with Chrome and Docker for the full matrix. Add
    `--extended-soak` only when intentionally requesting optional four-hour testing.
-2. Inspect the exact commit's routine GitHub Actions run and dispatch the full
-   manual suite with `playback` and `core_observations` enabled;
-   see [development and CI](development.md). Every required job must execute and
-   pass. An account-level restriction, skipped job or local pass cannot stand in
-   for CI. Rerun the same commit after any external restriction is resolved. The
-   `release_soak` input is optional and stays off for the required candidate suite.
+2. Follow the [local-only verification policy](development.md#github-actions).
+   Actions is disabled during private preparation; do not dispatch hosted jobs
+   or re-enable it without explicit maintainer approval. Retain complete local
+   browser, HTTP and ten-minute smoke evidence for the exact candidate, and
+   record the actual environment. Historical CI runs remain historical and
+   untested platform-matrix targets stay unverified. All acceptance limits remain.
 3. Review the archive inventory, secret scans, media provenance, MIT license,
    third-party notices, install instructions and configuration examples. Keep
    npm `private: true`; npm distribution requires a separate decision.
@@ -36,7 +36,10 @@ settings now; do not change visibility to work around the restriction.
 
 - Protect `main`, prohibit force pushes and branch deletion, and require pull
   requests and resolved review conversations for future changes.
-- Require **Routine / Linux / Node 24**, the check that runs on every pull request.
+- Decide with the maintainer whether to resume hosted Actions at cutover; do not
+  re-enable it automatically or spend private-repository minutes beforehand.
+- If hosted CI is approved and enabled, require **Routine / Linux / Node 24**,
+  the check configured for every pull request. Do not require a disabled check.
   Keep the broader matrix, browser, integration and endurance jobs as manual
   candidate gates; requiring them on ordinary pull requests would block merges
   because those jobs are skipped. Review settings when CI names change.

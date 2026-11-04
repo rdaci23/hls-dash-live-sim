@@ -5,7 +5,7 @@ through `b285679`. The audit did not change repository visibility or publish npm
 packages, and this report does not approve a public release. On 30 October 2026 the maintainer
 selected the [MIT License](../LICENSE) for project-owned code, documentation and
 generated media fixtures; third-party components retain their own licenses.
-Use the exact candidate's retained review report and CI run for final verification;
+Use the exact candidate's retained local review report for final verification;
 results from an older commit do not qualify a newer code change.
 
 ## Current expanded-core candidate
@@ -14,10 +14,12 @@ The historical candidate below predates the expanded core program and cannot
 qualify it. Follow the [core roadmap](scenario-roadmap.md) for implementation and
 known compatibility limits in the [coverage matrix](coverage-matrix.md). The current candidate still requires its exact-commit
 full review, all core HTTP checks, healthy decoded fixtures, targeted browser
-observations, ten-minute concurrent smoke and executing green CI. Four-hour stress
+observations and ten-minute concurrent smoke. Hosted Actions is disabled under
+the [local-only policy](development.md#github-actions); re-enablement or dispatch
+requires explicit maintainer approval. Four-hour stress
 testing is optional; add `--extended-soak` explicitly when it is useful. The
 128 MiB per-process and aggregate memory-growth limits remain unchanged. Local
-passes are retained independently and do not replace exact-candidate CI.
+passes retain their actual environment; untested CI-matrix targets stay unverified.
 
 ## Historical implementation candidate — 30 October 2026
 
@@ -151,7 +153,8 @@ a time-window match nor an arbitrary timeout can qualify a failure.
 Reports retain the candidate commit, clean-tree checks, scanner version, archive
 hash and file inventory, redacted scan reports, step logs and browser evidence.
 Only complete successful local checks set `candidateChecksPassed`. This does not
-verify GitHub CI; inspect the exact run separately and retain it with the report. `releaseReady`
+claim a GitHub CI pass. Reports label execution as local-only; hosted checks remain
+paused. `releaseReady`
 always stays false because publication requires the decisions below. Interrupted
 or failed checks retain evidence and return a failing exit status. No archive is
 published or installed globally. Review the retained file list manually as well.

@@ -2,8 +2,9 @@
 
 ## Environment
 
-For a checkout, use Node.js 24 LTS and npm. Routine CI uses Ubuntu 24.04 and Node
-24. Manual full checks cover Node 22, 24 and 26 on Ubuntu 24.04 and macOS 15.
+For a checkout, use Node.js 24 LTS and npm. Verification is currently local-only.
+The preserved hosted workflow defines Ubuntu 24.04 and macOS 15 checks for Node
+22, 24 and 26, but those jobs are disabled during private preparation.
 The package still declares the legacy Node 20.3 engine floor;
 that floor and Windows are not part of this CI matrix. Prefer a maintained Node
 release. No runtime compatibility requirement is changed by this documentation.
@@ -92,14 +93,37 @@ DASH ladder. Stop sessions first. [Provenance](../assets/README.md).
 
 ## GitHub Actions
 
+**Local-only policy, 4 November 2026:** repository Actions is disabled to preserve
+the included runner allowance. No active runs remained when it was disabled.
+Run routine, integration, browser, package and release checks locally. Do not
+enable Actions, dispatch workflows or retry old runs without explicit maintainer
+approval, including when local checks become green. Keep the repository and npm
+package private. Pushing a commit does not authorize hosted verification.
+
+Use the local checks above and the clean-clone review:
+
+```sh
+npm run release:review -- --output output/local-candidate-review
+```
+
+The review requires Chrome, Docker, the pinned engine and Gitleaks; see
+[release-review setup](release-review.md). It includes the required ten-minute
+smoke. Four-hour testing remains optional and is not requested. All playback,
+timing, memory and cleanup gates stay unchanged. Retain the exact commit and
+actual OS/architecture, Node and browser versions; untested matrix targets stay
+unverified. Local evidence is not relabelled as a hosted CI pass.
+
+The following workflow configuration is preserved for use **after explicit
+approval to resume hosted checks**. It does not describe active automation.
+
 [CI workflow](https://github.com/rdaci23/hls-dash-live-sim/blob/main/.github/workflows/ci.yml)
-runs one **Routine / Linux / Node 24** job on pushes to `main` and pull requests.
+would run one **Routine / Linux / Node 24** job on pushes to `main` and pull requests.
 It installs locked dependencies, then runs `docs:check`, `typecheck` and `npm test`.
 The unit suite builds the project; it needs neither Chrome nor Docker. Routine
 runs do not execute the platform matrix, package smoke, browser/integration jobs
 or endurance smoke.
 
-Run the broader checks explicitly from **Actions → CI → Run workflow**, selecting
+After that approval, run broader checks from **Actions → CI → Run workflow**, selecting
 the candidate branch or tag and the default **full** scope. Full dispatches run the six Linux/macOS
 Node 22/24/26 matrix checks, including notices, Roku compilation, HLS HTTP
 scenarios and production package installation. Separate jobs run Chrome control
@@ -135,7 +159,7 @@ four-hour stress test. Local release review similarly requires an explicit
 
 The run title includes its scope. Playback and core-observation inputs apply to
 full scope; a green endurance run qualifies only those endurance checks. The full
-candidate still needs the complete full-scope suite and local release review.
+hosted candidate suite, when enabled, is separate from local release review.
 
 For an explicitly unqualified allocation investigation, add `-f memory_profile=true`
 to an endurance-scope dispatch. This starts the release workload, skips the separate
@@ -171,9 +195,10 @@ The maintained runtime matrix follows the [Node release table](https://nodejs.or
 
 ## Release evidence
 
-A green routine CI run establishes docs, types and unit-test results. Release
-qualification additionally requires the exact candidate's full manual checks with
-all three inputs enabled, plus the local candidate review. CI cannot test a
+A green routine CI run establishes docs, types and unit-test results for that
+commit only. Under the current local-only policy, release preparation requires
+the exact candidate's complete successful local review and retained evidence;
+hosted checks are paused. This does not qualify untested platforms. CI cannot test a
 physical Roku. Use the [playback procedure](playback-gates.md) and
 [release checklist](release-checklist.md) for the separate evidence requirements.
 Retain evidence tied to the release candidate commit. Do not relabel earlier

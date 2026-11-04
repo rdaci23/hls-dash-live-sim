@@ -22,7 +22,8 @@ async function main() {
     await fs.mkdir(directory, { mode: 0o700 });
     const checkout = path.join(directory, 'checkout'), commit = capture('git', ['rev-parse', 'HEAD']);
     const report = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit, sourceTreeClean: true, scannerVersion, steps: [], candidateChecksPassed: false, releaseReady: false, projectLicense: require('../package.json').license,
-        outstanding: ['Exact-candidate CI must execute and pass', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit public visibility approval; npm is a separate decision'],
+        verificationExecution: { mode: 'local-only', hostedActions: 'paused', hostedChecksExecuted: false, platform: process.platform, arch: process.arch, nodeVersion: process.version },
+        outstanding: ['Review actual local environment coverage; untested matrix targets remain unverified', 'Hosted Actions requires explicit approval before re-enablement or dispatch', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit public visibility approval; npm is a separate decision'],
         endurancePolicy:{requiredMode:'smoke',requiredDurationMs:600000,maximumGrowthBytes:128*1024*1024,extendedSoakRequested:options.extendedSoak,extendedSoakRequired:false} };
     const active = createProcessOwner();
     let interrupted = false, soakWork, soakFailure;

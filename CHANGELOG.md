@@ -11,6 +11,9 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Pause hosted Actions during private preparation and run verification locally,
+  preserving all acceptance limits, exact-commit evidence and unverified platform
+  boundaries. Resuming hosted checks requires explicit maintainer approval.
 - Bind caption-control setup to measured pre/post-Start snapshots and the original
   source journal event, preserving strict action ordering and fault windows.
 - Correlate DASH payload-error console calls using Chrome's native timestamp and

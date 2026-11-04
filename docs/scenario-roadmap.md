@@ -5,10 +5,17 @@ approval after all core work below qualifies. HTTP fault delivery, valid stream
 authoring and browser compatibility are separate outcomes. A documented player
 limitation must never be hidden or presented as a simulator pass.
 
+On 4 November 2026 the maintainer switched private preparation to local-only
+verification to preserve the Actions allowance. Repository Actions is disabled;
+do not dispatch or re-enable hosted checks without explicit approval. This
+supersedes earlier CI gates in the historical ledger, without changing limits,
+turning old failures into passes or qualifying untested environments. Retain
+complete exact-commit local evidence. [Policy](development.md#github-actions).
+
 The endurance policy was revised on 2 November 2026: **ten-minute concurrent
 smoke is required; four-hour stress testing is optional**. Keep the 128 MiB
 per-process and aggregate growth limits, decoded playback, complete evidence and
-cleanup requirements. Normal release review and the required manual CI suite do
+cleanup requirements. Normal local release review and the preserved manual CI suite do
 not start the optional run. The historical ledger below retains earlier
 four-hour requirements and failures; none becomes a pass under the revised policy.
 
@@ -23,7 +30,7 @@ four-hour requirements and failures; none becomes a pass under the revised polic
 | 7. Restart/DVR/event completion | Valid restart/event and invalid/DVR HTTP checks pass locally; DVR browser limits retained | Valid/invalid restart pairs, aligned timestamps/init, retention/seek/join/freeze cases and real event ending; browser actions separately recorded. |
 | 8. Offline keys/auth/UTC faults | HTTP implementation and decoded AES/auth-client checks pass locally | HLS AES-128 rotation and clear transitions, key failures, local token expiry/renewal, explicit UTC failures/skew; no credential exports. |
 | 9. Endurance/concurrency | Ten-minute smoke qualified locally and in CI at `42ed300`; final candidate checks required | Required 10-minute concurrent smoke for both protocols; browser plus two HTTP viewers, drift/fairness/churn/cancellation, bounded rotated evidence, RSS growth <=128 MiB after warm-up and drained ownership counters. Four-hour stress testing is optional. |
-| 10. Final publication review | Pending all required gates | Exact-commit CI/browser/smoke evidence, history/package/licenses/docs review, support matrix, branch protection and security-reporting preparation. Publication remains a separate approval. |
+| 10. Final publication review | Pending all required local gates | Exact-commit local browser/smoke evidence, history/package/licenses/docs review, actual environment/support matrix, branch protection and security-reporting preparation. Hosted Actions stays paused; publication remains a separate approval. |
 
 Completed foundations: valid HLS/DASH baselines, local UTC, status and sustained
 outages, manifest freeze/resume, shared bandwidth/jitter, media/manifest/init
@@ -32,7 +39,7 @@ DASH audio-only outages. Existing candidate evidence is not an automatic pass fo
 later commits.
 
 Each milestone needs presets, setup examples, isolated verification, negative
-acceptance tests and retained CI evidence. Extend scenario version 1 additively;
+acceptance tests and retained verification evidence, currently collected locally. Extend scenario version 1 additively;
 preserve legacy fingerprints, automatic startup and published defaults. Native
 Roku recovery, new hardware support, commercial DRM, ads, LL streaming, HTTP/2/3
 fault simulation and a shared virtual clock remain outside this core program.
