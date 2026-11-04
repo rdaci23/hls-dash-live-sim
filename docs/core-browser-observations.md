@@ -37,7 +37,12 @@ incomplete evidence, even if observation capture finished. CLI and local release
 review independently recompute the same policy from raw measurements, the closed
 browser audit and the complete source file. Time proximity to a fault alone cannot
 explain a player error: status errors and constrained-transfer cancellations need
-matching resource/request evidence. `--require-continuation` remains available;
+matching resource/request evidence. A body that starts under the healthy shared
+cap and crosses into starvation keeps its original request/fault identity. A
+cancelled crossing body additionally needs the actual shared profile transition,
+matching server fault cancellation and browser abort. It may explain a measured
+buffer wait; it cannot count as completed constrained delivery.
+`--require-continuation` remains available;
 it cannot disable integrity checks. Read `browserCompatibility`, `faultObserved`,
 `healthyWindowsVerified`, failures and `simulatorResult` separately. An unexercised
 target does not become a fallback/recovery pass. All reports retain
@@ -57,3 +62,7 @@ dirty-tree state. The optional CI dispatch input captures seven cases in separat
 jobs with seven-day retention; it does not silently convert compatibility
 limitations into a release-qualified result. See the [roadmap](scenario-roadmap.md)
 for outstanding evidence and the final publication gates.
+
+The manual **Browser recovery qualification** workflow reruns both protocols'
+starvation observations, the independent DVR HTTP probes and all six DVR browser
+cases without starting the full release matrix. Routine push CI remains small.

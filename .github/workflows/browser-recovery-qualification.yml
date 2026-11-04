@@ -1,0 +1,71 @@
+name: Browser recovery qualification
+run-name: Browser recovery qualification / ${{ github.ref_name }}
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: browser-recovery-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  starvation:
+    name: Starvation / ${{ matrix.protocol }} / Chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        protocol: [hls, dash]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx --no-install playwright install --with-deps chrome
+      - run: google-chrome --version
+      - name: Pull the pinned AMD64 engine
+        if: matrix.protocol == 'dash'
+        run: |
+          SIM_IMAGE=$(node -p 'require("./dist/support-tools/dash-sim-runner.js").DEFAULT_IMAGE')
+          docker pull --platform linux/amd64 "$SIM_IMAGE"
+      - run: npm run browser:core -- --case ${{ matrix.protocol }}-starvation --output output/ci-starvation
+      - name: Retain complete starvation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: starvation-${{ matrix.protocol }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: output/ci-starvation/
+          if-no-files-found: error
+          retention-days: 7
+  dvr:
+    name: DVR / both protocols / Chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install playwright install --with-deps chrome
+      - run: google-chrome --version
+      - run: npm run dvr:verify -- --output output/ci-dvr-http
+      - run: npm run browser:dvr -- --release-check --output output/ci-dvr-browser
+      - name: Retain complete DVR evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dvr-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            output/ci-dvr-http/
+            output/ci-dvr-browser/
+          if-no-files-found: error
+          retention-days: 7

@@ -19,7 +19,7 @@ async function serve(session, protocol, options = {}) {
             res.setHeader('Cache-Control', 'no-store');
             if (p === '/redirect-probe' && redirect) { res.writeHead(302,{Location:redirect}); return res.end(); }
             if (p === '/') res.setHeader('Content-Security-Policy', "default-src 'none'; connect-src 'self' " + source + "; media-src 'self' blob: data: " + source + "; script-src 'self' 'unsafe-eval' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; object-src 'none'; frame-ancestors 'none'");
-            if (p === '/config') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ protocol, url: session.url, markerProbe: options.markerProbe === true, causalProbe: options.causalProbe === true })); }
+            if (p === '/config') { res.setHeader('Content-Type', 'application/json'); return res.end(JSON.stringify({ protocol, url: session.url, markerProbe: options.markerProbe === true, causalProbe: options.causalProbe === true, seekProbe: options.seekProbe === true })); }
             if (p === '/favicon.ico') { res.writeHead(204); return res.end(); }
             if (!Object.hasOwn(files, p)) { res.writeHead(404); return res.end(); }
             res.setHeader('Content-Type', p.endsWith('.js') ? 'text/javascript' : 'text/html');

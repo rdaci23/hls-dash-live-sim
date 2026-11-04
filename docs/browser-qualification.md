@@ -50,8 +50,14 @@ Re-evaluating those unchanged native files with the reviewed identities qualifie
 seven of the nine targeted scenario suites. The HLS late-caption and DASH
 manifest-rollback samples remain unqualified because their pre-recovery snapshot
 boundaries exceed a separate fixed timing assumption. HLS pause/seek also retains
-unproven main/subtitle cancellation errors. This identity review changes neither
-those timing rules nor the cancellation requirements.
+unproven main/subtitle cancellation errors. Those historical files remain
+unqualified. New DVR pause/seek runs enable an inert native seek observer before
+media attachment. It records the explicit action, exact DOM seeking event,
+controller handler and fragment/load/stats identity before explaining an abort.
+Only complete chains on reviewed player builds qualify; automatic seeks,
+unrelated aborts, missing proof and observation drops remain blocking. These
+user-directed seeks never establish automatic fault recovery. The current change
+adds no timing exemption and does not retroactively manufacture missing proof.
 
 The native files remain attributed to `b7230dc`; re-evaluation does not replace
 new exact-candidate CI. The [release checklist](release-checklist.md) still

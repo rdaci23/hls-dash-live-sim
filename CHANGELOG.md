@@ -128,6 +128,13 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Fixed
 
+- Keep shared-limiter request/fault ownership across healthy-to-starved profile
+  transitions when an active body is cancelled. Require matching source and
+  browser cancellation evidence; cancelled bodies never prove phase delivery.
+- Observe native HLS DVR seek-triggered cancellations through the exact explicit
+  action, seeking event and loader attempt. Preserve raw aborts and block missing
+  proof; keep user-directed seeks separate from automatic recovery.
+
 - Serve the shared player helper scripts in track and lifecycle verification.
   Centralize exact Chrome 157 qualification while retaining strict native-error,
   source-integrity, cancellation and recovery requirements.

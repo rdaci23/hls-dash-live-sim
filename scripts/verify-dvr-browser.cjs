@@ -52,7 +52,7 @@ async function verify(session, protocol, kind, signal, directory) {
             restoration.catch(() => {});
             await until(3000);
         }
-        ui = await open(session, protocol, signal, { onResponse: response => {
+        ui = await open(session, protocol, signal, { seekProbe: protocol === 'hls' && kind === 'pause-and-seek', onResponse: response => {
             if (new URL(response.url()).origin !== new URL(session.url).origin) return;
             if (responses.length + pending.size >= 2000) { responseErrors.push('Response evidence limit reached'); return; }
             const job = (async () => { const headers = await response.allHeaders(); responses.push({ url: response.url(), status: response.status(), requestId: headers['x-sim-request-id'], faultIds: headers['x-sim-fault-ids'] ?? null, epochMs: Date.now() }); })();
@@ -68,11 +68,9 @@ async function verify(session, protocol, kind, signal, directory) {
             await ui.page.evaluate(() => document.querySelector('video').pause()); await pause(40000); signal.throwIfAborted(); m = await ui.snapshot();
             if (!m.paused) throw Error('The user pause was not retained'); observations.afterPause = { currentTime: m.currentTime, seekable: m.seekable };
             const inside = m.seekable.at(-1)?.[1] - 4; if (!Number.isFinite(inside) || inside <= m.currentTime) throw Error('Advancing DVR window not exposed');
-            actions.push({ action: 'seek-inside-and-play', atMs: m.elapsedMs, to: inside });
-            await ui.page.evaluate(async time => { const v = document.querySelector('video'); v.currentTime = time; await v.play(); }, inside);
+            actions.push(await ui.page.evaluate(async time => { const v = document.querySelector('video'), action = { action: 'seek-inside-and-play', actionId: 1, to: time }; const input = window.dvrSeek ? window.dvrSeek(action) : { ...action, atMs: window.trackSnapshot().elapsedMs }; if (!window.dvrSeek) v.currentTime = time; await v.play(); return input; }, inside));
             const resumed = await ui.wait(x => x.mediaTime >= inside + 1, 15000, 'inside-window rendered seek'); observations.inside = { requested: inside, rendered: resumed.mediaTime, seekable: resumed.seekable };
-            const outside = Math.max(0, (resumed.seekable.at(-1)?.[0] ?? inside) - 30); actions.push({ action: 'seek-outside', atMs: resumed.elapsedMs, to: outside });
-            await ui.page.evaluate(time => document.querySelector('video').currentTime = time, outside); await pause(3000); const result = await ui.snapshot();
+            const outside = Math.max(0, (resumed.seekable.at(-1)?.[0] ?? inside) - 30); actions.push(await ui.page.evaluate(time => { const action = { action: 'seek-outside', actionId: 2, to: time }; if (window.dvrSeek) return window.dvrSeek(action); const input = { ...action, atMs: window.trackSnapshot().elapsedMs }; document.querySelector('video').currentTime = time; return input; }, outside)); await pause(3000); const result = await ui.snapshot();
             observations.outside = { requested: outside, currentTime: result.currentTime, rendered: result.mediaTime, seekable: result.seekable, frames: result.frames, seekEvents: result.events.filter(e => ['seeking', 'seeked'].includes(e.kind) && e.atMs > resumed.elapsedMs) };
             if (!observations.outside.seekEvents.length) throw Error('Outside seek was not observed by the media element');
             observations.outside.outcome = result.mediaTime >= observations.inside.seekable.at(-1)[0] ? 'clamped-or-returned-to-window' : result.frames > resumed.frames ? 'rendered-previously-buffered-media' : 'no-rendered-resume';

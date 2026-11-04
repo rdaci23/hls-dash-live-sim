@@ -67,3 +67,22 @@ test('a successful superseding same-download response still clears active-transi
   value.diagnostics.events.push({ event: 'request.completed', requestId: 'superseding', method: 'GET', status: 200, bodyBytes: 145028, timestamp: new Date(epoch + 66000).toISOString() });
   assert.equal(classify(value).expectedGaps.length, 0);
 });
+
+function cancelledCrossing() {
+  const value = evidence(), own = originalEvents(value), terminal = own.find(e => e.event === 'request.completed');
+  terminal.event = 'request.cancelled'; terminal.reason = 'client_disconnect'; delete terminal.bodyBytes;
+  const effect = own.find(e => e.event === 'fault.applied'); effect.event = 'fault.cancelled'; effect.reason = 'client_disconnect';
+  value.audit.push({kind:'requestfailed', url, error:'net::ERR_ABORTED', epochMs:epoch+69075});
+  const waiting=value.metrics.events[0]; value.metrics.protocol='hls';
+  value.metrics.playerErrors=[{atMs:67200,fatal:false,type:'mediaError',details:'bufferStalledError',bufferInfo:{len:0},waiting,lastFrameMs:65201.4,lastFrameMediaTime:19.958333,nextFrameMs:77868.1,nextFrameMediaTime:22}, {atMs:69075,fatal:false,type:'networkError',details:'aborted',url}];
+  return value;
+}
+test('a shared-cap transition retains causal ownership when the active body is cancelled instead of completed',()=>{
+  const result=classify(cancelledCrossing());
+  assert.equal(result.unexplainedPlayerErrors.length,0);assert.equal(result.unexplainedGaps.length,0);assert.equal(result.unexpectedNetwork.length,0);
+  assert.equal(result.cancelled.length,1);assert.equal(result.expectedErrors.length,2);assert.equal(result.faultObserved,false,'Cancellation never establishes completed delivery for the phase');
+});
+test('a cancelled crossing body requires its own selected fault, shared profile and matched terminal cancellation',()=>{
+  const edits=[v=>v.diagnostics.events=v.diagnostics.events.filter(e=>e.event!=='fault.cancelled'),v=>v.diagnostics.events.find(e=>e.event==='fault.cancelled').faultId='other',v=>v.diagnostics.events.find(e=>e.event==='fault.cancelled').reason='shutdown',v=>v.diagnostics.events.find(e=>e.event==='request.cancelled').reason='shutdown',v=>v.diagnostics.events.find(e=>e.event==='fault.selected').networkScope='track',v=>v.diagnostics.events=v.diagnostics.events.filter(e=>e.event!=='scenario.profile'),v=>v.audit[0].requestId='unrelated',v=>v.audit[1].epochMs+=2000,v=>v.audit[1].error='net::ERR_CONNECTION_RESET'];
+  for(const edit of edits){const v=cancelledCrossing();edit(v);const r=classify(v);assert.equal(r.cancelled.length,0,edit.toString());assert.ok(r.unexpectedNetwork.length,edit.toString());}
+});

@@ -16,6 +16,28 @@ function drained(cleanup) {
   const expected = { network: ['activeBodies', 'bufferedBytes', 'pendingGrants', 'pendingTimers'], source: ['lifecycleActions', 'serviceActions', 'sourceFiles', 'sourceTimelines', 'activeRequests', 'pendingWork'] };
   return Object.entries(expected).every(([owner, keys]) => keys.every(key => cleanup?.[owner]?.[key] === 0) && Object.values(cleanup[owner]).every(value => value === 0));
 }
+// User-directed seeks are separate from automatic fault recovery. Only the
+// observed native seek handler may own an abort; timing proximity is insufficient.
+function expectedSeekCancellation(error, events, actions) {
+  const proof = error?.seekCancellation;
+  if (error?.kind !== 'hls' || error.fatal !== false || error.type !== 'networkError' || error.details !== 'aborted' || error.message !== 'Aborted' || error.status !== 0 ||
+      !proof || proof.kind !== 'seek-cancel' || !['main', 'audio', 'subtitle'].includes(error.frag?.type) ||
+      !['abortId', 'handlerId', 'seekId', 'actionId', 'loadId'].every(key => Number.isSafeInteger(proof[key]) && proof[key] > 0) ||
+      !Number.isSafeInteger(proof.sn) || !Number.isSafeInteger(proof.level) || proof.sn < 0 || proof.level < 0 ||
+      !['type', 'sn', 'level', 'url'].every(key => proof[key] === error.frag[key]) || !nonempty(proof.url) || !finite(proof.atMs) || !finite(error.atMs) || error.atMs < proof.atMs) return false;
+  const one = predicate => { const matches = list(events).filter(predicate); return matches.length === 1 ? matches[0] : undefined; };
+  const abort = one(e => e.kind === 'seek-cancel' && e.abortId === proof.abortId);
+  const seek = one(e => e.kind === 'user-seeking' && e.seekId === proof.seekId);
+  const input = one(e => e.kind === 'user-seek' && e.actionId === proof.actionId);
+  const before = one(e => e.kind === 'seek-handler' && e.handlerId === proof.handlerId && e.phase === 'before');
+  const after = one(e => e.kind === 'seek-handler' && e.handlerId === proof.handlerId && e.phase === 'after');
+  const action = list(actions).find(a => a.actionId === proof.actionId);
+  return !!abort && !!seek && !!input && !!before && !!after && !!action && Object.keys(proof).every(key => abort[key] === proof[key]) &&
+    ['actionId', 'action', 'to', 'atMs'].every(key => input[key] === action[key]) && ['seek-inside-and-play', 'seek-outside'].includes(action.action) &&
+    finite(action.to) && action.to >= 0 && finite(action.atMs) && seek.actionId === action.actionId && seek.to === action.to && finite(seek.atMs) && seek.atMs >= action.atMs &&
+    [before, after].every(e => e.actionId === action.actionId && e.seekId === seek.seekId && e.track === proof.type && finite(e.atMs)) &&
+    before.atMs >= seek.atMs && proof.atMs >= before.atMs && after.atMs >= proof.atMs && error.atMs >= after.atMs && after.returned === true;
+}
 function httpEvidence(report, diagnostics) {
   const events = list(diagnostics?.events), probes = list(report.http?.probes), start = events.find(e => e.event === 'scenario.started'), elapsed = e => e.elapsedMs - (start?.elapsedMs ?? 0);
   const completed = probe => {
@@ -76,6 +98,7 @@ function evaluateCase({ report = {}, raw = {}, diagnostics, identity = {}, evide
   const scenarioAt = error => browserStart + error.atMs - sessionEpoch - (scenarioStart?.elapsedMs ?? 0);
   const affectedError = error => {
     if (expectedCancellation(error, metrics?.events ?? [])) return true;
+    if (kind === 'pause-and-seek' && metrics?.seekProbe === true && metrics.seekProbeDropped === 0 && report.browserName === 'chromium' && report.browserChannel === 'chrome' && reviewedIdentity('dvr', report) && expectedSeekCancellation(error, metrics.events, raw.actions)) return true;
     const at = scenarioAt(error);
     if (kind === 'join-during-outage' && faultResponses.length && at >= 0 && at <= 16000) return protocol === 'dash' ? error.kind === 'dash' && error.code === 27 : error.kind === 'hls' && error.type === 'networkError' && (error.details === 'fragLoadError' && error.message === 'HTTP Error 503 Service Unavailable' || error.details === 'aborted' && ['Aborted', 'init load aborted'].includes(error.message));
     if (kind === 'long-manifest-freeze' && protocol === 'hls' && at >= 35000 && error.atMs <= (report.observations?.resume?.resumeAtMs ?? 0) + 1000) return error.kind === 'hls' && error.fatal === false && error.type === 'mediaError' && ['bufferStalledError', 'bufferSeekOverHole'].includes(error.details);
@@ -130,4 +153,4 @@ async function read(directory, options = {}) {
   }
   return evaluateSuite({ ...suite, checks, integrityFailures }, options);
 }
-module.exports = { CASES, KINDS, APPROVED_IDENTITIES, httpEvidence, evaluateCase, evaluateSuite, read };
+module.exports = { CASES, KINDS, APPROVED_IDENTITIES, httpEvidence, expectedSeekCancellation, evaluateCase, evaluateSuite, read };

@@ -26,24 +26,23 @@ function classify({ metrics, audit, scenario, diagnostics, injectionMs, auditSta
     });
   }
   const inside = (value, record) => Number.isFinite(value) && value >= record.fromMs - 250 && value <= record.toMs + 10000;
-  const cancelled = audit.filter(e => e.kind === 'requestfailed' && e.error === 'net::ERR_ABORTED' && !e.ownedTeardown).flatMap(failed => {
-    const candidates = shaped.filter(s => s.url === failed.url && s.terminal?.event === 'request.cancelled' && s.terminal.reason === 'client_disconnect' &&
-      Math.abs(epoch + s.terminalAtMs - failed.epochMs) <= 1000 && inside(failed.epochMs - epoch, s) && events.some(e => e.requestId === s.requestId && e.event === 'fault.cancelled' && e.faultId === s.faultId && e.reason === 'client_disconnect'));
-    return candidates.length === 1 ? [{ kind: 'constrained-transfer-client-cancellation', ...candidates[0], failed }] : [];
-  });
 
   // A shared session limiter changes active bodies at each recorded profile
   // transition. Keep the request's original fault identity and prove that the
-  // constrained profile began before that same GET body completed.
+  // constrained profile began while that same GET body was still active.
+  // A client-cancelled body requires its own matching fault cancellation; it
+  // can explain a wait but never count as completed constrained delivery.
   const activeTransitions = [];
   for (const response of responses) {
-    const own = byRequest.get(response.requestId) || [], started = own.find(e => e.event === 'request.started'), terminal = own.find(e => e.event === 'request.completed');
+    const own = byRequest.get(response.requestId) || [], started = own.find(e => e.event === 'request.started'), terminal = own.find(e => e.event === 'request.completed' || e.event === 'request.cancelled');
+    const completed = terminal?.event === 'request.completed', cancelled = terminal?.event === 'request.cancelled' && terminal.reason === 'client_disconnect';
     const selected = own.find(e => e.event === 'fault.selected' && e.fault === 'response.bandwidth' && e.networkScope !== 'track' && e.bandwidthKbps > 0 && ids(response.faultIds).includes(e.faultId));
-    if (!selected || started?.method !== 'GET' || terminal?.method !== 'GET' || ![200, 206].includes(response.status) || terminal.status !== response.status || !(terminal.bodyBytes > 0) ||
+    if (!selected || started?.method !== 'GET' || terminal?.method !== 'GET' || ![200, 206].includes(response.status) || terminal.status !== response.status || !(completed && terminal.bodyBytes > 0 || cancelled) ||
       selected.targetKind !== 'media' || !/^video(?::|$)/.test(selected.trackId || '') || terminal.targetKind !== 'media' || terminal.trackId !== selected.trackId ||
       !Number.isFinite(at(started)) || !Number.isFinite(at(selected)) || !Number.isFinite(at(terminal)) || at(started) > at(selected) || at(selected) >= at(terminal)) continue;
     const original = (scenario?.timeline || []).find(p => p.phaseId === selected.phaseId && p.network?.bandwidthKbps === selected.bandwidthKbps);
-    if (!original || !selected.scenarioId || !own.some(e => e.event === 'fault.applied' && e.faultId === selected.faultId && e.scenarioId === selected.scenarioId)) continue;
+    if (!original || !selected.scenarioId || !own.some(e => e.event === (completed ? 'fault.applied' : 'fault.cancelled') && e.fault === selected.fault && e.faultId === selected.faultId && e.scenarioId === selected.scenarioId &&
+      e.phaseId === selected.phaseId && e.trackId === selected.trackId && e.targetKind === 'media' && e.method === 'GET' && (completed || e.reason === 'client_disconnect'))) continue;
     for (const phase of phases) {
       const profile = events.find(e => e.event === 'scenario.profile' && e.scenarioId === selected.scenarioId && e.phaseId === phase.phaseId && e.bandwidthKbps === phase.network.bandwidthKbps &&
         Number.isFinite(at(e)) && Math.abs(at(e) - injectionMs - phase.afterMs) <= 250 && at(e) > at(selected) && at(e) < at(terminal));
@@ -53,6 +52,11 @@ function classify({ metrics, audit, scenario, diagnostics, injectionMs, auditSta
         fromMs: at(profile), toMs: injectionMs + phase.beforeMs });
     }
   }
+  const cancelled = audit.filter(e => e.kind === 'requestfailed' && e.error === 'net::ERR_ABORTED' && !e.ownedTeardown).flatMap(failed => {
+    const candidates = [...shaped, ...activeTransitions].filter(s => s.url === failed.url && s.terminal?.event === 'request.cancelled' && s.terminal.reason === 'client_disconnect' &&
+      Math.abs(epoch + s.terminalAtMs - failed.epochMs) <= 1000 && inside(failed.epochMs - epoch, s) && events.some(e => e.requestId === s.requestId && e.event === 'fault.cancelled' && e.faultId === s.faultId && e.reason === 'client_disconnect'));
+    return candidates.length === 1 ? [{ kind: 'constrained-transfer-client-cancellation', ...candidates[0], failed }] : [];
+  });
   function lowBuffer(waiting) {
     if (!waiting || !Number.isFinite(waiting.atMs) || !Number.isFinite(waiting.mediaTime) || !Number.isFinite(waiting.bufferSeconds) || waiting.bufferSeconds < 0 || waiting.bufferSeconds > 0.5 ||
       waiting.paused !== false || waiting.seeking !== false || ![1, 2].includes(waiting.readyState) || !Array.isArray(waiting.ranges) || !Array.isArray(waiting.requests)) return false;
