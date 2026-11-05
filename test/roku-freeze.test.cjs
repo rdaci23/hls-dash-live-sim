@@ -16,3 +16,12 @@ test('native freezes cannot qualify lost telemetry, incomplete HTTP proof, stall
  const x=fixture();x.records.forEach(r=>{if(r.event==='sample'&&r.atMs>82000)r.audioPosition=82;});const r=evaluate(x);assert.equal(r.simulatorBehaviorVerified,true);assert.equal(r.nativeRecoveryVerified,false);
 });
 test('continuation without an observed freeze stall is not labeled recovery',()=>{const v=fixture();v.records.forEach(r=>{if(r.event==='sample')r.state='playing';});const r=evaluate(v);assert.equal(r.passed,true,r.failures.join('; '));assert.equal(r.nativeContinuationVerified,true);assert.equal(r.nativeRecoveryVerified,false);assert.equal(r.nativeOutcome,'continued-without-observed-stall');});
+test('a track still stalled at the final sample is reported without inventing a resume',()=>{
+ const x=fixture();x.records.forEach(r=>{if(r.event==='sample'){r.state=r.atMs<67000?'playing':'buffering';if(r.atMs>=67000){r.videoPosition=67;r.audioPosition=67;}}});
+ const r=evaluate(x);assert.equal(r.simulatorBehaviorVerified,true);assert.equal(r.passed,false);assert.equal(r.nativeRecoveryVerified,false);
+ for(const field of ['videoPosition','audioPosition']){const t=r.tracks[field];assert.equal(t.stallObserved,true);assert.equal(t.gaps.length,0);assert.equal(t.terminalStall.durationMs,118250);assert.equal(t.terminalStall.fromHostEpochMs,1700000066750);assert.equal(t.terminalStall.observedUntilHostEpochMs,1700000185000);assert.equal(t.resumedHostEpochMs,undefined);assert.equal(t.continuationMs,0);}
+});
+test('completion time cannot extend a terminal stall past the last native sample',()=>{
+ const x=fixture();x.records.at(-1).atMs+=10000;x.records.at(-1).receivedEpochMs+=10000;
+ const r=evaluate(x);for(const t of Object.values(r.tracks)){assert.equal(t.terminalStall,undefined);assert.equal(t.gaps.length,1);}
+});

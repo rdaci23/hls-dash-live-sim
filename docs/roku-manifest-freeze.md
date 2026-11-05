@@ -14,6 +14,12 @@ npm run build
 node scripts/verify-roku-freeze.cjs --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --protocol dash --output output/roku-freeze
 ```
 
+For the same test with HLS, use `--protocol hls` and a different output directory.
+HLS uses the generated fMP4 fixture with separate audio, rather than the default
+MPEG-TS samples. Its freeze probes inspect a video media playlist; the master
+playlist alone does not establish whether publication stopped. The local UTC
+probe applies only to DASH.
+
 Use real private LAN IPv4 addresses in place of the two placeholders. The computer
 serves only the owned generated fixture; no external accounts or license services
 are used. The check waits for native A/V progress before starting the scenario.
@@ -29,6 +35,9 @@ Cross-device sample/clock bounds are explicit in the saved report. Failure to
 recover stays a failed native outcome, even when HTTP restoration passes.
 Uninterrupted playback is reported as continuation; recovery requires an observed
 freeze-associated native stall.
+Stalls still present at the final native sample are reported as `terminalStall`,
+separately from gaps that ended with resumed progress. This describes the observed
+failure and does not relax the recovery or continuation requirements.
 
 Reports retain the exact model/OS build, candidate identity, native file hash,
 closed source evidence, cleanup counters and separate HTTP/native results. Never

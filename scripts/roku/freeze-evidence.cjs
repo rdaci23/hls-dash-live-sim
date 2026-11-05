@@ -18,13 +18,16 @@ function evaluate({report,records,diagnostics}){
   const span=a=>a.length>1?a.at(-1).atMs-a[0].atMs:0,progress=a=>a.length>1?a.at(-1)[field]-a[0][field]:0;
   const uninterrupted=a=>a.every((r,i)=>!i||r.atMs-a[i-1].atMs<=gates.stallMs&&r[field]>=a[i-1][field]);
   const gaps=rendered.slice(1).flatMap((r,i)=>r.atMs-rendered[i].atMs>gates.stallMs?[{fromHostEpochMs:host(rendered[i]),toHostEpochMs:host(r),durationMs:r.atMs-rendered[i].atMs}]:[]);
+  // A stall can persist through completion; there is no later rendered sample
+  // to close a gap. Bound its observation by the last sample, not teardown time.
+  const lastRendered=rendered.at(-1),lastSample=samples.at(-1),terminalStall=lastRendered&&lastSample&&lastSample.atMs-lastRendered.atMs>gates.stallMs?{fromHostEpochMs:host(lastRendered),observedUntilHostEpochMs:host(lastSample),durationMs:lastSample.atMs-lastRendered.atMs}:undefined;
   need(gaps.every(g=>g.fromHostEpochMs>=freeze-gates.clockMarginMs&&g.toHostEpochMs<=restored+gates.recoveryMs),'Unexplained native '+field+' stall outside freeze/recovery');
   const healthy=span(pre)>=gates.healthyMs&&progress(pre)>=29&&uninterrupted(pre);need(healthy,'Less than 30 seconds healthy native '+field+' before freeze');
   // Require sustained A/V progress after restoration, never a seek/relaunch.
   const resumed=post.find((r,i)=>post.slice(i).some(x=>x.atMs-r.atMs>=2000&&x[field]-r[field]>=1.5)),continued=resumed?post.filter(r=>r.atMs>=resumed.atMs):[];
   const recovery=!!resumed&&host(resumed)<=restored+gates.recoveryMs-gates.clockMarginMs&&span(continued)>=gates.continuationMs&&progress(continued)>=55&&uninterrupted(continued)&&!!complete&&complete.atMs-continued.at(-1).atMs<=gates.stallMs;
   need(recovery,'Native '+field+' automatic recovery/60-second continuation not verified');
-  tracks[field]={healthyBefore:healthy,stallObserved:gaps.length>0,gaps,firstRenderedMs:rendered[0]?.atMs,recoveryVerified:recovery,resumedHostEpochMs:resumed?.receivedEpochMs,continuationMs:span(continued),progressSeconds:progress(continued)};
+  tracks[field]={healthyBefore:healthy,stallObserved:gaps.length>0||!!terminalStall,gaps,terminalStall,firstRenderedMs:rendered[0]?.atMs,recoveryVerified:recovery,resumedHostEpochMs:resumed?.receivedEpochMs,continuationMs:span(continued),progressSeconds:progress(continued)};
  }
  const stallObserved=Object.values(tracks).some(t=>t.stallObserved);return{passed:!failures.length,nativeContinuationVerified:!failures.length,nativeOutcome:failures.length?'not-qualified':stallObserved?'recovered':'continued-without-observed-stall',simulatorBehaviorVerified:!!http.verified&&!!sourceComplete&&drained,nativeRecoveryVerified:!failures.length&&stallObserved,http,tracks,gates,failures,releaseQualified:false};
 }

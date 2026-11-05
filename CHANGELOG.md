@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Report native manifest-freeze stalls that persist through the final sample;
+  retain failed recovery outcomes and all existing timing limits. Document the
+  HLS fMP4 fixture and protocol-specific native freeze probes.
+
 - Reduce DVR telemetry serialization through bounded sequenced deltas, retaining
   full sample history and the original one-second RPC limit. Preserve primary
   errors and reject secondary collection failures; capture response IDs before
