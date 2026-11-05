@@ -32,7 +32,7 @@ async function main(){
   }finally{
    await ui?.close();await session?.close();if(sentinel){sentinel.closeAllConnections();await new Promise(resolve=>sentinel.close(resolve));}
    result.browserProcess=ui?.processOwnership();result.cleanup=session?{network:session.networkOwnership(),resources:session.resourceOwnership(),source:session.sourceOwnership()}:undefined;
-   if(result.browserProcess){assert.equal(result.browserProcess.exited,true);assert.equal(result.browserProcess.webServerClosed,true);for(const key of ['pendingCalls','pendingTimers','bufferedBytes','processGroupAlive'])assert.ok(!result.browserProcess[key],key+' did not drain');}
+   if(result.browserProcess){assert.equal(result.browserProcess.exited,true);assert.equal(result.browserProcess.webServerClosed,true);for(const key of ['pendingCalls','pendingTimers','bufferedBytes','processGroupAlive','openPipes'])assert.ok(!result.browserProcess[key],key+' did not drain');}
    if(result.cleanup)assert.ok(Object.values(result.cleanup).every(group=>Object.values(group).every(n=>!n)));
    if(session?.diagnostics)result.evidence=(await completeDiagnostics(path.join(dir,'requests.jsonl'),session.diagnostics.snapshot())).completeFile;
   }

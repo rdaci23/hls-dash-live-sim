@@ -15,6 +15,8 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
   full sample history and the original one-second RPC limit. Preserve primary
   errors and reject secondary collection failures; capture response IDs before
   teardown. Add a standalone owned-fixture Roku manifest-freeze observer.
+  Release browser-driver pipes after shutdown, including stderr inherited by
+  crash reporters, and verify pipe ownership drains.
 
 - Pair caption wire-probe clock endpoints without moving response publication
   timestamps. Keep report bookkeeping inside the original request/capture

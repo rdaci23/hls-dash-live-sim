@@ -54,7 +54,7 @@ async function verifyClosedState(state, result, duration, memoryCheckpoint) {
             throw Error('Owned simulator process exit or RSS gate failed');
         if (!result.browserProcess?.exited || !result.browserProcess.webServerClosed)
             throw Error('Owned browser process or player server did not close');
-        if (['pendingCalls','pendingTimers','bufferedBytes','processGroupAlive'].some(key=>result.browserProcess[key])) throw Error('Owned browser protocol work failed to drain');
+        if (['pendingCalls','pendingTimers','bufferedBytes','processGroupAlive','openPipes'].some(key=>result.browserProcess[key])) throw Error('Owned browser protocol work failed to drain');
         if ((duration >= 60000 && (!state.retentionProbes || !state.slow || !state.cancellations || !state.churn)) || state.fairness.length !== timeline(duration).filter(p => p.network.bandwidthKbps === 1200).length)
             throw Error('Endurance workload component was not exercised');
         if (state.publications.size !== 6 || [...state.publications.values()].some(p => p.advances < Math.floor(duration / 4000)))

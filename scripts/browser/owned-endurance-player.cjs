@@ -30,6 +30,9 @@ async function open(session, protocol, signal, options = {}) {
             if (groupAlive()) { killOwned(); throw Error('Owned Chrome process group failed to exit cleanly'); }
         } finally {
             connection?.close();
+            // Crash reporters may inherit stderr after Chrome exits. Release our
+            // pipe ends rather than waiting for unrelated descendants to close them.
+            for (const stream of child?.stdio ?? []) stream?.destroy();
             if (web) { web.server.closeAllConnections(); await new Promise(resolve => web.server.close(resolve)); }
             await fs.rm(directory, { recursive: true, force: true });
         }
@@ -98,7 +101,7 @@ async function open(session, protocol, signal, options = {}) {
         };
         return { page, audit, snapshot, wait, close, playerOrigin:web.origin,browserVersion:version.product.replace(/^Chrome\//,''), driver:'native-cdp-pipe',
             playerVersion:require(path.join(root,'node_modules',protocol === 'hls' ? 'hls.js/package.json' : 'dashjs/package.json')).version,
-            processOwnership:() => ({pid:child.pid,webServerClosed:!web.server.listening,exited:child.exitCode!==null||child.signalCode!==null,processGroupAlive:groupAlive(),...connection.ownership()}) };
+            processOwnership:() => ({pid:child.pid,webServerClosed:!web.server.listening,exited:child.exitCode!==null||child.signalCode!==null,processGroupAlive:groupAlive(),openPipes:child.stdio.filter(stream=>stream&&!stream.destroyed).length,...connection.ownership()}) };
     } catch (error) { await close(); throw Error(error.message + (stderr ? '\nChrome: ' + stderr : '')); }
 }
 module.exports = { open };
