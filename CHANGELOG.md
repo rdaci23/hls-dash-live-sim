@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Prove staggered DASH caption-fault drain through native per-track underruns,
+  continuous frozen-video/decoded-audio samples, subsequent silence and native
+  resumption. Preserve the full rendered gap and shared-service player limitation;
+  healthy-playback and recovery limits remain unchanged.
 - Wait for native audio processing-clock progress before routing healthy video
   into the decoded-audio probe, with bounded readiness and deterministic delayed
   processing coverage alongside the existing resume-delay controls.

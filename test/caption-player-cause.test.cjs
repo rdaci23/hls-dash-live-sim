@@ -154,8 +154,8 @@ test('healthy lead-in preserves an exactly proven initial subtitle cancellation 
 });
 test('complete player assessment uses caption causal proof without turning non-recovery into a pass for compatibility', () => {
   const { assessPlayer } = require('../scripts/browser/scenario-player-policy.cjs');
-  for (const protocol of ['hls', 'dash']) {
-    const { input, options } = fixture(protocol), epoch = input.metrics.startEpochMs;
+  for (const value of [fixture('hls'), fixture('dash'), staggeredDrain()]) {
+    const { input, options } = value, epoch = input.metrics.startEpochMs;
     Object.assign(options.faults[0], { scenarioElapsedMs: 36000 });
     Object.assign(input, { startup: false, affectedBrowserResponses: options.faults, browserResponses: options.faults, browserRecoveryVerified: false, recoveryError: 'automatic decoded restoration timed out', restored: { epochMs: epoch + 50997, recoveryStartedAtMs: 50999, recoveryWait: { schemaVersion: 1, label: 'automatic decoded restoration', timeoutMs: 15000, pollIntervalMs: 100, probeTimeoutMs: 1000, startedEpochMs: epoch + 50999, deadlineEpochMs: epoch + 65999, endedEpochMs: epoch + 65999, elapsedMs: 15000, lastProbe: { startedEpochMs: epoch + 65900, endedEpochMs: epoch + 65901, elapsedMs: 1 } } } });
     input.metrics.frames = 1200; input.healthyMetrics.events = [];
@@ -167,4 +167,46 @@ test('complete player assessment uses caption causal proof without turning non-r
       const changed = structuredClone(input); edit(changed); assert.equal(assessPlayer(changed).passed, false, edit.toString());
     }
   }
+});
+
+// Explicitly synthetic version of the real DASH staggered drain: video runs
+// out at media 50 while buffered audio continues to 52, then both stall.
+function staggeredDrain(kind='late-captions') {
+ const value=fixture('dash',kind),m=value.input.metrics,epoch=m.startEpochMs;
+ const caption=m.captions[0],audio=m.audio[0];m.captions=[];m.audio=[];m.gaps[0].from=42000;
+ for(let atMs=42100;atMs<=49900;atMs+=100){const mediaTime=Math.min(52,50+(atMs-42000)/1000);m.captions.push({...caption,atMs,mediaTime,renderedMediaTime:49.958333,presentedFrames:1000,lastFrameMs:42000,readyState:atMs<44050?4:2});m.audio.push({...audio,atMs,mediaTime,renderedMediaTime:49.958333,contextTime:atMs/1000,rms:atMs<44050?.062:0,toneHz:atMs<44050?440:null});}
+ m.events.find(e=>e.kind==='waiting').atMs=44050;m.events.find(e=>e.kind==='waiting').mediaTime=52;
+ m.gaps[0].mediaTime=52.333333;m.events.push({kind:'playing',atMs:49999,mediaTime:52.333333});
+ const records=m.dashCausality,disposed=records.pop();
+ function dispatch(eventType,atMs,fields={}){const dispatchId=records.length+1,base={schemaVersion:1,kind:'dash-causality',dispatchId,rootDispatchId:dispatchId,eventType};records.push({...base,eventId:dispatchId,epochMs:epoch+atMs,atMs,phase:'dispatch-start',...fields},{...base,eventId:dispatchId+1,epochMs:epoch+atMs+.01,atMs:atMs+.01,phase:'dispatch-end',outcome:'returned'});}
+ const state=(mediaType,currentTime,audio,video,readyState=4,totalVideoFrames=1000)=>({mediaType,streamId:'owned',video:{currentTime,readyState,paused:false,seeking:false,playbackRate:1,ranges:[{start:20,end:49.999999}],totalVideoFrames,droppedVideoFrames:0},buffers:{audio,video,text:0}});
+ for(const[type,time,position,audio,video]of [['video',41990,49.94,2.06,.06],['audio',43800,51.75,.25,0]]){dispatch('bufferStateChanged',time,{...state(type,position,audio,video),state:'bufferStalled'});dispatch('bufferStalled',time+.1,state(type,position,audio,video));}
+ dispatch('playbackWaiting',44050.1,state(undefined,52,0,0,2));
+ for(const type of ['video','audio']){const s=state(type,52.3,2,2,4,1000);s.video.ranges.push({start:52,end:54});const at=type==='video'?49980:49981;dispatch('bufferStateChanged',at,{...s,state:'bufferLoaded'});dispatch('bufferLoaded',at+.1,s);}
+ const resumed=state(undefined,52.333333,2,2,4,1001);resumed.video.ranges.push({start:52,end:54});dispatch('playbackPlaying',49999,resumed);
+ records.push({...disposed,eventId:records.length+1});return value;
+}
+test('DASH caption stop can prove video drain followed by audible audio drain and a fully silent stall',()=>{
+ for(const kind of ['late-captions','text-outage']){const v=staggeredDrain(kind),r=classifyCaption(v.input,v.options);assert.equal(r.verified,true,r.failures.join('; '));assert.equal(r.expectedGaps.length,1);assert.equal(r.expectedGaps[0].gap.to-r.expectedGaps[0].gap.from,8000);assert.equal(r.expectedGaps[0].drainEvidence.kind,'dash-staggered-av-drain');}
+});
+test('staggered DASH drain rejects missing, unrelated, discontinuous or intervened evidence',()=>{
+ const edits=[
+  x=>x.input.protocol='hls',x=>x.input.metrics.events.push({kind:'user-seek',atMs:47000}),
+  x=>x.input.metrics.dashCausality.find(e=>e.eventType==='bufferStalled'&&e.mediaType==='video').buffers.audio='2',
+  x=>x.input.metrics.dashCausality.find(e=>e.eventType==='bufferStalled'&&e.mediaType==='video').video.totalVideoFrames++,
+  x=>x.input.metrics.dashCausality.find(e=>e.eventType==='bufferLoaded'&&e.mediaType==='video').buffers.video='2',x=>x.input.metrics.dashCausality.find(e=>e.eventType==='bufferStalled'&&e.mediaType==='video').streamId='other',
+  x=>x.input.metrics.dashCausality.find(e=>e.eventType==='bufferStalled'&&e.mediaType==='audio').buffers.video=3,
+  x=>x.input.metrics.dashCausality=x.input.metrics.dashCausality.filter(e=>e.eventType!=='playbackWaiting'),
+  x=>x.input.metrics.dashCausality.find(e=>e.eventType==='playbackPlaying').video.totalVideoFrames=1000,
+  x=>x.input.metrics.dashCausality.find(e=>e.eventType==='bufferStalled'&&e.mediaType==='video').video.ranges[0].end=100,
+  x=>x.input.metrics.captions[5].presentedFrames++,x=>x.input.metrics.captions[5].renderedMediaTime++,
+  x=>x.input.metrics.captions[5].buffered=[[0,100]],x=>x.input.metrics.captions[5].paused=true,
+  x=>x.input.metrics.audio[5].rms=0,x=>x.input.metrics.audio[5].toneHz=880,
+  x=>x.input.metrics.audio.find(a=>a.atMs>46500).rms=.06,
+  x=>x.input.metrics.audio.splice(5,5),x=>x.input.metrics.audio.forEach(a=>a.contextTime=1),
+  x=>x.input.explicitUserActions=[{kind:'seek',atMs:47000}],x=>x.input.metrics.errors.push({kind:'video',atMs:45000,code:3,message:'unrelated decode'}),
+  x=>x.input.metrics.events=x.input.metrics.events.filter(e=>e.kind!=='playing'),
+  x=>x.input.metrics.gaps.push({from:60000,to:65000,mediaTime:60}),
+  x=>x.input.metrics.lastFrameMs=42000,
+ ];for(const edit of edits){const v=staggeredDrain();edit(v);assert.equal(classifyCaption(v.input,v.options).verified,false,edit.toString());}
 });

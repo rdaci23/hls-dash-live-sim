@@ -24,6 +24,12 @@ paths. Caption freezes still require four independent source/proxy AV checkpoint
 continuous player samples and completed causal observation. Failed recovery stays
 failed even when its player cause is understood.
 
+DASH staggered drain additionally requires native per-track underrun/restoration
+events, continuous frozen-video and decoded-audio evidence, subsequent silence
+and matching native resumption. It preserves the complete gap and all existing
+healthy-playback, sampling, FFT-history and recovery limits. A generic caption
+error or elapsed-time window cannot qualify it.
+
 Pinned dash.js logs a typed wrong-initialization error and then the same
 `MediaError` object in consecutive synchronous calls. The second console line is
 bound to the adjacent, already-qualified typed report, exact logger location,

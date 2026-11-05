@@ -127,6 +127,17 @@ native handlers identify this player effect. A/V samples must demonstrate the
 buffer drain and continued sampling; later recovery still requires decoded
 A/V, scheduled captions and a healthy 60-second continuation.
 
+The two buffers can drain at different times: video can freeze while remaining
+audio still plays, followed by full A/V underflow. A closed DASH gap can qualify
+this way only with matching native video/audio buffer-state and underrun events
+for the affected stream, a continuous unchanged presented-frame count and video
+buffer endpoint, decoded audio advancing to native `waiting`, then silent audio
+with a running processing clock. Native buffer restoration, new frames and
+`playing` must match the end of the recorded gap. Missing samples, unrelated
+errors, user intervention or unproven resumption fail. The result retains the
+entire gap and its `drainEvidence` event identities as a player outcome; it does
+not imply a simulator A/V outage or grant decoded recovery automatically.
+
 Frozen-frame audio proof uses the recorded analyser window and sample rate.
 Samples whose analysis window still overlaps the native `waiting` transition
 can contain the final audio tail; silence is required once that measured window

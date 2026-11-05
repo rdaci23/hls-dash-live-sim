@@ -3,6 +3,7 @@ const { validateWireEvidence } = require('./caption-wire-probes.cjs');
 const { validateCausalCompletion } = require('./causal-completion.cjs');
 const { expectedCancellation } = require('../track-browser/acceptance.cjs');
 const { reviewedIdentity } = require('./reviewed-identity.cjs');
+const { staggeredDrain } = require('./dash-caption-drain.cjs');
 const finite = Number.isFinite, list = value => Array.isArray(value) ? value : [];
 const sameFragment = (a, b) => !!a && !!b && ['type', 'sn', 'level', 'url'].every(key => a[key] === b[key]);
 const empty = sample => finite(sample?.mediaTime) && [1, 2].includes(sample.readyState) && sample.paused === false && sample.seeking === false && Array.isArray(sample.buffered) && sample.buffered.every(r => Array.isArray(r) && r.length === 2 && r.every(finite) && r[1] >= r[0]) && !sample.buffered.some(r => r[0] <= sample.mediaTime && r[1] - sample.mediaTime > 0.1);
@@ -104,7 +105,7 @@ function dashCause(input, primary, fault) {
   }
   const advertisement = [...starts.values()].map(v => v.event).filter(e => e.eventType === 'baseUrlsUpdated' && e.atMs <= failed.atMs).at(-1);
   if (!advertisement || !list(advertisement.baseUrls).some(b => b.serviceLocation === service) || !ends.has(advertisement.dispatchId)) return;
-  return { atMs: resolution.atMs, mechanism: 'dashjs-fragmented-text-blacklist-stops-av-schedulers', rootDispatchId: failed.dispatchId, errorDispatchId: reported.dispatchId, resolutionDispatchId: resolution.dispatchId, serviceLocation: service };
+  return { atMs: resolution.atMs, mechanism: 'dashjs-fragmented-text-blacklist-stops-av-schedulers', rootDispatchId: failed.dispatchId, errorDispatchId: reported.dispatchId, resolutionDispatchId: resolution.dispatchId, serviceLocation: service, streamId: failed.streamId };
 }
 
 function classifyCaption(input, { faults = [], primaryErrors = [] } = {}) {
@@ -132,8 +133,9 @@ function classifyCaption(input, { faults = [], primaryErrors = [] } = {}) {
     if (relative(checkpoints[0])[1] > cause.atMs || relative(checkpoints[1])[0] < window.fromMs || relative(checkpoints[1])[1] > window.toMs || relative(checkpoints[3])[0] < window.toMs) fail('Wire checkpoints are not in their actual healthy/fault/restoration phases');
     for (const gap of gaps) {
       const stall = relative(checkpoints[2]);
-      if (gap.from < cause.atMs || !frozen(metrics, gap) || stall[0] < gap.from || stall[1] > gap.to) { fail('Rendered freeze lacks continuous buffer/audio/frame proof in its wire checkpoint'); continue; }
-      result.expectedGaps.push({ gap, signature: cause.mechanism, faultRequestId: fault.requestId, faultIds: fault.faultIds });
+      const simultaneous = frozen(metrics, gap), drainEvidence = !simultaneous && staggeredDrain(input, gap, cause, stall);
+      if (gap.from < cause.atMs || !simultaneous && !drainEvidence || stall[0] < gap.from || stall[1] > gap.to) { fail('Rendered freeze lacks continuous buffer/audio/frame proof in its wire checkpoint'); continue; }
+      result.expectedGaps.push({ gap, signature: cause.mechanism, faultRequestId: fault.requestId, faultIds: fault.faultIds, ...(drainEvidence ? { drainEvidence } : {}) });
     }
     for (const error of list(metrics.errors)) {
       if (primaryErrors.some(primary => equal(primary.error, error))) continue;
