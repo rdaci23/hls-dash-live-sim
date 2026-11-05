@@ -92,6 +92,18 @@ initialization, so it is not directly compared to the metrics clock. Missing or
 duplicate clock evidence cannot qualify a new trace; legacy traces retain their
 original strict timestamp checks.
 
+HLS wrong-init observations additionally capture the pinned player's native
+initial-position and alternate-audio alignment writes before the first rendered
+frame. Coalesced seeking callbacks retain their real targets, exact DOM event,
+audio-controller handler, fragment/load attempt and loader stats. A cancelled
+audio request qualifies only with that complete chain, an independently matched
+wrong-init parse failure, intact closed source diagnostics and drained observer
+ownership. Manual position writes, unrelated aborts and missing proof still fail.
+Disposal and final snapshots retain the normal one-second RPC limit and measured
+handoff. Original parse/cancellation errors remain visible; this verifies an
+intentional-fault player response, not decoded startup recovery. Older traces
+without the native chain remain unqualified.
+
 Caption faults do not establish audio/video server failure. Caption investigations
 record four independent AV checkpoints (before, during, stalled interval and
 after), comparing advertised source/proxy initialization and media hashes,

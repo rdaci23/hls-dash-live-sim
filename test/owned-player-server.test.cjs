@@ -20,3 +20,7 @@ test('owned redirect probe emits a real 302 without fetching its target and reje
 test('DVR seek observation is explicitly opt-in on the owned page',async t=>{
  const origin=await owned(t,{seekProbe:true});const config=JSON.parse((await read(origin+'/config')).body);assert.equal(config.seekProbe,true);assert.equal(config.causalProbe,false);
 });
+test('native startup observation remains isolated from DASH, DVR and longer causal-RPC modes',async t=>{
+ const origin=await owned(t,{startupProbe:true}),config=JSON.parse((await read(origin+'/config')).body);assert.equal(config.startupProbe,true);assert.equal(config.causalProbe,false);assert.equal(config.seekProbe,false);
+ for(const [protocol,options]of [['dash',{startupProbe:true}],['hls',{startupProbe:true,causalProbe:true}],['hls',{startupProbe:true,seekProbe:true}]])await assert.rejects(serve({url:'http://127.0.0.1:12345/'},protocol,options),/isolated HLS startup/);
+});

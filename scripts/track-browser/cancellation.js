@@ -55,50 +55,60 @@
   // controllers register these wrappers as their real seeking listeners. The
   // exact DOM Event, fragment object, load attempt and loader stats are retained;
   // neither a nearby seek nor a copied error can manufacture an association.
-  function observeSeeks(player, events, media, record, now) {
-    const seeks = new WeakMap(), loads = new WeakMap(), wrapped = new WeakSet();
-    const aborted = new WeakMap(), causes = new WeakMap();
-    let pending, current, seekId = 0, handlerId = 0, loadId = 0, abortId = 0, lost = 0;
+  function observeSeeks(player, events, media, record, now, startup) {
+    let seeks = new WeakMap(), loads = new WeakMap(), aborted = new WeakMap(), causes = new WeakMap();
+    const wrapped = new WeakSet(), restorers = [], fragments = new Set();
+    let active = true, pending, current, seekId = 0, handlerId = 0, loadId = 0, abortId = 0, lost = 0;
     const emit = event => { try { record(event); } catch (_) { lost++; } };
     const url = value => { try { const u = new URL(value); if (!['http:', 'https:'].includes(u.protocol)) return; u.username = u.password = u.search = u.hash = ''; return u.href.length <= 2048 ? u.href : undefined; } catch (_) {} };
     const fragment = frag => ({ type: frag.type, sn: frag.sn, level: frag.level, url: url(frag.url) });
-    media.addEventListener('seeking', event => {
-      const input = pending; pending = undefined;
+    const onSeeking = event => {
+      const input = startup ? startup.take(event) : pending; pending = undefined;
       if (!input || event.target !== media || media.seeking !== true || Math.abs(media.currentTime - input.to) > 0.001) return;
-      const seek = { kind: 'user-seeking', seekId: ++seekId, actionId: input.actionId, atMs: now(), to: media.currentTime };
+      const seek = { kind: startup ? 'startup-seeking' : 'user-seeking', seekId: ++seekId, actionId: input.actionId, atMs: now(), to: media.currentTime, ...(startup ? { trusted: event.isTrusted === true } : {}) };
       seeks.set(event, seek); emit(seek);
-    }, true);
+    };
+    media.addEventListener('seeking', onSeeking, true);
     for (const controller of player.networkControllers ?? []) {
+      if (startup && controller !== startup.audio) continue;
       if (!['main', 'audio', 'subtitle'].includes(controller.playlistType) || typeof controller.onMediaSeeking !== 'function') continue;
       const original = controller.onMediaSeeking;
-      controller.onMediaSeeking = function (event) {
+      const handlerWrapper = function (event) {
         const previous = current, seek = seeks.get(event);
-        const handler = seek && { kind: 'seek-handler', handlerId: ++handlerId, seekId: seek.seekId, actionId: seek.actionId, track: controller.playlistType, atMs: now() };
+        const handler = seek && { kind: startup ? 'startup-seek-handler' : 'seek-handler', handlerId: ++handlerId, seekId: seek.seekId, actionId: seek.actionId, track: controller.playlistType, atMs: now() };
         current = handler; if (handler) emit({ ...handler, phase: 'before' });
         let returned = false;
         try { const result = original.apply(this, arguments); returned = true; return result; }
         finally { if (handler) { handler.returned = returned; emit({ ...handler, phase: 'after', atMs: now() }); } current = previous; }
       };
+      controller.onMediaSeeking = handlerWrapper;
+      if (startup) restorers.push(() => { media.removeEventListener('seeking', handlerWrapper); if (controller.media === media) media.addEventListener('seeking', original); if (controller.onMediaSeeking === handlerWrapper) controller.onMediaSeeking = original; });
     }
     const trigger = player.trigger;
-    player.trigger = function (event, data) {
+    const triggerWrapper = function (event, data) {
+      if (!active) return trigger.apply(this, arguments);
       const frag = data?.frag;
-      if (event === events.FRAG_LOADING && frag && ['main', 'audio', 'subtitle'].includes(frag.type) && typeof frag.abortRequests === 'function') {
+      if (event === events.FRAG_LOADING && frag && (startup ? frag.type === 'audio' : ['main', 'audio', 'subtitle'].includes(frag.type)) && typeof frag.abortRequests === 'function') {
         loads.set(frag, { loadId: ++loadId, ...fragment(frag) }); aborted.delete(frag);
+        if (startup) emit({ kind: 'startup-fragment-loading', ...loads.get(frag), atMs: now() });
         if (!wrapped.has(frag)) {
+          if (startup && fragments.size >= 64) { lost++; return trigger.apply(this, arguments); }
           wrapped.add(frag); const original = frag.abortRequests;
-          frag.abortRequests = function () {
+          const abortWrapper = function () {
             const load = loads.get(this), stats = this.loader?.stats, handler = current;
             const wasActive = stats?.aborted === false && !(stats.loading?.end > 0);
             const result = original.apply(this, arguments);
             if (handler && load && load.type === handler.track && wasActive && stats.aborted === true) {
-              const proof = { kind: 'seek-cancel', abortId: ++abortId, handlerId: handler.handlerId, seekId: handler.seekId, actionId: handler.actionId, ...load, atMs: now() };
+              const proof = { kind: startup ? 'startup-seek-cancel' : 'seek-cancel', abortId: ++abortId, handlerId: handler.handlerId, seekId: handler.seekId, actionId: handler.actionId, ...load, atMs: now(), ...(startup ? { wasActive, statsAborted: stats.aborted === true } : {}) };
               aborted.set(this, { proof, stats, handler }); emit(proof);
             }
             return result;
           };
+          frag.abortRequests = abortWrapper;
+          if (startup) fragments.add({ frag, original, wrapper: abortWrapper });
         }
       }
+      if (startup && event === events.FRAG_LOADED && frag?.type === 'audio') emit({ kind: 'startup-fragment-loaded', ...loads.get(frag), atMs: now() });
       if (event === events.ERROR && frag) {
         const entry = aborted.get(frag), load = loads.get(frag);
         if (data.details === 'aborted' && entry && entry.handler.returned === true && data.stats === entry.stats && load?.loadId === entry.proof.loadId) {
@@ -107,15 +117,80 @@
       }
       return trigger.apply(this, arguments);
     };
+    player.trigger = triggerWrapper;
     return {
       beginSeek(action) {
+        if (startup) throw Error('Native startup observation cannot initiate a seek');
         if (!Number.isSafeInteger(action?.actionId) || action.actionId < 1 || !['seek-inside-and-play', 'seek-outside'].includes(action.action) || !Number.isFinite(action.to) || action.to < 0 || !Number.isFinite(action.atMs)) throw Error('Invalid explicit DVR seek');
         pending = { actionId: action.actionId, action: action.action, to: action.to, atMs: action.atMs };
         emit({ kind: 'user-seek', ...pending }); return { ...pending };
       },
       causeFor(error) { const proof = causes.get(error); return proof ? { ...proof } : null; },
-      dropped() { return lost; }
+      dropped() { return lost; },
+      ownership() { return { handlers: active ? restorers.length + 1 : 0, fragments: fragments.size }; },
+      dispose() {
+        if (!active) return; active = false; media.removeEventListener('seeking', onSeeking, true);
+        for (const restore of restorers) { try { restore(); } catch (_) { lost++; } } restorers.length = 0;
+        for (const { frag, original, wrapper } of fragments) if (frag.abortRequests === wrapper) frag.abortRequests = original;
+        fragments.clear(); if (player.trigger === triggerWrapper) player.trigger = trigger;
+        seeks = new WeakMap(); loads = new WeakMap(); aborted = new WeakMap(); causes = new WeakMap(); pending = current = undefined;
+      }
     };
   }
-  return { observe, observeSeeks };
+  // Observe the pinned initial-position and alternate-audio alignment writers.
+  // Any other script writer invalidates ownership; no position is changed here.
+  function observeStartupSeeks(Hls, player, media, record, now) {
+    const main = player.streamController, audio = (player.networkControllers ?? []).find(c => c.playlistType === 'audio');
+    if (Hls.version !== '1.7.3' || !(main instanceof Hls.DefaultConfig.streamController) || !(audio instanceof Hls.DefaultConfig.audioStreamController) || main.seekToStartPos !== Hls.DefaultConfig.streamController.prototype.seekToStartPos || audio.doTickIdle !== Hls.DefaultConfig.audioStreamController.prototype.doTickIdle) throw Error('Startup observation requires pinned native HLS controllers');
+    let descriptor, owner = media; while (owner && !(descriptor = Object.getOwnPropertyDescriptor(owner, 'currentTime'))) owner = Object.getPrototypeOf(owner);
+    if (!descriptor?.get || !descriptor?.set) throw Error('Native media position accessor unavailable');
+    const originalPosition = Object.getOwnPropertyDescriptor(media, 'currentTime'), methods = [];
+    let active = true, intervened = false, lost = 0, sequence = 0, callId = 0, currentCall, pending, disposedAt;
+    const emit = value => { if (!active) return; if (++sequence > 512) { lost++; return; } try { record({ ...value, eventId: sequence }); } catch (_) { lost++; } };
+    const setPosition = function (value) {
+      if (this !== media || !active) return descriptor.set.call(this, value);
+      pending = undefined; const from = descriptor.get.call(this), seekingBefore = media.seeking;
+      if (currentCall && !currentCall.id) {
+        currentCall.id = ++callId;
+        const details = currentCall.method === 'audio.doTickIdle' ? audio.levels?.[audio.trackId]?.details : undefined;
+        emit({ kind: 'startup-position-call', actionId: currentCall.id, method: currentCall.method, phase: 'before', atMs: now(), from, seekingBefore, frameCount: media.getVideoPlaybackQuality?.().totalVideoFrames, ...(details ? { trackStart: details.fragments?.[0]?.start, ptsKnown: details.PTSKnown === true, switchingTrack: !!audio.switchingTrack } : {}) });
+      } else { intervened = true; emit({ kind: 'startup-unowned-position', from, to: value, atMs: now() }); }
+      const result = descriptor.set.call(this, value);
+      if (currentCall && !intervened && Number.isFinite(value) && Math.abs(descriptor.get.call(this) - value) <= 0.001 && media.seeking === true) {
+        pending = { actionId: currentCall.id, to: value, call: currentCall };
+        emit({ kind: 'startup-position', actionId: currentCall.id, method: currentCall.method, from, to: value, atMs: now() });
+      }
+      return result;
+    };
+    Object.defineProperty(media, 'currentTime', { configurable: true, enumerable: descriptor.enumerable, get: descriptor.get, set: setPosition });
+    for (const [controller, name, method] of [[main, 'seekToStartPos', 'seekToStartPos'], [audio, 'doTickIdle', 'audio.doTickIdle']]) {
+      const own = Object.getOwnPropertyDescriptor(controller, name), original = controller[name];
+      const wrapper = function () {
+        if (!active || this !== controller) return original.apply(this, arguments);
+        const previous = currentCall, call = { method, returned: false }; currentCall = call;
+        try { const result = original.apply(this, arguments); call.returned = true; return result; }
+        finally { if (call.id) emit({ kind: 'startup-position-call', actionId: call.id, method, phase: 'after', atMs: now(), returned: call.returned, to: media.currentTime }); currentCall = previous; }
+      };
+      controller[name] = wrapper; methods.push({ controller, name, method, own, original, wrapper });
+    }
+    const core = observeSeeks(player, Hls.Events, media, emit, now, { audio, take(event) { if (event.isTrusted !== true) { pending = undefined; return; } return active && !intervened && pending?.call.returned === true ? pending : undefined; } });
+    const onSeeked = event => { if (pending && event.target === media) { emit({ kind: 'startup-seeked', actionId: pending.actionId, atMs: now(), trusted: event.isTrusted === true, to: media.currentTime }); pending = undefined; } };
+    media.addEventListener('seeked', onSeeked, true);
+    emit({ kind: 'startup-observer-installed', atMs: now(), playerVersion: Hls.version });
+    return {
+      causeFor: core.causeFor,
+      dropped: () => lost + core.dropped(),
+      ownership: () => ({ ...core.ownership(), handlers: core.ownership().handlers + (active ? 1 : 0), positionHook: active ? 1 : 0, pendingSeek: pending ? 1 : 0 }),
+      dispose() {
+        if (!active) return { completed: true, atMs: disposedAt };
+        core.dispose(); media.removeEventListener('seeked', onSeeked, true);
+        for (const {controller, name, own, wrapper} of methods) { if (controller[name] === wrapper) { if (own) Object.defineProperty(controller, name, own); else delete controller[name]; } else lost++; } methods.length = 0;
+        if (Object.getOwnPropertyDescriptor(media, 'currentTime')?.set === setPosition) { if (originalPosition) Object.defineProperty(media, 'currentTime', originalPosition); else delete media.currentTime; } else lost++;
+        currentCall = pending = undefined; disposedAt = now();
+        emit({ kind: 'startup-observer-disposed', atMs: disposedAt, dropped: lost + core.dropped(), ownership: { ...core.ownership(), positionHook: 0, pendingSeek: 0 } }); active = false;
+        return { completed: true, atMs: disposedAt };
+      }
+    };
+  }
+  return { observe, observeSeeks, observeStartupSeeks };
 });

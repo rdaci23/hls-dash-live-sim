@@ -66,20 +66,26 @@ requires a complete successful final review and explicit publication approval.
 
 ## Player-page assets
 
-The decoded-audio probe activates its context before connecting the playing video
-to the analysis graph. Connecting an element to a suspended context can stop its
-media clock despite a full buffer. The activation-delay verifier uses the real
-browser, pinned SDKs and owned fixtures, with normal and 1.8-second delayed audio
-activation. It requires continued video progress during activation, decoded tone
-and scheduled captions afterward, and no unexplained errors:
+The decoded-audio probe waits for actual processing-clock progress before
+connecting the playing video to its analysis graph. A resolved `resume()` promise
+and a `running` state alone are insufficient: a temporarily frozen render clock
+can stop otherwise buffered media. Readiness has a bounded three-second lifetime;
+playback startup, stall, telemetry and recovery limits stay unchanged.
+The native verifier covers normal activation, a 1.8-second delayed resume, and
+a 1.8-second frozen-processing-clock case. It repeats the controls' initial
+rendition selection and requires video progress while activation is pending,
+decoded tone and scheduled captions afterward, and no unexplained errors:
 
 ```sh
 npm run browser:audio-probe -- --protocol both --repeat 3 --output output/audio-startup
 ```
 
-The manual **Browser caption qualification** workflow repeats that regression,
+The preserved, currently disabled **Browser caption qualification** workflow repeats that regression,
 language/rendition selection, healthy and disabled-text controls, late captions
-and text outages for both protocols. It does not expand routine push CI.
+and text outages for both protocols. Run these checks locally under the current
+policy; hosted dispatch still requires explicit approval.
+The local clean-clone release review also runs all three activation cases for
+both protocols and retains their metrics and closed source diagnostics.
 
 Track and lifecycle verifiers use the common fixed-route player server. Every
 script referenced by their actual HTML is fetched by regression tests for both

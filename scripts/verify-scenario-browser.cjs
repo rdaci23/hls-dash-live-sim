@@ -5,7 +5,7 @@ const { createWireProbe }=require('./browser/caption-wire-probes.cjs');
 const { open } = require('./browser/owned-player.cjs'), { kinds, definition, correlate } = require('./browser/scenario-observations.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs');
 async function verify(session, protocol, kind, signal, dir) {
     const captionCase=['text-outage','late-captions'].includes(kind),startup = kind === 'wrong-track-init', responses = [], pending = new Set();
-    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser,wireProbe,wireJob,captionWire,causalFinish;const wireErrors=[];
+    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser,wireProbe,wireJob,captionWire,causalFinish,startupFinish;const wireErrors=[];
     const responseErrors = [];
     const origin = new URL(session.url).origin, window = startup ? 15000 : 50000;
     try {
@@ -17,7 +17,7 @@ async function verify(session, protocol, kind, signal, dir) {
             await session.runs.action('start', { runId: session.runs.runId });
             assert.equal((await fetch(audio.init)).status, 200);
         }
-        ui = await open(session, protocol, signal, { causalProbe:captionCase,onResponse: response => {
+        ui = await open(session, protocol, signal, { causalProbe:captionCase,startupProbe:startup&&protocol==='hls',onResponse: response => {
                 try {
                 if (responsesClosing || new URL(response.url()).origin !== origin)
                     return;
@@ -99,8 +99,9 @@ async function verify(session, protocol, kind, signal, dir) {
         if(wireProbe)captionWire=wireProbe.finish();
         if (ui) {
             if(captionCase)try{causalFinish=await ui.finishCausalProbe();}catch(e){error||='Causal observer teardown failed: '+e.message;}
+            if(startup&&protocol==='hls')try{startupFinish=await ui.finishStartupProbe();}catch(e){error||='Native startup observer teardown failed: '+e.message;}
             try {
-                metrics = await ui.snapshot();if(captionCase)metrics.causalCompletion=causalFinish;
+                metrics = await ui.snapshot();if(captionCase)metrics.causalCompletion=causalFinish;if(startupFinish)metrics.startupCompletion=startupFinish;
             }
             catch { }
             await Promise.allSettled([...pending]);responsesClosing=true;await ui.close();

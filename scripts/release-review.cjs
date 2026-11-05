@@ -127,6 +127,7 @@ async function main() {
             ['freeze', 'verify-manifest-freeze.cjs'],
             ['hls-abr', 'verify-hls-abr.cjs'],
             ['dash-abr', 'verify-dash-abr.cjs'],
+            ['audio-startup', 'verify-audio-probe-browser.cjs'],
             ['tracks-browser', 'verify-track-browser.cjs'],
             ['caption-controls','verify-caption-controls.cjs'],
             ['lifecycle-browser', 'verify-lifecycle-browser.cjs'],
@@ -139,6 +140,7 @@ async function main() {
             const evidence = JSON.parse(await fs.readFile(path.join(output, 'report.json'), 'utf8'));
             bound(evidence, commit);
             assert.equal(evidence.passed ?? evidence.allPassed ?? evidence.allCasesVerified, true, name + ' did not pass');
+            if(name==='audio-startup')assert.equal(evidence.checks.length,6,'Incomplete native normal/resume-delay/processing-delay startup inventory');
             if(name==='scenario-browser'){
                 const integrity=await scenarioPolicy.read(output,{expectedCommit:commit});
                 assert.equal(integrity.cases.length,18,'Incomplete scenario-browser release matrix');

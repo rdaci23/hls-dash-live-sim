@@ -11,6 +11,13 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Wait for native audio processing-clock progress before routing healthy video
+  into the decoded-audio probe, with bounded readiness and deterministic delayed
+  processing coverage alongside the existing resume-delay controls.
+- Explain HLS wrong-init audio cancellation only through the pinned native
+  startup/alignment writer, trusted seeking event, controller and exact loader
+  attempt. Keep errors visible, reject unrelated aborts, and preserve all timing,
+  playback and memory gates. No decoded wrong-init recovery claim is added.
 - Pause hosted Actions during private preparation and run verification locally,
   preserving all acceptance limits, exact-commit evidence and unverified platform
   boundaries. Resuming hosted checks requires explicit maintainer approval.
