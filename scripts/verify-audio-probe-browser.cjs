@@ -22,7 +22,7 @@ async function observe(session,protocol,delayMs,signal,processingDelayMs=0){
     constructor(...args){super(...args);this.initialSuspend=this.suspend();record('created',this.state);}
     get state(){return this.pendingProcessing?'running':super.state;}
     async resume(){await this.initialSuspend;record('resume-called',this.state,this.currentTime);await new Promise(r=>setTimeout(r,delay));
-     if(processingDelay){this.pendingProcessing=true;record('resumed',this.state,this.currentTime);this.processing=(async()=>{await new Promise(r=>setTimeout(r,processingDelay));this.pendingProcessing=false;await super.resume();record('processing-resumed',this.state,this.currentTime);})();return;}
+     if(processingDelay){this.pendingProcessing=true;record('resumed',this.state,this.currentTime);this.processing=(async()=>{await new Promise(r=>setTimeout(r,processingDelay));await super.resume();this.pendingProcessing=false;record('processing-resumed',this.state,this.currentTime);})();return;}
      const result=await super.resume();record('resumed',this.state,this.currentTime);return result;}
     createMediaElementSource(...args){record('linked',this.state,this.currentTime);return super.createMediaElementSource(...args);}
    };
