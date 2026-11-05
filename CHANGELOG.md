@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Reduce DVR telemetry serialization through bounded sequenced deltas, retaining
+  full sample history and the original one-second RPC limit. Preserve primary
+  errors and reject secondary collection failures; capture response IDs before
+  teardown. Add a standalone owned-fixture Roku manifest-freeze observer.
+
 - Pair caption wire-probe clock endpoints without moving response publication
   timestamps. Keep report bookkeeping inside the original request/capture
   deadlines, retain failures and clean up ownership when reporting throws.

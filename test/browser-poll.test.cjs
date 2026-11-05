@@ -30,3 +30,9 @@ test('predicate work cannot turn success after the playback deadline into accept
  let time=0;
  await assert.rejects(poll.wait(async()=>({frames:1}),()=>{time=151;return true;},{timeoutMs:150,label:'first rendered frame',now:()=>time,monotonic:()=>time}),/first rendered frame timed out/);
 });
+
+test('failed telemetry retains measured RPC timing without accepting late results',async()=>{
+ let time=10,error;try{await poll.snapshot(async()=>{time=1011;return{};},{now:()=>time,monotonic:()=>time});}catch(e){error=e;}
+ assert.equal(error.message,'Browser telemetry probe timed out');
+ assert.deepEqual(error.probeTiming,{requestedEpochMs:10,completedEpochMs:1011,elapsedMs:1001,probeTimeoutMs:1000});
+});

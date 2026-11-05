@@ -138,3 +138,11 @@ test('DVR qualification accepts only complete explicit seek-cancel chains on rev
  assert.equal(evaluateCase(input).passed,true,evaluateCase(input).failures.join('; '));assert.equal(evaluateCase(input).playerRecoveryVerified,false,'An explicit seek never establishes automatic recovery');
  for(const edit of [x=>x.raw.metrics.seekProbe=false,x=>x.raw.metrics.seekProbeDropped=1,x=>x.report.browserVersion='157.0.8103.39',x=>x.report.playerVersion='1.7.4',x=>x.raw.metrics.errors[0].seekCancellation=null,x=>x.raw.metrics.events=x.raw.metrics.events.filter(e=>e.kind!=='user-seek')]){const copy=structuredClone(input);edit(copy);assert.equal(evaluateCase(copy).passed,false,edit.toString());}
 });
+
+test('DVR delta histories qualify only with complete batches and no secondary collection failure',()=>{
+ const v=fixture('dash','long-manifest-freeze'),h=require('../scripts/browser/metric-history.cjs');
+ v.report.telemetryMode='sequenced-deltas-v1';v.report.collectionErrors=[{stage:v.report.phase,message:v.report.error}];v.raw.collectionErrors=structuredClone(v.report.collectionErrors);
+ const m=v.raw.metrics;v.raw.metrics=h.create().append({...m,startEpochMs:epoch,snapshotTiming:{requestedEpochMs:epoch+m.elapsedMs-1,completedEpochMs:epoch+m.elapsedMs+1,elapsedMs:2,probeTimeoutMs:1000},...Object.fromEntries(h.keys.map(k=>[k,m[k]??[]])),metricDelta:{schemaVersion:1,batchId:1,requestId:1}},1);
+ assert.equal(evaluateCase(v).releaseCheckPassed,true);
+ for(const edit of [x=>delete x.raw.metrics.metricHistory,x=>x.raw.metrics.metricHistory.batches[0].counts.audio++,x=>x.report.collectionErrors.push({stage:'final-snapshot',message:'timed out'}),x=>delete x.raw.collectionErrors]){const x=structuredClone(v);edit(x);assert.equal(evaluateCase(x).releaseCheckPassed,false,edit.toString());}
+});

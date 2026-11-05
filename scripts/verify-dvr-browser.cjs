@@ -11,7 +11,8 @@ const definitions = {
 };
 async function verify(session, protocol, kind, signal, directory) {
     let ui, metrics, first, healthy, error, phase = kind === 'join-during-outage' ? 'joining' : 'healthy-first-frame', browserClosed = false, clock, restoration;
-    const actions = [], observations = {}, probes = [], advertised = [], responses = [], responseErrors = [], pending = new Set();
+    const actions = [], observations = {}, probes = [], advertised = [], responses = [], responseErrors = [], collectionErrors = [];
+    const collectionFailure = (stage, e) => { collectionErrors.push({ stage, message: e.message, ...(e.probeTiming?{probeTiming:e.probeTiming}:{}), ...(e.waitTiming?{waitTiming:e.waitTiming}:{}) }); error ??= e.message; };
     const resourceId = value => { const url = new URL(value); return session.diagnostics.resourceId(url.pathname + url.search); };
     const advertise = current => {
         const add = (track, resource, url) => { if (url) advertised.push({ track, resource, requestResourceId: resourceId(url) }); };
@@ -52,11 +53,13 @@ async function verify(session, protocol, kind, signal, directory) {
             restoration.catch(() => {});
             await until(3000);
         }
-        ui = await open(session, protocol, signal, { seekProbe: protocol === 'hls' && kind === 'pause-and-seek', onResponse: response => {
+        ui = await open(session, protocol, signal, { metricDeltas: true, seekProbe: protocol === 'hls' && kind === 'pause-and-seek', onResponse: response => {
             if (new URL(response.url()).origin !== new URL(session.url).origin) return;
-            if (responses.length + pending.size >= 2000) { responseErrors.push('Response evidence limit reached'); return; }
-            const job = (async () => { const headers = await response.allHeaders(); responses.push({ url: response.url(), status: response.status(), requestId: headers['x-sim-request-id'], faultIds: headers['x-sim-fault-ids'] ?? null, epochMs: Date.now() }); })();
-            pending.add(job); job.then(() => pending.delete(job), e => { responseErrors.push(e.message); pending.delete(job); });
+            if (responses.length >= 2000) { responseErrors.push('Response evidence limit reached'); return; }
+            // The response event already has these non-cookie headers. Avoid
+            // asynchronous header work that can race context shutdown.
+            try { const headers = response.headers(); responses.push({ url: response.url(), status: response.status(), requestId: headers['x-sim-request-id'], faultIds: headers['x-sim-fault-ids'] ?? null, epochMs: Date.now() }); }
+            catch (e) { responseErrors.push(e.message); }
         } });
         await ui.wait(m => m.protocol === protocol, 5000, 'owned metrics initialization');
         clock = await ui.page.evaluate(() => ({ browserStartedEpochMs: Date.now() - window.trackSnapshot().elapsedMs }));
@@ -102,14 +105,13 @@ async function verify(session, protocol, kind, signal, directory) {
             if (metrics.errors.some(e => e.atMs > observations.resume.resumeAtMs + 1000 && !expectedCancellation(e, metrics.events))) throw Error('Unexplained error after recovery');
         }
         phase = 'complete'; await ui.page.screenshot({ path: path.join(directory, 'playback.png') });
-    } catch (e) { error = e.message; }
+    } catch (e) { collectionFailure(phase,e); }
     finally {
-        if (restoration) try { await restoration; } catch (e) { error = 'Independent HTTP restoration failed: ' + e.message; phase = 'http-restoration'; }
-        if (ui) { try { metrics = await ui.snapshot(); } catch (e) { error = 'Final player snapshot failed: ' + e.message; } try { await ui.close(); browserClosed = true; } catch (e) { error = 'Browser cleanup failed: ' + e.message; } }
-        await Promise.allSettled([...pending]);
+        if (restoration) try { await restoration; } catch (e) { collectionFailure('http-restoration', Error('Independent HTTP restoration failed: ' + e.message)); }
+        if (ui) { try { metrics = await ui.snapshot(); } catch (e) { collectionFailure('final-snapshot', Error('Final player snapshot failed: ' + e.message)); } try { await ui.close(); browserClosed = true; } catch (e) { collectionFailure('browser-cleanup', Error('Browser cleanup failed: ' + e.message)); } }
     }
-    const report = { schemaVersion: 2, protocol, kind, phase, passed: !error, browserBehaviorVerified: !error, simulatorBehaviorVerified: false, playerRecoveryVerified: !error && kind !== 'pause-and-seek', explicitUserActions: actions, observations, http: { probes, advertised }, error, browserName: 'chromium', browserChannel: 'chrome', browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, rawErrors: metrics?.errors, expectedSubtitleCancellations: metrics?.errors.filter(e => expectedCancellation(e, metrics.events)), browserClosed, pendingResponses: pending.size, scope: kind === 'pause-and-seek' ? 'User-directed pause/seek; separate from automatic recovery' : 'Automatic join/freeze observation; fault errors retained separately', releaseReady: false };
-    return { report, raw: { metrics, first, healthy, clock, audit: ui?.audit, auditDropped: ui?.auditDropped?.() ?? 0, actions, responses, responseErrors } };
+    const report = { schemaVersion: 2, telemetryMode: 'sequenced-deltas-v1', protocol, kind, phase, passed: !error, browserBehaviorVerified: !error, simulatorBehaviorVerified: false, playerRecoveryVerified: !error && kind !== 'pause-and-seek', explicitUserActions: actions, observations, http: { probes, advertised }, error, collectionErrors, browserName: 'chromium', browserChannel: 'chrome', browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, rawErrors: metrics?.errors, expectedSubtitleCancellations: metrics?.errors.filter(e => expectedCancellation(e, metrics.events)), browserClosed, pendingResponses: 0, scope: kind === 'pause-and-seek' ? 'User-directed pause/seek; separate from automatic recovery' : 'Automatic join/freeze observation; fault errors retained separately', releaseReady: false };
+    return { report, raw: { metrics, first, healthy, clock, collectionErrors, audit: ui?.audit, auditDropped: ui?.auditDropped?.() ?? 0, actions, responses, responseErrors } };
 }
 async function port() { const s = http.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const p = s.address().port; await new Promise(resolve => s.close(resolve)); return p; }
 async function main() {

@@ -1,5 +1,5 @@
 const path=require('node:path'),{serve}=require('./owned-server.cjs'),{create:createAudit}=require('./audit.cjs'),poll=require('./poll.cjs');const{chromium}=require('playwright');const root=path.resolve(__dirname,'../..');
-async function open(session,protocol,signal,options={}){let browser,page,browserServer,browserProcess,closing=false;
+async function open(session,protocol,signal,options={}){if(options.metricDeltas&&(options.causalProbe||options.startupProbe))throw Error('Metric deltas require normal probe mode');let browser,page,browserServer,browserProcess,closing=false;
  const capture=createAudit({context:()=>({closing,scenarioElapsedMs:session.scenario?.report().elapsedMs})}),audit=capture.events,consoleClock=require('./console-clock.cjs').create();
  const {server:web,origin}=await serve(session,protocol,options),allowed=[origin,new URL(session.url).origin];
  const close=async()=>{closing=true;try{await browser?.close();}finally{try{await browserServer?.close();}finally{web.closeAllConnections();await new Promise(r=>web.close(r));}}};
@@ -13,8 +13,8 @@ async function open(session,protocol,signal,options={}){let browser,page,browser
   await route.fulfill({response});
  }else await route.continue({headers:headers()});
  }catch(error){if(!closing)capture.record({kind:'route-error',message:'Owned request routing failed'});try{await route.abort();}catch{}}});await page.goto(origin);
- let completionCallId=0;
+ let completionCallId=0,metricRequestId=0;const metricHistory=options.metricDeltas?require('./metric-history.cjs').create():undefined;
  const probeTimeoutMs=options.causalProbe?3000:1000,history=options.causalProbe&&protocol==='dash'?require('./causal-history.cjs').create():undefined;
- const snapshot=async()=>{const metrics=await poll.snapshot(()=>page.evaluate(drain=>window.trackSnapshot?.(drain?{drainCausality:true}:undefined),!!history),{timeoutMs:probeTimeoutMs});return history?history.append(metrics):metrics;},wait=(predicate,timeout,label)=>poll.wait(snapshot,predicate,{timeoutMs:timeout,label,signal,probeTimeoutMs});
+ const snapshot=async()=>{const requestId=++metricRequestId,metrics=await poll.snapshot(()=>metricHistory?page.evaluate(id=>window.drainTrackMetrics?.({requestId:id}),requestId):page.evaluate(drain=>window.trackSnapshot?.(drain?{drainCausality:true}:undefined),!!history),{timeoutMs:probeTimeoutMs});return metricHistory?metricHistory.append(metrics,requestId):history?history.append(metrics):metrics;},wait=(predicate,timeout,label)=>poll.wait(snapshot,predicate,{timeoutMs:timeout,label,signal,probeTimeoutMs});
  return{page,audit,auditDropped:()=>capture.dropped()+consoleClock.dropped(),browserVersion:browser.version(),playerVersion:require(path.join(root,'node_modules',protocol==='hls'?'hls.js/package.json':'dashjs/package.json')).version,snapshot,wait,finishCausalProbe:async()=>{if(options.causalProbe){const requestedCallId=++completionCallId;return{...await poll.snapshot(()=>page.evaluate(id=>window.finishCausalProbe(id),requestedCallId),{timeoutMs:probeTimeoutMs}),requestedCallId};}},finishStartupProbe:()=>poll.snapshot(()=>page.evaluate(()=>window.finishStartupProbe()),{timeoutMs:1000}),close,processOwnership:()=>({pid:browserProcess?.pid,webServerClosed:!web.listening,exited:browserProcess?browserProcess.exitCode!==null||browserProcess.signalCode!==null:undefined})};}catch(e){await close();throw e;}}
 module.exports={open};

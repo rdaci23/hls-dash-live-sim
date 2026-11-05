@@ -127,3 +127,14 @@ Node request identity. Repeated/cached disposal, missing identities or incomplet
 observations fail. Existing RPC budgets, clock-projection consistency checks and
 playback limits are unchanged. Legacy completion records retain their strict
 projected-clock check; old failed evidence is not requalified by this change.
+
+DVR collection uses sequenced metric drains: the browser sends new samples and
+Node retains the full bounded history. Every batch is request-bound, consecutive
+and counted; a missing, duplicate or over-capacity batch fails qualification.
+The original 5,000-row limits and one-second telemetry RPC budget remain. Final
+snapshot failures never qualify through a stale earlier snapshot. Primary errors
+and secondary collection errors remain separate, and response IDs use the headers
+already present at the response event, avoiding asynchronous shutdown work.
+
+The [standalone Roku freeze observer](roku-manifest-freeze.md) records the same
+owned fixture separately; native results do not qualify browser telemetry.
