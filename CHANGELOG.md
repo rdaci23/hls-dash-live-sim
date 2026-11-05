@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Pair caption wire-probe clock endpoints without moving response publication
+  timestamps. Keep report bookkeeping inside the original request/capture
+  deadlines, retain failures and clean up ownership when reporting throws.
+
 - Separate Node recovery-wait and browser elapsed-time completion boundaries,
   binding native observer disposal to a fresh RPC identity. Reject cached or
   premature completion without changing timing limits or requalifying old traces.

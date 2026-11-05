@@ -135,18 +135,19 @@ function createWireProbe(session, protocol) {
     assert.ok(['before', 'during', 'stall', 'after'].includes(phase), 'invalid wire probe phase');
     assert.ok(!active && checkpoints.length < bounds.checkpoints && !checkpoints.some(c => c.phase === phase), 'duplicate/concurrent/unbounded wire probe');
     active = true;
-    const began = performance.now(), checkpoint = { phase, startedEpochMs: Date.now(), scenarioElapsedMs: session.scenario?.report().elapsedMs, passed: false, requests: [], tracks: [] };
+    const startedEpochMs = Date.now(), began = performance.now(), checkpoint = { phase, startedEpochMs, passed: false, requests: [], tracks: [] };
     checkpoints.push(checkpoint);
     let totalBytes = 0;
     async function read(value, side, kind, method = 'GET') {
       const base = side === 'source' ? source : proxy, url = ownedUrl(value, base);
       assert.ok(checkpoint.requests.length < bounds.requests, 'wire probe request bound exceeded');
       const remaining = bounds.captureMs - (performance.now() - began); assert.ok(remaining > 0, 'wire probe deadline exceeded');
-      const requestBegan = performance.now(), requestBudgetMs = Math.min(remaining, bounds.requestMs);
+      const requestStartedEpochMs = Date.now(), requestBegan = performance.now(), requestBudgetMs = Math.min(remaining, bounds.requestMs);
       const controller = new AbortController(), timer = setTimeout(() => controller.abort(Error('wire probe request timeout')), requestBudgetMs);
-      const evidence = { probeRequestId: randomUUID(), side, kind, method, startedEpochMs: Date.now(), scenarioElapsedMs: session.scenario?.report().elapsedMs, url: url.href };
+      const evidence = { probeRequestId: randomUUID(), side, kind, method, startedEpochMs: requestStartedEpochMs, url: url.href };
       checkpoint.requests.push(evidence);
       try {
+        evidence.scenarioElapsedMs = session.scenario?.report().elapsedMs;
         const response = await fetch(url, { method, redirect: 'manual', signal: controller.signal });
         evidence.status = response.status; evidence.requestId = response.headers.get('x-sim-request-id');
         evidence.requestResourceId = side === 'proxy' ? session.diagnostics.resourceId(url.pathname + url.search) : undefined;
@@ -165,7 +166,8 @@ function createWireProbe(session, protocol) {
             assert.ok(length <= limit && totalBytes <= bounds.captureBytes, 'wire probe byte bound exceeded'); chunks.push(Buffer.from(chunk.value));
           }
         } catch (error) { await reader.cancel().catch(() => {}); throw error; }
-        const bytes = Buffer.concat(chunks); evidence.bytes = bytes.length; evidence.sha256 = digest(bytes); evidence.completedEpochMs = Date.now();
+        const bytes = Buffer.concat(chunks); evidence.bytes = bytes.length; evidence.sha256 = digest(bytes);
+        evidence.completedEpochMs = Date.now(); evidence.elapsedMs = performance.now() - requestBegan;
         assert.ok(performance.now() - began <= bounds.captureMs && performance.now() - requestBegan <= requestBudgetMs && !controller.signal.aborted, 'wire probe exceeded deadline');
         const advertisedLength = response.headers.get('content-length');
         if (method === 'GET' && advertisedLength !== null) assert.equal(bytes.length, Number(advertisedLength), 'wire body length mismatch');
@@ -175,8 +177,18 @@ function createWireProbe(session, protocol) {
         return { bytes, evidence };
       } catch (error) { evidence.error = error.message; throw error; }
       finally {
-        evidence.completedEpochMs ??= Date.now(); evidence.completedScenarioElapsedMs = session.scenario?.report().elapsedMs; evidence.elapsedMs = performance.now() - requestBegan;
-        clearTimeout(timer); controller.abort();
+        try { evidence.completedScenarioElapsedMs = session.scenario?.report().elapsedMs; }
+        catch (error) { evidence.error ??= error.message; throw error; }
+        finally {
+          // A failed transfer still gets a paired endpoint. Later report work
+          // must not move a completed response's publication/availability clock.
+          if (evidence.completedEpochMs === undefined) {
+            evidence.completedEpochMs = Date.now(); evidence.elapsedMs = performance.now() - requestBegan;
+          }
+          const withinBudget = performance.now() - requestBegan <= requestBudgetMs && performance.now() - began <= bounds.captureMs && !controller.signal.aborted;
+          clearTimeout(timer); controller.abort();
+          if (!withinBudget) { evidence.error ??= 'wire probe exceeded deadline'; throw Error('wire probe exceeded deadline'); }
+        }
       }
     }
     async function catalog(base, side) {
@@ -208,6 +220,7 @@ function createWireProbe(session, protocol) {
       return { tracks, root: root.evidence, clock: {} };
     }
     try {
+      checkpoint.scenarioElapsedMs = session.scenario?.report().elapsedMs;
       const a = await catalog(source, 'source'), b = await catalog(proxy, 'proxy');
       for (const catalog of [a, b]) {
         assert.ok([2, 3].includes(catalog.tracks.filter(t => t.descriptor.kind === 'video').length) && catalog.tracks.filter(t => t.descriptor.kind === 'audio').length === 2, 'owned AV ladder is incomplete');
@@ -258,7 +271,14 @@ function createWireProbe(session, protocol) {
       assert.ok(performance.now() - began <= bounds.captureMs, 'wire probe exceeded deadline');
       checkpoint.passed = true; return checkpoint;
     } catch (error) { checkpoint.error = error.message; error.checkpoint = checkpoint; throw error; }
-    finally { active = false; checkpoint.completedEpochMs = Date.now(); checkpoint.completedScenarioElapsedMs = session.scenario?.report().elapsedMs; checkpoint.elapsedMs = performance.now() - began; checkpoint.totalBytes = totalBytes; }
+    finally {
+      try { checkpoint.completedScenarioElapsedMs = session.scenario?.report().elapsedMs; }
+      catch (error) { checkpoint.passed = false; checkpoint.error ??= error.message; throw error; }
+      finally {
+        checkpoint.completedEpochMs = Date.now(); checkpoint.elapsedMs = performance.now() - began; checkpoint.totalBytes = totalBytes; active = false;
+        if (checkpoint.elapsedMs > bounds.captureMs) { checkpoint.passed = false; checkpoint.error ??= 'wire probe exceeded deadline'; throw Error('wire probe exceeded deadline'); }
+      }
+    }
   }
   function finish() {
     const errors = checkpoints.filter(c => !c.passed).map(c => c.phase + ': ' + c.error);

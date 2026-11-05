@@ -112,3 +112,106 @@ for (const protocol of ['hls', 'dash']) {
     assert.equal(validateWireEvidence(evidence, { requireDuring: true }).passed, false, 'fault checks require during and stall checkpoints');
   });
 }
+
+// Block only the scenario report read immediately after the first response was
+// completed. Exercise the real capture path; neither clock is replaced.
+test('wire request clocks share the same completion endpoint', async t => {
+  const { session } = await setup(t, 'hls');
+  let calls = 0, reportStartedEpochMs;
+  session.scenario = { report() {
+    const elapsedMs = performance.now();
+    if (++calls === 3) { reportStartedEpochMs = Date.now(); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40); }
+    return { elapsedMs };
+  } };
+  const checkpoint = await createWireProbe(session, 'hls').capture('before');
+  const request = checkpoint.requests[0];
+  assert.ok(request.completedEpochMs <= reportStartedEpochMs, 'response completion must remain before later report work');
+  assert.ok(Math.abs(request.completedEpochMs - request.startedEpochMs - request.elapsedMs) <= 10,
+    'wire request timing/budget mismatch: epoch and monotonic spans must use the same endpoints');
+});
+
+test('scenario-report setup work stays inside the measured wire request', async t => {
+  const { session } = await setup(t, 'hls');
+  let calls = 0;
+  session.scenario = { report() {
+    const elapsedMs = performance.now();
+    if (++calls === 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
+    return { elapsedMs };
+  } };
+  const request = (await createWireProbe(session, 'hls').capture('before')).requests[0];
+  assert.ok(request.elapsedMs >= 40);
+  assert.ok(Math.abs(request.completedEpochMs - request.startedEpochMs - request.elapsedMs) <= 10);
+});
+
+for (const protocol of ['hls', 'dash']) {
+  test(protocol + ' keeps checkpoint and request clock pairs aligned with slow report bookkeeping', async t => {
+    const { session, state } = await setup(t, protocol);
+    session.scenario = { report() {
+      const elapsedMs = performance.now();
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
+      return { elapsedMs };
+    } };
+    const probe = createWireProbe(session, protocol);
+    await probe.capture('before'); state.first += 4; await probe.capture('after');
+    const evidence = probe.finish();
+    assert.equal(evidence.passed, true);
+    assert.deepEqual(validateWireEvidence(evidence), { passed: true, failures: [] });
+    const damaged = structuredClone(evidence), request = damaged.checkpoints[1].requests[0];
+    request.elapsedMs = request.completedEpochMs - request.startedEpochMs + 10.01;
+    assert.ok(validateWireEvidence(damaged).failures.includes('wire request timing/budget mismatch'), '10 ms agreement limit remains strict');
+  });
+}
+
+test('completion bookkeeping cannot extend the wire request budget', async t => {
+  const { session } = await setup(t, 'hls'); let calls = 0;
+  session.scenario = { report() {
+    const elapsedMs = performance.now();
+    if (++calls === 3) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1550);
+    return { elapsedMs };
+  } };
+  const probe = createWireProbe(session, 'hls');
+  const began = performance.now();
+  await assert.rejects(probe.capture('before'), /wire probe exceeded deadline/);
+  assert.ok(performance.now() - began >= 1500);
+  assert.equal(probe.finish().passed, false);
+  assert.match(probe.finish().checkpoints[0].requests[0].error, /deadline/);
+  await probe.capture('after'); // Active capture/timer ownership was released.
+});
+
+for (const throwAt of [1, 2, 3]) test('throwing report ' + throwAt + ' retains failed evidence and releases capture ownership', async t => {
+  const { session } = await setup(t, 'hls'); let calls = 0;
+  session.scenario = { report() {
+    if (++calls === throwAt) throw Error('scenario report failed');
+    return { elapsedMs: performance.now() };
+  } };
+  const probe = createWireProbe(session, 'hls');
+  await assert.rejects(probe.capture('before'), /scenario report failed/);
+  const result = probe.finish();
+  assert.equal(result.passed, false);
+  if (throwAt > 1) assert.equal(result.checkpoints[0].requests[0].error, 'scenario report failed');
+  assert.ok(!result.errors.includes('capture still active'));
+  await probe.capture('after');
+});
+
+test('final checkpoint bookkeeping cannot extend the capture budget', async t => {
+  const { session, state } = await setup(t, 'hls');
+  let calls = 0, delayAt = Infinity, delayed = false;
+  session.scenario = { report() {
+    const elapsedMs = performance.now();
+    if (++calls === delayAt) {
+      delayed = true;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 8050);
+    }
+    return { elapsedMs };
+  } };
+  const probe = createWireProbe(session, 'hls');
+  await probe.capture('before');
+  delayAt = calls * 2; // Same fixture inventory: delay only the final report.
+  state.first += 4;
+  await assert.rejects(probe.capture('after'), /wire probe exceeded deadline/);
+  assert.equal(delayed, true);
+  const result = probe.finish(), checkpoint = result.checkpoints[1];
+  assert.equal(result.passed, false); assert.equal(checkpoint.passed, false);
+  assert.ok(checkpoint.elapsedMs > 8000);
+  assert.ok(!result.errors.includes('capture still active'));
+});

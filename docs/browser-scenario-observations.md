@@ -111,6 +111,15 @@ fMP4 timing, publication and clocks. Every proxy request is rebound to closed
 source diagnostics. The source handle is readonly, Node-only and limited to the
 owned local fixture; it is not a browser or controller fetch endpoint.
 
+Wire requests sample wall and monotonic clocks together at setup and response
+completion. Later scenario-report bookkeeping cannot move the response timestamp
+used for publication/availability checks or inflate its measured transfer span.
+Bookkeeping still counts against the complete 1,500 ms request and 8,000 ms
+checkpoint deadlines. Checkpoint completion clocks are paired after its final
+bookkeeping. Over-budget or throwing report work retains failed evidence and
+releases timers/capture ownership. The 10 ms clock-agreement limit stays unchanged;
+old failed captures remain failed.
+
 With the pinned hls.js 1.7.3, an unavailable subtitle 404 can become fatal when
 there is no alternate subtitle group. Its native error dispatch calls `stopLoad`
 for all loaders. A fresh dispatch/stop identity and true-to-false loading state
