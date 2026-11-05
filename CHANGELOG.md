@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Separate Node recovery-wait and browser elapsed-time completion boundaries,
+  binding native observer disposal to a fresh RPC identity. Reject cached or
+  premature completion without changing timing limits or requalifying old traces.
+
 - Prove staggered DASH caption-fault drain through native per-track underruns,
   continuous frozen-video/decoded-audio samples, subsequent silence and native
   resumption. Preserve the full rendered gap and shared-service player limitation;

@@ -117,3 +117,13 @@ remains a failed player outcome even when its observation is valid.
 Version-1 retained measurements keep their original strict policy. A historical
 failure without the new RPC/monotonic evidence cannot be retroactively qualified;
 run the exact candidate again to collect complete evidence.
+
+Causal observer completion keeps two clock domains separate. Browser fault-window,
+closed-gap and continuation boundaries are compared strictly with browser elapsed
+time. A timed-out recovery wait ends on Node's clock; the disposal RPC must start
+at or after that endpoint, within the existing handoff bound. New version-2
+completion records bind the first native disposal marker and result to the exact
+Node request identity. Repeated/cached disposal, missing identities or incomplete
+observations fail. Existing RPC budgets, clock-projection consistency checks and
+playback limits are unchanged. Legacy completion records retain their strict
+projected-clock check; old failed evidence is not requalified by this change.

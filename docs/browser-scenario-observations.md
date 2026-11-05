@@ -174,3 +174,9 @@ scenario elapsed time sampled after a browser RPC. Closed-file qualification
 checks these boundaries again. Old traces are not retimed or repaired in place.
 Full manual CI and local release review retain these controls; routine CI remains
 docs, types and unit tests on Linux/Node 24.
+
+Completion evidence uses a fresh request-bound native disposal, with Node recovery
+wait ordering checked in Node time and browser playback boundaries in browser
+time. This avoids a rounded-wall-clock versus fractional-elapsed-clock comparison
+at the wait endpoint, without granting extra observation time. Cached disposal
+cannot qualify. See [completion clock rules](browser-qualification.md).

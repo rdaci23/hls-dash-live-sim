@@ -210,3 +210,17 @@ test('staggered DASH drain rejects missing, unrelated, discontinuous or interven
   x=>x.input.metrics.lastFrameMs=42000,
  ];for(const edit of edits){const v=staggeredDrain();edit(v);assert.equal(classifyCaption(v.input,v.options).verified,false,edit.toString());}
 });
+
+test('caption classification separates the Node wait end from fractional native completion time',()=>{
+ const {input,options}=fixture('hls'),m=input.metrics,epoch=m.startEpochMs;
+ input.restored={recoveryWait:{endedEpochMs:epoch+66001}};
+ assert.equal(classifyCaption(input,options).verified,false,'legacy evidence stays conservative');
+ m.events=m.events.filter(e=>e.kind!=='causal-probe-disposed');
+ const probe=require('../scripts/track-browser/causal-completion.js').create({protocol:'hls',now:()=>66000.1,dispose:()=>{},dropped:()=>0,record:e=>m.events.push(e)});
+ m.causalCompletion={...probe.finish(1),requestedCallId:1,snapshotTiming:{requestedEpochMs:epoch+66002,completedEpochMs:epoch+66003,elapsedMs:.84,probeTimeoutMs:1000}};
+ assert.equal(classifyCaption(input,options).verified,true);
+ const good=structuredClone(input);
+ for(const edit of [x=>x.restored.recoveryWait.endedEpochMs=epoch+66003,x=>x.metrics.causalCompletion.fresh=false,x=>x.metrics.causalCompletion.requestedCallId++,x=>x.metrics.causalCompletion.atMs=49999]){
+  const changed=structuredClone(good);edit(changed);assert.equal(classifyCaption(changed,options).verified,false,edit.toString());
+ }
+});
