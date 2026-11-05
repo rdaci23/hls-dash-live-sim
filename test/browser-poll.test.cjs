@@ -36,3 +36,10 @@ test('failed telemetry retains measured RPC timing without accepting late result
  assert.equal(error.message,'Browser telemetry probe timed out');
  assert.deepEqual(error.probeTiming,{requestedEpochMs:10,completedEpochMs:1011,elapsedMs:1001,probeTimeoutMs:1000});
 });
+
+test('snapshot clock endpoints include wall-clock read cost in the same measured interval',async()=>{
+ let wall=0,mono=0,calls=0;
+ const result=await poll.snapshot(async()=>{wall=4;mono=3.99;return{};},{now:()=>{if(++calls===2){wall=5;mono=5;}return wall;},monotonic:()=>mono});
+ assert.ok(Math.abs(result.snapshotTiming.completedEpochMs-result.snapshotTiming.requestedEpochMs-result.snapshotTiming.elapsedMs)<=1);
+ assert.equal(result.snapshotTiming.elapsedMs,5);
+});

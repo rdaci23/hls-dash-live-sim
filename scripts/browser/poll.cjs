@@ -3,8 +3,8 @@ async function snapshot(evaluate,{now=Date.now,monotonic=()=>performance.now(),t
  const requestedEpochMs=now(),began=monotonic();let timer;
  try{
   const value=await Promise.race([evaluate(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Browser telemetry probe timed out')),timeoutMs);})]);
-  const elapsedMs=monotonic()-began;if(elapsedMs>timeoutMs)throw Error('Browser telemetry probe timed out');
-  return value&&{...value,snapshotTiming:{requestedEpochMs,completedEpochMs:now(),elapsedMs,probeTimeoutMs:timeoutMs}};
+  const completedEpochMs=now(),elapsedMs=monotonic()-began;if(elapsedMs>timeoutMs)throw Error('Browser telemetry probe timed out');
+  return value&&{...value,snapshotTiming:{requestedEpochMs,completedEpochMs,elapsedMs,probeTimeoutMs:timeoutMs}};
  }catch(error){if(error&&typeof error==='object')error.probeTiming={requestedEpochMs,completedEpochMs:now(),elapsedMs:monotonic()-began,probeTimeoutMs:timeoutMs};throw error;}finally{clearTimeout(timer);}
 }
 async function wait(read,predicate,{timeoutMs,label,signal,now=Date.now,monotonic=()=>performance.now(),sleep=pause,probeTimeoutMs=1000}={}){
