@@ -7,6 +7,17 @@ const{fragment,initialization}=require('../scripts/dash-abr/fixture.cjs');
 const{variantEntries,attributes,mediaSegments}=require('../dist/support-tools/hls-playlist.js');
 const config=require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(()=>config.applyConfigOverride({segment:{malformed:'off',forbidden:'off',missing:'off',latencyMs:0},manifest:{freeze:'off'},network:{bandwidthKbps:0,jitterMs:0},drm:{licenseFailure:'off',keyRotationMismatch:'off'}}));
+test('owned HLS media playlists share a constant target duration across audio, video and live text',()=>{
+ for(const mode of ['live','event','vod'])for(const renditions of [2,3]){
+  let clock=0;const publisher=new TrackFixturePublisher(mode,renditions,()=>clock,Date.now());let common;
+  for(const time of [0,36000,80000,130000]){clock=time;for(const track of publisher.tracks){
+   const text=publisher.hlsPlaylist(track),target=Number(text.match(/^#EXT-X-TARGETDURATION:(\d+)/m)[1]);
+   common??=target;assert.equal(target,common,`${mode}/${track.id}: rendition target duration mismatch`);
+   assert.ok(track.segments.every(s=>s.duration/track.timescale<=target),'shared target must cover actual AAC fragment durations');
+   if(mode==='live')assert.ok(mediaSegments(text).reduce((n,s)=>n+s.duration,0)>=3*target,'live playlist retains the minimum target-duration window');
+  }}
+ }
+});
 async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 test('owned optional fixture has exact common loops, genuine three-rung video, distinguishable audio and bounded caption samples',async()=>{
  const root=path.resolve(__dirname,'../assets/track-sample'),index=JSON.parse(await fs.readFile(path.join(root,'index.json'),'utf8'));assert.equal(index.tracks.length,7);

@@ -20,6 +20,20 @@ MPEG-TS samples. Its freeze probes inspect a video media playlist; the master
 playlist alone does not establish whether publication stopped. The local UTC
 probe applies only to DASH.
 
+The owned HLS fixture uses one constant target duration across video, audio and
+live text, as required by [RFC 8216 section 6.2.4](https://www.rfc-editor.org/rfc/rfc8216.html#section-6.2.4).
+AAC fragments slightly exceed two seconds, so the common target is three seconds.
+This does not change media timestamps, the default six-segment window or test
+deadlines. Earlier fixtures incorrectly declared two seconds for video and three
+for audio; their playback observations do not establish behavior of the corrected
+fixture.
+
+The default live window is approximately 12 seconds. This is an explicit
+short-window recovery stress case, not evidence of a recommended Roku live setup:
+[Roku's streaming guidance](https://developer.roku.com/dev/docs/media#playing-and-seeking-to-the-live-edge)
+calls for playback at least 30 seconds behind the live edge. Keep any longer-window
+diagnostic result separate from the original short-window outcome.
+
 Use real private LAN IPv4 addresses in place of the two placeholders. The computer
 serves only the owned generated fixture; no external accounts or license services
 are used. The check waits for native A/V progress before starting the scenario.

@@ -11,6 +11,10 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Use one constant HLS target duration across the owned fixture's audio, video
+  and live text playlists. AAC fragment rounding previously produced a different
+  audio target duration. Preserve media timing, the default window and test gates.
+
 - Report native manifest-freeze stalls that persist through the final sample;
   retain failed recovery outcomes and all existing timing limits. Document the
   HLS fMP4 fixture and protocol-specific native freeze probes.

@@ -90,6 +90,7 @@ export class TrackFixturePublisher {
   readonly lifecycle:FixtureLifecycle;
   readonly services:FixtureServices;
   private started:number;
+  private readonly hlsTargetDuration:number;
   constructor(readonly mode: StreamMode = 'live', videoRenditions = 2, private clock = () => performance.now(), private wallStarted = Date.now(), private windowSegments = 6, servicesOptions:{protocol?:"hls"|"dash";aes?:boolean}={}) {
     if (!['live', 'event', 'vod'].includes(mode) || ![2, 3].includes(videoRenditions))
       throw Error('Fixture requires live/event/vod and two or three video renditions');
@@ -123,6 +124,9 @@ export class TrackFixturePublisher {
       const timeline = new LiveHlsTimeline(t.segments.map(s => ({ uri: s.file, duration: s.duration / t.timescale })), mode, windowSegments, clock, started, wallStarted, windowSegments * 2);
       this.timelines.set(t.id, timeline);
     }
+    // RFC 8216 section 6.2.4 requires a shared target duration. AAC fragment
+    // durations slightly exceed two seconds even when video fragments do not.
+    this.hlsTargetDuration=Math.ceil(Math.max(...this.tracks.flatMap(t=>t.segments.map(s=>s.duration/t.timescale))));
   }
   private positionSeconds():number{return this.windowSegments*2+Math.max(0,this.clock()-this.started)/1000;}
   private prefix(t: FixtureTrack,generation=0): string { return (generation?'/generation-'+generation:'')+'/track/'+t.id.replace(':','/'); }
@@ -142,7 +146,7 @@ export class TrackFixturePublisher {
   }
   hlsPlaylist(t:FixtureTrack,withFault=false):string{
     const {first,end}=this.bound(t),generations=this.lifecycle.allGenerations,discontinuities=generations.filter(g=>g.id&&g.startSeconds/2<first).length;
-    const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+Math.ceil(Math.max(...t.segments.map(s=>s.duration/t.timescale))),'#EXT-X-MEDIA-SEQUENCE:'+(withFault&&this.lifecycle.activeFault()?.kind==='sequence-rollback'&&this.lifecycle.activeFault()?.track===t.id?Math.max(0,first-4):first),'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
+    const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+this.hlsTargetDuration,'#EXT-X-MEDIA-SEQUENCE:'+(withFault&&this.lifecycle.activeFault()?.kind==='sequence-rollback'&&this.lifecycle.activeFault()?.track===t.id?Math.max(0,first-4):first),'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
     if(this.mode!=='live')lines.push('#EXT-X-PLAYLIST-TYPE:'+this.mode.toUpperCase());
     if(t.type!=='text'&&this.services.aes)lines.push('#EXT-X-KEY:METHOD=NONE');
     if(t.type!=='text')lines.push('#EXT-X-MAP:URI="'+this.initUri(t,this.lifecycle.generationAt(first).id)+'"');
