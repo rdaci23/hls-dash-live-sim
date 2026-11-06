@@ -192,3 +192,9 @@ test('native audio repair correlates nonzero init PTS and a later refill rather 
  const result=healthy(value),observed=result.expectedFaultErrors.find(e=>e.signature==='hls-audio-outage-native-repair');assert.equal(observed.sourceOffsetSeconds,4);assert.equal(observed.skippedSeconds,52.1-50);assert.deepEqual(observed.refillRequests.map(r=>r.sourceSequence),[28,28]);
  for(const edit of [x=>x.metrics.events.find(e=>e.kind==='hls-init-pts').baseTime=0,x=>x.metrics.events.find(e=>e.kind==='hls-frag-loaded').fragment.start+=4,x=>x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='before').video=[[32,51]]]){const changed=structuredClone(value);edit(changed);assert.equal(assessPlayer(changed).passed,false);}
 });
+
+test('incomplete native repair boundaries and disposal before continuation cannot qualify',()=>{
+ const value=input();value.metrics.errors.push(error(value,{type:'networkError',details:'fragLoadError',message:'HTTP Error 503 Service Unavailable'}));require('./fixtures/hls-audio-repair.cjs')(value);value.restored.browser.continuedToMs=124800;healthy(value);
+ const edits=[x=>delete x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='before').fragment.end,x=>{const before=x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='before');before.fragment={...before.fragment,end:before.fragment.end+.1};},x=>x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='after').returned=1,x=>{const marker=x.metrics.events.find(e=>e.kind==='causal-probe-disposed');marker.atMs=124790;x.metrics.causalCompletion.atMs=124790;Object.assign(x.metrics.causalCompletion.snapshotTiming,{requestedEpochMs:epoch+124789,completedEpochMs:epoch+124791});}];
+ assert.deepEqual(edits.map(edit=>{const changed=structuredClone(value);edit(changed);return assessPlayer(changed).passed;}),[false,false,false,false]);
+});
