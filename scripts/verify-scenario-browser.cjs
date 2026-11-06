@@ -4,8 +4,8 @@ const { createHash } = require('node:crypto'), { XMLValidator } = require('fast-
 const { createWireProbe }=require('./browser/caption-wire-probes.cjs');
 const { open } = require('./browser/owned-player.cjs'), { kinds, definition, correlate } = require('./browser/scenario-observations.cjs'), { tracks } = require('./track-scenarios/verify.cjs'), { languageEvidence, expectedCancellation } = require('./track-browser/acceptance.cjs');
 async function verify(session, protocol, kind, signal, dir) {
-    const captionCase=['text-outage','late-captions'].includes(kind),startup = kind === 'wrong-track-init', responses = [], pending = new Set();
-    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser,wireProbe,wireJob,captionWire,causalFinish,startupFinish;const wireErrors=[];
+    const captionCase=['text-outage','late-captions'].includes(kind),audioCase=protocol==='hls'&&kind==='audio-outage',causalCase=captionCase||audioCase,startup = kind === 'wrong-track-init', responses = [], pending = new Set();
+    let ui, metrics, error, restored, recoveryError, healthy, first, observed, responsesClosing=false, responseDropped=0,bodyEvidenceBytes=0,clockAnchor,faultWindowBrowser,wireProbe,wireJob,captionWire,audioRestoration,causalFinish,startupFinish;const wireErrors=[];
     const responseErrors = [];
     const origin = new URL(session.url).origin, window = startup ? 15000 : 50000;
     try {
@@ -17,7 +17,7 @@ async function verify(session, protocol, kind, signal, dir) {
             await session.runs.action('start', { runId: session.runs.runId });
             assert.equal((await fetch(audio.init)).status, 200);
         }
-        ui = await open(session, protocol, signal, { causalProbe:captionCase,startupProbe:startup&&protocol==='hls',onResponse: response => {
+        ui = await open(session, protocol, signal, { causalProbe:causalCase,startupProbe:startup&&protocol==='hls',onResponse: response => {
                 try {
                 if (responsesClosing || new URL(response.url()).origin !== origin)
                     return;
@@ -72,6 +72,7 @@ async function verify(session, protocol, kind, signal, dir) {
         const manifestText=manifestBody.toString('utf8'),valid=protocol==='hls'?manifestText.startsWith('#EXTM3U'):XMLValidator.validate(manifestText)===true&&/<MPD(?:\s|>)/.test(manifestText)&&/<AdaptationSet(?:\s|>)/.test(manifestText);
         assert.equal(valid,true,'Restored manifest must be a valid control');
         restored = { atMs: session.scenario.report().elapsedMs,epochMs:Date.now(),manifest:{status:response.status,requestResourceId:session.diagnostics.resourceId(new URL(session.url).pathname+new URL(session.url).search),completedEpochMs:Date.now(),scenarioElapsedMs:session.scenario.report().elapsedMs,bytes:manifestBody.length,bodyText:manifestText,valid,requestId:response.headers.get('x-sim-request-id'),sha256:createHash('sha256').update(manifestBody).digest('hex')}, controls };
+        if(audioCase)audioRestoration=await require('./browser/hls-audio-restoration.cjs').capture(session,dir,signal);
         if(captionCase){await wireProbe.capture('after');captionWire=wireProbe.finish();assert.equal(wireErrors.length,0,'Wire probe failed');assert.equal(captionWire.passed,true,captionWire.errors.join('; '));}
         if (startup)
             recoveryError = 'Startup initialization observation: decoded recovery is not qualified by this check';
@@ -98,10 +99,10 @@ async function verify(session, protocol, kind, signal, dir) {
         await wireJob;
         if(wireProbe)captionWire=wireProbe.finish();
         if (ui) {
-            if(captionCase)try{causalFinish=await ui.finishCausalProbe();}catch(e){error||='Causal observer teardown failed: '+e.message;}
+            if(causalCase)try{causalFinish=await ui.finishCausalProbe();}catch(e){error||='Causal observer teardown failed: '+e.message;}
             if(startup&&protocol==='hls')try{startupFinish=await ui.finishStartupProbe();}catch(e){error||='Native startup observer teardown failed: '+e.message;}
             try {
-                metrics = await ui.snapshot();if(captionCase)metrics.causalCompletion=causalFinish;if(startupFinish)metrics.startupCompletion=startupFinish;
+                metrics = await ui.snapshot();if(causalCase)metrics.causalCompletion=causalFinish;if(startupFinish)metrics.startupCompletion=startupFinish;
             }
             catch { }
             await Promise.allSettled([...pending]);responsesClosing=true;await ui.close();
@@ -109,8 +110,8 @@ async function verify(session, protocol, kind, signal, dir) {
         await Promise.allSettled([...pending]);
     }
     const healthyLeadIn=healthy&&{frames:healthy.frames,mediaTime:healthy.mediaTime,elapsedMs:healthy.elapsedMs,fromMs:first.elapsedMs,durationMs:healthy.elapsedMs-first.elapsedMs,decodedVerified:languageEvidence(healthy,first.elapsedMs,'en').verified};
-    const integrity=assess({protocol,kind,metrics,faultWindowBrowser,clockAnchor,browserResponses:responses,audit:ui?.audit??[],auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,error,restored,startup,healthyLeadIn,healthyMetrics:healthy,captionWire,browserRecoveryVerified:!!restored?.browser,recoveryError,affectedBrowserResponses:observed,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion});
-    const report = { protocol, kind,captionWire,simulatorIsolationVerified:captionCase?captionWire?.passed:undefined, faultWindowBrowser,clockAnchor,passed: !error&&integrity.passed, error:error??(!integrity.passed?integrity.failures.join('; '):undefined), observationCaptured: !error,integrity, simulatorRestorationVerified: !!restored, browserRecoveryVerified: integrity.passed&&integrity.player.browserRecoveryVerified, recoveryError, startup, healthyLeadIn, affectedBrowserResponses: observed, restored, browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, releaseReady: false };
+    const integrity=assess({protocol,kind,metrics,faultWindowBrowser,clockAnchor,browserResponses:responses,audit:ui?.audit??[],auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,error,restored,startup,healthyLeadIn,healthyMetrics:healthy,captionWire,audioRestoration,browserRecoveryVerified:!!restored?.browser,recoveryError,affectedBrowserResponses:observed,playerVersion:ui?.playerVersion,browserVersion:ui?.browserVersion});
+    const report = { protocol, kind,captionWire,audioRestoration,simulatorIsolationVerified:captionCase?captionWire?.passed:undefined, faultWindowBrowser,clockAnchor,passed: !error&&integrity.passed, error:error??(!integrity.passed?integrity.failures.join('; '):undefined), observationCaptured: !error,integrity, simulatorRestorationVerified: !!restored, browserRecoveryVerified: integrity.passed&&integrity.player.browserRecoveryVerified, recoveryError, startup, healthyLeadIn, affectedBrowserResponses: observed, restored, browserVersion: ui?.browserVersion, playerVersion: ui?.playerVersion, retrySettings: metrics?.retrySettings, releaseReady: false };
     await fs.writeFile(path.join(dir, 'raw.json'), JSON.stringify({ metrics,healthyMetrics:healthy, audit: ui?.audit,auditDropped:ui?.auditDropped?.(),responseErrors,responseDropped,responses,diagnosticMetadata:{...session.diagnostics.snapshot(),events:undefined}, report }, null, 2) + '\n', { mode: 0o600 });
     if (!report.passed){const failure=Error(report.error);failure.result=report;throw failure;}
     return report;

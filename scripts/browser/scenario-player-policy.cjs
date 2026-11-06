@@ -170,6 +170,7 @@ function assessPlayer(input) {
     }
     const captionOutcome = ['text-outage', 'late-captions'].includes(kind) ? classifyCaption(input, { faults, primaryErrors: expectedFaultErrors }) : undefined;
     for (const error of pending) {
+        const audioRepair=require('./hls-audio-repair.cjs').expectedRepair(error,input,expectedFaultErrors);if(audioRepair){expectedFaultErrors.push(audioRepair);continue;}
         const nativeStartup=error.startupCancellation&&expectedStartupCancellation(error,input,expectedFaultErrors,startupProbe);
         if(nativeStartup&&!usedStartupAborts.has(nativeStartup.abortId)){usedStartupAborts.add(nativeStartup.abortId);expectedCancellations.push(error);expectedStartupCancellations.push(nativeStartup);continue;}
         const captionError = captionOutcome?.verified && captionOutcome.expectedErrors.find(known => isDeepStrictEqual(known.error, error));

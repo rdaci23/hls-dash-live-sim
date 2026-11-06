@@ -96,7 +96,8 @@
     if (!response.ok) throw Error(data.error || 'Profile change failed');
     m.phases.push({ name, requestMs, acknowledgedMs: now(), ...data });
   }
-  function span(run) { const entries = run?.confirmed; return entries?.length ? entries.at(-1).lastFrameMs - entries[0].firstFrameMs : 0; }
+  function completeEntries(run) { return run?.confirmed.filter(entry => entry.frames >= 2 && entry.lastFrameMs > entry.firstFrameMs && entry.mediaTime > entry.firstMediaTime) ?? []; }
+  function span(run) { const entries = completeEntries(run); return entries?.length ? entries.at(-1).lastFrameMs - entries[0].firstFrameMs : 0; }
   async function advance() {
     if (advancing || m.complete || m.probeErrors.length) return;
     advancing = true;
@@ -104,8 +105,8 @@
       const run = m.runs.at(-1);
       if (!m.phases.length && m.firstFrameMs !== null && m.lastFrameMs - m.firstFrameMs >= config.gates.beforeMs &&
           run?.level === 1 && run.auto && span(run) >= config.gates.highBeforeMs) await phase('restricted');
-      else if (m.phases.length === 1 && run?.level === 0 && run.auto && run.confirmed[0]?.firstFrameMs >= m.phases[0].acknowledgedMs && span(run) >= config.gates.lowHoldMs) await phase('restored');
-      else if (m.phases.length === 2 && run?.level === 1 && run.auto && run.confirmed[0]?.firstFrameMs >= m.phases[1].acknowledgedMs && span(run) >= config.gates.afterMs) m.complete = true;
+      else if (m.phases.length === 1 && run?.level === 0 && run.auto && completeEntries(run)[0]?.firstFrameMs >= m.phases[0].acknowledgedMs && span(run) >= config.gates.lowHoldMs) await phase('restored');
+      else if (m.phases.length === 2 && run?.level === 1 && run.auto && completeEntries(run)[0]?.firstFrameMs >= m.phases[1].acknowledgedMs && span(run) >= config.gates.afterMs) m.complete = true;
     } catch (error) { m.probeErrors.push(String(error)); }
     finally { advancing = false; }
   }

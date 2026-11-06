@@ -1,0 +1,11 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http');
+const {capture,read,assess}=require('../scripts/browser/hls-audio-restoration.cjs');
+async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+test('retained advertised HLS controls prove contiguous AAC/video timing and reject byte, clock and metadata corruption',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'audio-restore-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));const session=await require('../dist/support-tools/track-fixture-session.js').startTrackFixture({protocol:'hls',port:await port(),faultConfigPath:path.join(dir,'faults.json'),scenarioFile:path.resolve('examples/scenarios/independent-audio-outage.json')});let proof;try{proof=await capture(session,dir,new AbortController().signal);}finally{await session.close();}
+ const events=session.diagnostics.snapshot().events,sourceEpochMs=Date.parse(events.find(e=>e.event==='scenario.started').timestamp);assert.equal(assess(proof).passed,true);await read(dir,proof,{events,sourceEpochMs});assert.ok(proof.sequences.length>=4);
+ for(const edit of [p=>p.timings['audio:0'].segments[1].baseTime=String(BigInt(p.timings['audio:0'].segments[1].baseTime)+1n),p=>p.timings['audio:0'].segments[0].duration++,p=>p.timings['audio:0'].timescale=0,p=>p.sequences[0]++,p=>p.files[0].file='../outside',p=>p.files[0].faultIds='fault',p=>p.files[0].bytes=0,p=>p.files[0].completedEpochMs=p.files[0].startedEpochMs-1]){const changed=structuredClone(proof);edit(changed);await assert.rejects(read(dir,changed,{events,sourceEpochMs}));}
+ const changed=structuredClone(proof);changed.files[0].requestId='not-delivered';await assert.rejects(read(dir,changed,{events,sourceEpochMs}));
+ const file=path.join(dir,proof.files.find(r=>r.resource==='media').file),bytes=await fs.readFile(file);await fs.writeFile(file,Buffer.concat([bytes,Buffer.from([0])]));await assert.rejects(read(dir,proof,{events,sourceEpochMs}));
+ assert.ok(Object.values(session.networkOwnership()).every(n=>n===0));assert.ok(Object.values(session.sourceOwnership()).every(n=>n===0));
+});

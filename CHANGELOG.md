@@ -11,6 +11,15 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Retain wire-verified singleton frames at HLS ABR span boundaries with zero
+  duration credit; require progressing frames for all existing hold gates and
+  phase transitions. Interior or uncorrelated observations still fail.
+- Correlate HLS audio-outage restoration with the exact native gap-repair call,
+  failed-audio dispatch and healthy refill downloads. Retain advertised encoded
+  controls and validate AAC/video continuity, native PTS offset, actual bytes and
+  closed diagnostics. Preserve raw errors, decoded recovery/continuation gates
+  and all existing limits; incomplete or unrelated evidence remains blocking.
+
 - Bootstrap the decoded-audio probe with an exact-silence source before native
   clock readiness, stopping/disconnecting it on success and failure. Add a
   graph-demand startup regression alongside normal and delayed HLS/DASH checks;

@@ -8,9 +8,9 @@
   function createHlsCausality(Hls, player, options) {
     const events = Hls.Events, records = options.record, now = options.now;
     const activeLoads = new Set(), methods = [];
-    let loads = new WeakMap(), pendingAborts = new WeakMap(), causes = new WeakMap();
+    let loads = new WeakMap(), pendingAborts = new WeakMap(), causes = new WeakMap(), dispatchIds = new WeakMap();
     let active = true, lost = 0, dispatchSequence = 0, callSequence = 0;
-    let stopSequence = 0, loadSequence = 0, abortSequence = 0, currentError, currentStop;
+    let stopSequence = 0, loadSequence = 0, abortSequence = 0, gapSequence = 0, currentError, currentStop, currentGap;
     function time() {
       try { const value = now(); if (Number.isFinite(value)) return value; }
       catch (_) {}
@@ -42,7 +42,8 @@
       if (!frag || typeof frag !== 'object') return undefined;
       try {
         return { type: text(frag.type, 32), sn: Number.isSafeInteger(frag.sn) ? frag.sn : frag.sn === 'initSegment' ? frag.sn : undefined,
-          level: Number.isSafeInteger(frag.level) ? frag.level : undefined, url: url(frag.url) };
+          cc:Number.isSafeInteger(frag.cc)?frag.cc:undefined, level: Number.isSafeInteger(frag.level) ? frag.level : undefined, url: url(frag.url),
+          start: Number.isFinite(frag.start) ? frag.start : undefined, end: Number.isFinite(frag.end) ? frag.end : undefined };
       } catch (_) { lost++; return undefined; }
     }
     function errorMetadata(error) {
@@ -55,7 +56,7 @@
     }
     function clone(value) {
       if (!value || typeof value !== 'object') return value;
-      const result = {};
+      const result = Array.isArray(value) ? [] : {};
       for (const key of Object.keys(value)) result[key] = clone(value[key]);
       return result;
     }
@@ -116,18 +117,41 @@
         fatalStop: clone(prior.fatalStop), loaderAbort: clone(prior.proof) });
       pendingAborts.delete(error.frag);
     }
+    function ranges(buffer) {
+      try{const value=buffer?.buffered??buffer;if(!value)return [];
+      if(!Number.isInteger(value.length)||value.length<0||value.length>32){lost++;return [];}
+      return Array.from({length:value.length},(_,i)=>[value.start(i),value.end(i)]);
+      }catch(_){lost++;return [];}
+    }
+    const gap=player.gapController;
+    if(gap&&typeof gap._trySkipBufferHole==='function'){
+      const original=gap._trySkipBufferHole;
+      const wrapped=function(appended){
+        if(!active)return original.apply(this,arguments);
+        const previous=currentGap,call={callId:++gapSequence,atMs:time()};let media;
+        try{media=this.media;const tracks=player.bufferController?.tracks;Object.assign(call,{beforeTime:media?.currentTime,buffered:ranges(media),audio:ranges(tracks?.audio?.buffer),video:ranges(tracks?.video?.buffer),fragment:fragment(appended),maxBufferHole:player.config?.maxBufferHole,padding:player.config?.skipBufferHolePadding});}catch(_){lost++;}
+        currentGap=call;record({kind:'hls-gap-repair',phase:'before',...call});let returned=false,result;
+        try{result=original.apply(this,arguments);returned=true;return result;}
+        finally{let afterTime;try{afterTime=media?.currentTime;}catch(_){lost++;}record({kind:'hls-gap-repair',phase:'after',callId:call.callId,atMs:time(),returned,targetTime:result,afterTime});currentGap=previous;}
+      };
+      const restore=install(gap,'_trySkipBufferHole',wrapped);if(restore)methods.push(restore);
+    }
     const trigger = player.trigger;
     const triggerWrapper = function (event, data) {
       if (!active) return trigger.apply(this, arguments);
+      if(event===events.INIT_PTS_FOUND&&data?.id==='main')record({kind:'hls-init-pts',atMs:time(),cc:data.frag?.cc,baseTime:data.initPTS,timescale:data.timescale});
       if (event === events.FRAG_LOADING) loading(data?.frag);
       if (event === events.FRAG_LOADED) {
         const entry = loads.get(data?.frag);
-        record({ kind: 'hls-frag-loaded', atMs: time(), loadId: entry?.loadId, fragment: entry?.fragment ?? fragment(data?.frag) });
+        let wire={};try{const n=data.networkDetails;wire={requestId:n?.getResponseHeader?.('x-sim-request-id')??n?.headers?.get?.('x-sim-request-id'),bytes:data.frag?.stats?.loaded,status:n?.status};}catch(_){lost++;}
+        record({ kind: 'hls-frag-loaded', atMs: time(), loadId: entry?.loadId, fragment: entry?.fragment ?? fragment(data?.frag),...wire });
       }
       const prior = currentError;
       const isError = event === events.ERROR && data && typeof data === 'object';
       if (isError) {
         currentError = { error: data, errorDispatchId: ++dispatchSequence };
+        dispatchIds.set(data,currentError.errorDispatchId);
+        if(currentGap&&data.details===Hls.ErrorDetails.BUFFER_SEEK_OVER_HOLE)causes.set(data,{schemaVersion:1,cause:'native-buffer-hole-repair',errorDispatchId:currentError.errorDispatchId,gapCallId:currentGap.callId});
         associateAbort(data, currentError.errorDispatchId);
         record({ kind: 'hls-error-dispatch', phase: 'before', atMs: time(), errorDispatchId: currentError.errorDispatchId, ...errorMetadata(data) });
       }
@@ -170,6 +194,7 @@
     }
     return {
       forError(error) { return active && error && typeof error === 'object' ? clone(causes.get(error)) ?? null : null; },
+      dispatchIdFor(error){return active&&error&&dispatchIds.get(error);},
       dropped() { return lost; },
       dispose() {
         if (!active) return;
@@ -177,7 +202,7 @@
         for (const entry of activeLoads) release(entry);
         for (const restore of methods) { try { restore(); } catch (_) { lost++; } }
         methods.length = 0; loads = new WeakMap(); pendingAborts = new WeakMap(); causes = new WeakMap();
-        currentError = currentStop = undefined;
+        currentError = currentStop = currentGap = undefined;dispatchIds=new WeakMap();
       }
     };
   }

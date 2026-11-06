@@ -24,6 +24,24 @@ paths. Caption freezes still require four independent source/proxy AV checkpoint
 continuous player samples and completed causal observation. Failed recovery stays
 failed even when its player cause is understood.
 
+For the named HLS audio outage, a native `bufferSeekOverHole` after restoration
+qualifies only with a completed, lossless native observer. The retained record
+must bind the exact GapController call and error dispatch to a delivered audio
+503, the missing audio interval, continuous video, and successful audio/video
+refill downloads. The player's own seek target and pinned padding are recorded;
+the harness does not seek, reload or restart the player after injection.
+
+Restoration controls retain the advertised master/child playlists, initialization
+and four or five consecutive media fragments, with byte counts and hashes.
+Qualification reparses their encoded timestamps, checks contiguous AAC/video and
+their alignment, and binds the controls and browser refill IDs to closed source
+diagnostics. Native initialization PTS maps encoded time to the player's buffer
+time; a nonzero offset must not be mistaken for broken media. Decoded restoration
+within the existing 15-second wait and 60 more seconds of healthy playback remain
+independent requirements. Raw native errors remain visible, and old captures
+without this proof retain their failed result. Unknown errors, missing files,
+changed bytes, incomplete observation and post-recovery repairs remain blocking.
+
 DASH staggered drain additionally requires native per-track underrun/restoration
 events, continuous frozen-video and decoded-audio evidence, subsequent silence
 and matching native resumption. It preserves the complete gap and all existing

@@ -60,6 +60,15 @@ times and the host's recorded application timestamp. Already-buffered frames
 cannot establish the effect of a new profile. Spans are clipped at phase boundaries
 so buffered low-quality frames after restoration do not inflate the restricted hold.
 
+A rendition boundary can contain one confirmed frame before the next played
+fragment is observed. A singleton at the physical start or end of a rendered span
+is retained under `boundaryObservations`, with zero duration credit. Its download,
+source bytes, request/fault identity and bandwidth profile must still match.
+Only progressing multi-frame observations establish the required hold, and the
+full observed chain must remain continuous. Interior singletons, missing wire
+proof and shortened holds still fail. Phase changes use the same progressing
+observations, so an edge frame cannot start restoration early.
+
 Only a tightly correlated high-fragment emergency abort during the downshift
 window can be classified as an expected cancellation: player event, browser
 request failure, response fault ID and server client-disconnect event must agree.

@@ -171,3 +171,19 @@ test('a refilled error-time buffer needs independent low-buffer waiting and matc
     x => { x.events.at(-2).timestamp = new Date(1033000).toISOString(); },
   ]) { const data = input(); edit(data); assert.equal(evaluate(data).passed, false); }
 });
+
+function boundaryInput(runIndex=0,side='leading'){
+ const value=baseline(),run=value.metrics.runs[runIndex],first=run.confirmed[0],last=run.confirmed.at(-1),sample=structuredClone(side==='leading'?first:last),at=side==='leading'?run.startMs-10:run.endMs;
+ Object.assign(sample,{requestId:'boundary-'+runIndex+'-'+side,firstFrameMs:at,lastFrameMs:at,frames:1,firstMediaTime:side==='leading'?sample.firstMediaTime:sample.mediaTime,mediaTime:side==='leading'?sample.firstMediaTime:sample.mediaTime});
+ if(side==='leading'){run.startMs=at;if(runIndex)value.metrics.runs[runIndex-1].endMs=at;run.confirmed.unshift(sample);}else run.confirmed.push(sample);
+ const rate=[PROFILES.baseline,PROFILES.restricted,PROFILES.restored][runIndex],faultId='fault-'+sample.requestId;
+ value.metrics.fragments.push({requestId:sample.requestId,url:sample.url,sn:sample.sn,level:sample.level,bytes:10000});
+ value.events.push({event:'request.started',requestId:sample.requestId,timestamp:new Date(value.metrics.startEpochMs+at-1500).toISOString()},{event:'request.completed',requestId:sample.requestId,status:200,bodyBytes:10000},{event:'fault.applied',requestId:sample.requestId,fault:'response.bandwidth',bandwidthKbps:rate,faultId});
+ value.audit.push({kind:'response',requestId:sample.requestId,url:sample.url,status:200,faultIds:faultId,epochMs:value.metrics.startEpochMs+at-500});return value;
+}
+test('single-frame run edges retain served identity but never count toward ABR duration proof',()=>{
+ for(const [index,side]of [[0,'leading'],[1,'leading'],[2,'leading'],[2,'trailing']]){const value=boundaryInput(index,side),result=evaluate(value);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.boundaryObservations.length,1);assert.equal(result.boundaryObservations[0].frames,1);}
+});
+test('ABR edge handling cannot discard invalid, unserved, interior or insufficient evidence',()=>{
+ for(const edit of [x=>x.metrics.runs[0].confirmed[0].frames=0,x=>x.metrics.runs[0].confirmed[0].lastFrameMs++,x=>x.metrics.runs[0].confirmed[0].mediaTime++,x=>x.metrics.runs[0].confirmed[0].requestId='missing',x=>x.audit.at(-1).faultIds='wrong',x=>x.events.at(-1).bandwidthKbps=450,x=>x.events.at(-2).bodyBytes=0,x=>x.metrics.runs[0].startMs--,x=>{const r=x.metrics.runs[0],entry=r.confirmed.shift();r.confirmed.splice(2,0,entry);},x=>x.metrics.runs[0].confirmed=x.metrics.runs[0].confirmed.slice(0,3),x=>x.metrics.runs[1].confirmed=x.metrics.runs[1].confirmed.slice(0,3),x=>x.metrics.runs[2].confirmed=x.metrics.runs[2].confirmed.slice(0,3)]){const value=boundaryInput();edit(value);assert.equal(evaluate(value).passed,false,edit.toString());}
+});

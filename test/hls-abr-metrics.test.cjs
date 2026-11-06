@@ -40,3 +40,13 @@ test('ABR probe keeps the waiting-time buffer separate from a later refilled err
   assert.equal(error.waiting.paused, false);
   assert.equal(error.waiting.seeking, false);
 });
+
+test('network phases wait for the full multi-frame span rather than crediting a singleton edge',async()=>{
+ let time=1000,tick;const handlers={},requests=[],video={currentTime:0,buffered:{length:0},addEventListener(){},requestVideoFrameCallback(){},play:async()=>{},getVideoPlaybackQuality:()=>({totalVideoFrames:0,droppedVideoFrames:0})};
+ class Player{static Events=Object.fromEntries(['MANIFEST_PARSED','FRAG_LOADED','FRAG_CHANGED','LEVEL_SWITCHED','FRAG_LOAD_EMERGENCY_ABORTED','ERROR'].map(n=>[n,n]));constructor(){this.levels=[];this.autoLevelEnabled=true;}on(n,f){handlers[n]=f;}loadSource(){}attachMedia(){}}
+ const context={Hls:Player,document:{getElementById:id=>id==='video'?video:{}},performance:{now:()=>time},setInterval:f=>{tick=f;},console,fetch:async(url,options)=>{if(url==='/network'){const body=JSON.parse(options.body);requests.push(body.name);return{ok:true,json:async()=>({name:body.name,bandwidthKbps:1500,appliedEpochMs:100000})};}return{json:async()=>({runId:'boundary-phase',url:'local',gates:require('../scripts/browser/abr-acceptance.cjs').GATES})};}};context.window=context;
+ await vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../scripts/browser/hls-abr-metrics.js'),'utf8'),context);
+ const m=context.simSnapshot();m.phases.push({name:'restricted',acknowledgedMs:1000});const edge={firstFrameMs:2000,lastFrameMs:2000,firstMediaTime:0,mediaTime:0,frames:1},full={firstFrameMs:2050,lastFrameMs:32000,firstMediaTime:.05,mediaTime:30,frames:720};m.runs.push({level:0,auto:true,confirmed:[edge,full]});
+ time=33000;await tick();assert.deepEqual(requests,[],'29.95 seconds of progressing proof must not satisfy the unchanged 30-second hold');
+ full.lastFrameMs=32050;full.mediaTime=30.05;time=33050;await tick();assert.deepEqual(requests,['restored']);
+});
