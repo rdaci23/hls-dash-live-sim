@@ -11,6 +11,15 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Bootstrap the decoded-audio probe with an exact-silence source before native
+  clock readiness, stopping/disconnecting it on success and failure. Add a
+  graph-demand startup regression alongside normal and delayed HLS/DASH checks;
+  retain the three-second readiness bound and all playback/memory limits.
+- Correlate the pinned DASH wrong-init removed-buffer append diagnostic with its
+  adjacent same-track cleanup read, native console timing, typed decoder primary
+  and delivered fault. Retain raw errors and failed decoded-recovery outcomes;
+  unrelated errors remain blocking.
+
 - Reject undersized owned HLS live windows before binding a listener. Validate
   every track/cycle offset against three target durations; current live HLS
   fixtures require at least five segments. Preserve the six-segment default,

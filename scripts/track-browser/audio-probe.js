@@ -21,16 +21,24 @@
    // Connecting an element to a suspended context stops its media clock even
    // when the stream is fully buffered. Keep muted playback on its existing
    // output until native context activation has actually completed.
-   await context.resume();
-   if(context.state!=='running')throw Error('Decoded-audio context did not activate');
-   if(!analyser){
-    // Native resume can resolve with state=running while the render clock is
-    // still frozen. Routing video at that point stalls otherwise healthy MSE.
-    await waitForProcessing(context);
-    source??=context.createMediaElementSource(video);
-    analyser=context.createAnalyser();analyser.fftSize=4096;analyser.smoothingTimeConstant=0;
-    silence=context.createGain();silence.gain.value=0;
-    source.connect(analyser);analyser.connect(silence);silence.connect(context.destination);
+   // An idle native context may not pull its clock until it has an active
+   // graph. Bootstrap only the probe, with exact silence, before readiness;
+   // the media element keeps its original output throughout this wait.
+   const bootstrap=!analyser?context.createConstantSource():undefined;
+   let bootstrapStarted=false;
+   try{
+    if(bootstrap){bootstrap.offset.value=0;bootstrap.connect(context.destination);bootstrap.start();bootstrapStarted=true;}
+    await context.resume();
+    if(context.state!=='running')throw Error('Decoded-audio context did not activate');
+    if(!analyser){
+     await waitForProcessing(context);
+     source??=context.createMediaElementSource(video);
+     analyser=context.createAnalyser();analyser.fftSize=4096;analyser.smoothingTimeConstant=0;
+     silence=context.createGain();silence.gain.value=0;
+     source.connect(analyser);analyser.connect(silence);silence.connect(context.destination);
+    }
+   }finally{
+    if(bootstrap){try{if(bootstrapStarted)bootstrap.stop();}finally{bootstrap.disconnect();}}
    }
    video.muted=false;await video.play();
   }

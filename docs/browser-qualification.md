@@ -43,7 +43,15 @@ timestamp. Player log timestamps remain matched to the primary player error.
 For startup wrong-init only, the exact caught `SourceBufferSink` removed-buffer
 diagnostic may precede that same qualified typed error, at most twice per audio
 or video track. It must follow the named bad-init response. Other buffer errors,
-unrelated player errors and baseline console errors remain blocking.
+unrelated player errors and baseline console errors remain blocking. The pinned
+SourceBufferSink can also log a removed-buffer append failure before its rejected
+append promise reaches the same cleanup path. That secondary line qualifies only
+for wrong-init startup, the exact pinned player/browser identity and logger,
+Chrome's native console clock, its immediately following same-track removed-buffer
+read, and the independently delivered fault/typed primary. Five-millisecond causal
+bounds and a per-track single-use identity remain enforced. Missing, duplicated,
+late, mismatched or unrelated messages fail. Raw errors remain in evidence and
+this classification does not claim decoded wrong-init recovery.
 
 The manual **Browser payload qualification** workflow runs damaged-media and
 wrong-track-init checks directly for both protocols, records the installed Chrome
@@ -75,10 +83,18 @@ requires a complete successful final review and explicit publication approval.
 The decoded-audio probe waits for actual processing-clock progress before
 connecting the playing video to its analysis graph. A resolved `resume()` promise
 and a `running` state alone are insufficient: a temporarily frozen render clock
-can stop otherwise buffered media. Readiness has a bounded three-second lifetime;
+can stop otherwise buffered media. A zero-valued ConstantSource connects only the probe to the destination before
+resume/readiness, allowing an idle native graph to process without routing video
+early. It stops and disconnects on success and failure. It cannot supply the
+required decoded tones or qualify a genuinely frozen clock.
+Readiness has a bounded three-second lifetime;
 playback startup, stall, telemetry and recovery limits stay unchanged.
 The native verifier covers normal activation, a 1.8-second delayed resume, and
-a 1.8-second frozen-processing-clock case. It repeats the controls' initial
+a 1.8-second frozen-processing-clock case, and a controlled native graph-demand
+case. The latter keeps the native context suspended until an active source exists;
+the former clock-before-graph ordering reproduces the same startup error while
+video keeps rendering. This control establishes the ordering regression, not
+every possible cause of native audio-service failure. It repeats the controls' initial
 rendition selection and requires video progress while activation is pending,
 decoded tone and scheduled captions afterward, and no unexplained errors:
 
@@ -90,7 +106,7 @@ The preserved, currently disabled **Browser caption qualification** workflow rep
 language/rendition selection, healthy and disabled-text controls, late captions
 and text outages for both protocols. Run these checks locally under the current
 policy; hosted dispatch still requires explicit approval.
-The local clean-clone release review also runs all three activation cases for
+The local clean-clone release review also runs all four activation cases for
 both protocols and retains their metrics and closed source diagnostics.
 
 Track and lifecycle verifiers use the common fixed-route player server. Every

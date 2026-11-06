@@ -84,6 +84,20 @@ function expectedNativeConsole(event,input,player,used){
   sourceEpoch=a.epochMs-a.scenarioElapsedMs;
  }
  if(Math.abs(event.epochMs-sourceEpoch-event.scenarioElapsedMs)>10||event.scenarioElapsedMs<(startup?0:35000)||event.scenarioElapsedMs>=(startup?15000:50000))return;
+ const append=/^\[(\d+)\]\[SourceBufferSink\]\[(video|audio)\] SourceBuffer append failed "InvalidStateError: Failed to execute 'appendBuffer' on 'SourceBuffer': This SourceBuffer has been removed from the parent media source\." $/.exec(event.message??'');
+ if(append&&startup){
+  // The pinned append catch logs before rejecting its queued promise. Require
+  // its adjacent same-track removed-buffer read and the independently proven
+  // typed wrong-init primary; a nearby console string alone is insufficient.
+  const index=input.audit.indexOf(event),next=input.audit[index+1],read=removedBufferMessage(next?.message);
+  if(index<0||!read||read[2]!==append[2]||!event.browserConsole||!input.metrics.browserClock)return;
+  const paired=expectedNativeConsole(next,input,player,new Set()),atMs=nativeConsoleTime(event,input,NaN),readAtMs=next&&nativeConsoleTime(next,input,NaN);
+  if(!paired||paired.id!=='dashjs-5.2.1-wrong-init-buffer-read'||next.location?.url!==location.url||!Number.isFinite(atMs)||!Number.isFinite(readAtMs)||
+   next.epochMs<event.epochMs||next.epochMs-event.epochMs>5||next.scenarioElapsedMs<event.scenarioElapsedMs||next.scenarioElapsedMs-event.scenarioElapsedMs>5||
+   Number(read[1])<Number(append[1])||Number(read[1])-Number(append[1])>5||readAtMs<atMs||readAtMs-atMs>5||Math.abs(atMs-paired.primaryErrorAtMs)>5)return;
+  const id='dashjs-5.2.1-wrong-init-buffer-append',key=id+':'+paired.primaryErrorAtMs+':'+append[2];if(used.has(key))return;
+  return{...paired,id,key,event,loggedMs:Number(append[1]),consoleAtMs:atMs,trackKind:append[2]};
+ }
  const removed=removedBufferMessage(event.message);
  if(removed&&startup){
   const index=input.audit.indexOf(event),typedText='Video Element Error: MEDIA_ERR_SRC_NOT_SUPPORTED ('+WRONG_INIT+') ',typedIndex=input.audit.findIndex((e,i)=>i>index&&typeof e.message==='string'&&e.message.endsWith('][StreamController] '+typedText)),typedEvent=input.audit[typedIndex];
