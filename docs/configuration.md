@@ -40,6 +40,14 @@ shared-network combinations. These are scenario actions, not watched manual fiel
 See [HTTP policy and controlled response headers](http-policy-scenarios.md) for
 conditional requests, range resumption and bounded status-header presets.
 
+## Stream windows
+
+Window sizing depends on the stream format. With `--fixture tracks`, owned HLS
+live streams currently require `--window-segments 5–120`; the default remains six.
+Invalid three-/four-segment live HLS windows fail at startup. DASH and EVENT/VOD
+fixtures, and ordinary MPEG-TS HLS, retain 3–120. See
+[fixture timing and window boundaries](track-fixtures.md) before changing it.
+
 ## Ready-to-copy legacy manual configurations
 
 | Starting file | Behavior |

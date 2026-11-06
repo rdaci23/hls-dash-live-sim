@@ -91,6 +91,7 @@ export class TrackFixturePublisher {
   readonly services:FixtureServices;
   private started:number;
   private readonly hlsTargetDuration:number;
+  private readonly hlsLiveWindowValid:boolean;
   constructor(readonly mode: StreamMode = 'live', videoRenditions = 2, private clock = () => performance.now(), private wallStarted = Date.now(), private windowSegments = 6, servicesOptions:{protocol?:"hls"|"dash";aes?:boolean}={}) {
     if (!['live', 'event', 'vod'].includes(mode) || ![2, 3].includes(videoRenditions))
       throw Error('Fixture requires live/event/vod and two or three video renditions');
@@ -127,6 +128,17 @@ export class TrackFixturePublisher {
     // RFC 8216 section 6.2.4 requires a shared target duration. AAC fragment
     // durations slightly exceed two seconds even when video fragments do not.
     this.hlsTargetDuration=Math.ceil(Math.max(...this.tracks.flatMap(t=>t.segments.map(s=>s.duration/t.timescale))));
+    // Check every rotation: AAC fragments differ slightly in length. A live
+    // window must still span three targets after any removal (RFC 8216 6.2.2).
+    this.hlsLiveWindowValid=mode!=='live'||this.tracks.every(t=>t.segments.every((_,phase)=>{
+      let ticks=0;
+      for(let i=0;i<windowSegments;i++)ticks+=t.segments[(phase+i)%t.segments.length].duration;
+      return ticks>=3*this.hlsTargetDuration*t.timescale;
+    }));
+    if((servicesOptions.protocol??'hls')==='hls')this.requireHlsLiveWindow();
+  }
+  private requireHlsLiveWindow():void{
+    if(!this.hlsLiveWindowValid)throw new HttpError(422,'Owned HLS live window (--window-segments '+this.windowSegments+') must retain at least three target durations ('+(3*this.hlsTargetDuration)+' seconds); choose a longer window. The default is 6 segments.');
   }
   private positionSeconds():number{return this.windowSegments*2+Math.max(0,this.clock()-this.started)/1000;}
   private prefix(t: FixtureTrack,generation=0): string { return (generation?'/generation-'+generation:'')+'/track/'+t.id.replace(':','/'); }
@@ -134,6 +146,7 @@ export class TrackFixturePublisher {
   private mediaUri(t:FixtureTrack,n:number,hls=false):string{const generation=this.lifecycle.generationAt(n).id;return this.prefix(t,generation)+'/segment-'+n+(hls&&t.type==='text'?'.vtt':'.m4s');}
   private bound(t:FixtureTrack){const bounds=this.timelines.get(t.id).bounds(),endSeconds=this.lifecycle.endSeconds;if(this.lifecycle.ended&&endSeconds!==undefined)bounds.end=Math.min(bounds.end,endSeconds/8*4);return bounds;}
   hlsMaster(): string {
+    this.requireHlsLiveWindow();
     const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
     for (const t of this.tracks.filter(t => t.type !== 'video'))
       lines.push('#EXT-X-MEDIA:TYPE=' + (t.type === 'audio' ? 'AUDIO' : 'SUBTITLES') + ',GROUP-ID="' + t.type + '",NAME="' + (t.language === 'en' ? 'English' : 'Romanian') + '",LANGUAGE="' + t.language + '",DEFAULT=' + (t.language === 'en' ? 'YES' : 'NO') + ',AUTOSELECT=YES' + (t.type === 'text' ? ',FORCED=NO' : ',CHANNELS="2"') + ',URI="' + this.prefix(t) + '/stream.m3u8"');
@@ -145,6 +158,7 @@ export class TrackFixturePublisher {
     return lines.join('\n') + '\n';
   }
   hlsPlaylist(t:FixtureTrack,withFault=false):string{
+    this.requireHlsLiveWindow();
     const {first,end}=this.bound(t),generations=this.lifecycle.allGenerations,discontinuities=generations.filter(g=>g.id&&g.startSeconds/2<first).length;
     const lines=['#EXTM3U','#EXT-X-VERSION:7','#EXT-X-TARGETDURATION:'+this.hlsTargetDuration,'#EXT-X-MEDIA-SEQUENCE:'+(withFault&&this.lifecycle.activeFault()?.kind==='sequence-rollback'&&this.lifecycle.activeFault()?.track===t.id?Math.max(0,first-4):first),'#EXT-X-DISCONTINUITY-SEQUENCE:'+discontinuities];
     if(this.mode!=='live')lines.push('#EXT-X-PLAYLIST-TYPE:'+this.mode.toUpperCase());

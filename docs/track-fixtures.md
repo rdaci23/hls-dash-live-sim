@@ -40,7 +40,13 @@ Period/segment timing and local UTC share the real-time source epoch. Track
 boundaries can differ slightly because AAC access units are not video frames;
 complete eight-second cycles align, avoiding cumulative loop drift.
 
-The default live window is six segments; `--window-segments` supports 3–120.
+The default live window is six segments. Owned **HLS live** fixtures support
+`--window-segments 5–120` with the current assets: their common three-second
+target requires at least nine seconds after any segment removal. Three- and
+four-segment HLS live configurations are rejected before a listener starts,
+rather than serving an invalid playlist or silently increasing the window.
+DASH fixtures and HLS EVENT/VOD retain the existing 3–120 range. Ordinary
+MPEG-TS HLS samples also retain 3–120; their two-second target is different.
 Removed media remains available for the existing retention grace. Initialization
 stays compatible. HLS uses separate EXT-X-MAP, AUDIO and SUBTITLES renditions.
 DASH uses separate audio/text AdaptationSets and explicit finite timelines.

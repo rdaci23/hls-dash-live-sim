@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Reject undersized owned HLS live windows before binding a listener. Validate
+  every track/cycle offset against three target durations; current live HLS
+  fixtures require at least five segments. Preserve the six-segment default,
+  timestamps, test limits and existing DASH/EVENT/VOD/MPEG-TS window behavior.
+
 - Use one constant HLS target duration across the owned fixture's audio, video
   and live text playlists. AAC fragment rounding previously produced a different
   audio target duration. Preserve media timing, the default window and test gates.
