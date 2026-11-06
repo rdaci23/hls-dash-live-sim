@@ -58,3 +58,26 @@ closed source evidence, cleanup counters and separate HTTP/native results. Never
 publish unsanitized native logs or device identifiers. Repository verification
 remains local-only while Actions is disabled; no support claim expands from a
 single observation.
+
+## Short-window HLS investigation
+
+Local observations on 6 November 2026 used one Express 4K (3940EU), Roku OS
+16.0.4 build 853, and the standalone 1.1.0 tester. The corrected stream code was
+commit `9e4e66bb0588b2a26545f35d0dc019966943e79e`. These results do not qualify
+other devices, MPEG-TS samples or a full release candidate.
+
+| Comparison | Observation |
+| --- | --- |
+| Original fixture, 12-second window, no freeze | Approximately three minutes of independent native A/V position progress; no observed stall. This predates the target-duration correction. |
+| Corrected fixture, 12-second window, 35–80 second freeze | HTTP freeze/restoration passed. Native A/V did not resume. An over-limit native sample gap also prevented complete telemetry qualification. |
+| Corrected fixture, 60-second window, same freeze | Native A/V continued with no observed stall and 102 seconds of post-restoration progress. This is continuation, **not verified recovery from a stall**. |
+| Corrected fixture, 12-second window, browser hls.js 1.7.3 / Chrome 156.0.8078.80 | Automatic recovery and the required continuation passed the isolated browser check. |
+
+The target-duration mismatch was a simulator defect. Correcting it did not fix
+Roku's short-window recovery. In the short-window failure, the selected video
+playlist advances again after restoration, while the native player keeps
+reloading it without downloading new media. A 45-second freeze outlasts the
+12-second sliding window, so the old and restored playlists have no overlap.
+This evidence points to a Roku recovery compatibility limit in that condition;
+it does not establish an exact internal firmware cause. The longer-window result
+must never replace or relabel the failed short-window result.
