@@ -11,6 +11,11 @@ First public beta, prepared on 30 October 2026. The version is finalized; the
 
 ### Verification fixes
 
+- Retain an explicit DVR seek's causal chain through hls.js's native live-edge
+  clamp and second trusted DOM seek. Bind subtitle cancellation to that exact
+  handler, fragment, load and stats identity; reject automatic/intervened seeks
+  and incomplete proof. Preserve raw errors, player behavior and all limits.
+
 - Retain wire-verified singleton frames at HLS ABR span boundaries with zero
   duration credit; require progressing frames for all existing hold gates and
   phase transitions. Interior or uncorrelated observations still fail.

@@ -26,17 +26,41 @@ function expectedSeekCancellation(error, events, actions) {
       !Number.isSafeInteger(proof.sn) || !Number.isSafeInteger(proof.level) || proof.sn < 0 || proof.level < 0 ||
       !['type', 'sn', 'level', 'url'].every(key => proof[key] === error.frag[key]) || !nonempty(proof.url) || !finite(proof.atMs) || !finite(error.atMs) || error.atMs < proof.atMs) return false;
   const one = predicate => { const matches = list(events).filter(predicate); return matches.length === 1 ? matches[0] : undefined; };
+  const native = proof.clampCallId !== undefined || proof.rootSeekId !== undefined;
+  if (native && !['clampCallId', 'rootSeekId'].every(key => Number.isSafeInteger(proof[key]) && proof[key] > 0)) return false;
   const abort = one(e => e.kind === 'seek-cancel' && e.abortId === proof.abortId);
-  const seek = one(e => e.kind === 'user-seeking' && e.seekId === proof.seekId);
+  const seek = one(e => e.kind === (native ? 'native-clamp-seeking' : 'user-seeking') && e.seekId === proof.seekId);
+  const root = native ? one(e => e.kind === 'user-seeking' && e.seekId === proof.rootSeekId) : seek;
   const input = one(e => e.kind === 'user-seek' && e.actionId === proof.actionId);
   const before = one(e => e.kind === 'seek-handler' && e.handlerId === proof.handlerId && e.phase === 'before');
   const after = one(e => e.kind === 'seek-handler' && e.handlerId === proof.handlerId && e.phase === 'after');
   const action = list(actions).find(a => a.actionId === proof.actionId);
-  return !!abort && !!seek && !!input && !!before && !!after && !!action && Object.keys(proof).every(key => abort[key] === proof[key]) &&
+  const direct = !!abort && !!seek && !!root && !!input && !!before && !!after && !!action && Object.keys(proof).every(key => abort[key] === proof[key]) && ['clampCallId', 'rootSeekId'].every(key => abort[key] === proof[key]) &&
     ['actionId', 'action', 'to', 'atMs'].every(key => input[key] === action[key]) && ['seek-inside-and-play', 'seek-outside'].includes(action.action) &&
-    finite(action.to) && action.to >= 0 && finite(action.atMs) && seek.actionId === action.actionId && seek.to === action.to && finite(seek.atMs) && seek.atMs >= action.atMs &&
+    finite(action.to) && action.to >= 0 && finite(action.atMs) && root.actionId === action.actionId && root.to === action.to && finite(root.atMs) && root.atMs >= action.atMs && seek.actionId === action.actionId && finite(seek.atMs) && seek.atMs >= root.atMs &&
     [before, after].every(e => e.actionId === action.actionId && e.seekId === seek.seekId && e.track === proof.type && finite(e.atMs)) &&
     before.atMs >= seek.atMs && proof.atMs >= before.atMs && after.atMs >= proof.atMs && error.atMs >= after.atMs && after.returned === true;
+  if (!direct) return false;
+  if (!native) return true;
+  const userPosition = one(e => e.kind === 'dvr-user-position' && e.actionId === action.actionId);
+  const calls = list(events).filter(e => e.kind === 'dvr-clamp-call' && e.clampCallId === proof.clampCallId);
+  const enter = calls.find(e => e.phase === 'before'), leave = calls.find(e => e.phase === 'after');
+  const position = one(e => e.kind === 'dvr-clamp-position' && e.clampCallId === proof.clampCallId);
+  const load = one(e => e.kind === 'seek-fragment-loading' && e.loadId === proof.loadId);
+  const ended = one(e => e.kind === 'seek-fragment-ended' && e.loadId === proof.loadId && e.outcome === 'error' && e.details === 'aborted');
+  const near = (a,b) => finite(a) && finite(b) && Math.abs(a-b) <= .001;
+  if (action.action !== 'seek-outside' || !userPosition || !enter || !leave || !position || !load || !ended || calls.length !== 2 || seek.trusted !== true || root.trusted !== true ||
+      ![seek,before,after,enter,leave,position].every(e => e.clampCallId === proof.clampCallId && e.rootSeekId === root.seekId && e.actionId === action.actionId) ||
+      ![userPosition.from,userPosition.to,userPosition.actualTo,enter.from,enter.fragmentStart,enter.edge,enter.liveSyncPosition,position.from,position.to,position.actualTo,leave.to].every(finite) ||
+      userPosition.seeking !== true || userPosition.to !== action.to || !near(userPosition.actualTo,action.to) || enter.method !== 'synchronizeToLiveEdge' || leave.method !== enter.method ||
+      enter.liveSyncMode !== 'edge' || enter.maxFragLookUpTolerance !== .25 || enter.seeking !== true || !Number.isSafeInteger(enter.frames) || enter.frames < 1 || !Number.isInteger(enter.readyState) || enter.readyState < 1 || enter.readyState > 4 ||
+      enter.fragmentStart < 0 || enter.edge <= enter.fragmentStart || !near(enter.from,root.to) || !(enter.from < enter.fragmentStart-.25 || enter.from > enter.edge) ||
+      position.seeking !== true || !near(position.from,enter.from) || !near(position.to,enter.liveSyncPosition) || !near(position.actualTo,position.to) || !near(leave.to,position.to) || !near(seek.to,position.to) ||
+      position.to < enter.fragmentStart-.25 || position.to > enter.edge || leave.returned !== true || leave.writes !== 1 ||
+      !['type','sn','level','url'].every(key => load[key] === proof[key] && ended[key] === proof[key]) || !finite(load.atMs) || load.atMs > proof.atMs || !finite(ended.atMs) || ended.atMs < after.atMs || ended.atMs > error.atMs) return false;
+  const chain = [input,userPosition,root,enter,position,leave,seek,before,abort,after,ended];
+  if (!chain.every((e,i) => finite(e.atMs) && (!i || e.atMs >= chain[i-1].atMs && events.indexOf(e) > events.indexOf(chain[i-1]))) || events.indexOf(load) >= events.indexOf(abort)) return false;
+  return !events.some((e,i) => i > events.indexOf(root) && i < events.indexOf(seek) && (['seeked','dvr-seek-finished','dvr-unowned-position','dvr-unowned-seeking'].includes(e.kind) || ['user-seek','dvr-user-position'].includes(e.kind) && e.actionId !== action.actionId || e.kind === 'seek-fragment-ended' && e.loadId === proof.loadId));
 }
 function httpEvidence(report, diagnostics) {
   const events = list(diagnostics?.events), probes = list(report.http?.probes), start = events.find(e => e.event === 'scenario.started'), elapsed = e => e.elapsedMs - (start?.elapsedMs ?? 0);

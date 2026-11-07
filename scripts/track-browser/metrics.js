@@ -27,9 +27,11 @@
  if(config.protocol==='hls'){
   player=new Hls({lowLatencyMode:false,startLevel:1,maxBufferLength:12,maxMaxBufferLength:20,backBufferLength:10});
   if(config.causalProbe)causality=OwnedHlsCausality.createHlsCausality(Hls,player,{record:event=>add('events',event),now:elapsed,publicUrl,publicText});
+  // Register DVR first so its per-load wrapper can restore the subtitle-switch
+  // observer without leaving an owned wrapper trapped inside another observer.
+  if(config.seekProbe){seeks=OwnedSubtitleCancellation.observeDvrSeeks(Hls,player,video,event=>add('events',event),elapsed);window.dvrSeek=action=>seeks.seek({...action,atMs:elapsed()});}
   const cancellations=OwnedSubtitleCancellation.observe(player,Hls.Events,event=>add('events',event),elapsed);
   if(config.startupProbe)startupObserver=OwnedSubtitleCancellation.observeStartupSeeks(Hls,player,video,event=>add('events',event),elapsed);
-  if(config.seekProbe){seeks=OwnedSubtitleCancellation.observeSeeks(player,Hls.Events,video,event=>add('events',event),elapsed);window.dvrSeek=action=>{const input=seeks.beginSeek({...action,atMs:elapsed()});video.currentTime=input.to;return input;};}
   player.on(Hls.Events.LEVEL_LOADED,(_,e)=>{const first=e.details?.fragments?.[0];if(sourceEpochMs===undefined&&first&&Number.isSafeInteger(first.sn)&&Number.isFinite(first.programDateTime)){sourceEpochMs=first.programDateTime-first.sn*2000;add('events',{kind:'hls-caption-epoch',atMs:elapsed(),sn:first.sn,programDateTime:first.programDateTime,sourceEpochMs});}});
   player.on(Hls.Events.INIT_PTS_FOUND,(_,e)=>{if(e.id!=='main')return;mainPTS.set(e.frag.cc,{baseTime:e.initPTS,timescale:e.timescale});if(mainPTS.size>16)mainPTS.delete(mainPTS.keys().next().value);add('events',{kind:'hls-main-init-pts',atMs:elapsed(),sn:e.frag.sn,cc:e.frag.cc,initPTS:e.initPTS,timescale:e.timescale});});
   player.on(Hls.Events.FRAG_CHANGED,(_,e)=>{if(e.frag?.type==='main')mainFragment=e.frag;});

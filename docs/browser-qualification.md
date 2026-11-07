@@ -91,6 +91,24 @@ unrelated aborts, missing proof and observation drops remain blocking. These
 user-directed seeks never establish automatic fault recovery. The current change
 adds no timing exemption and does not retroactively manufacture missing proof.
 
+An explicit out-of-window HLS DVR seek can cause the pinned player's
+`synchronizeToLiveEdge` method to move playback into the current window. That
+native write produces a second DOM `seeking` event, whose subtitle handler may
+cancel an in-flight load. New observations retain the explicit position write,
+both trusted DOM events, the native clamp's before/write/after records, and the
+exact fragment, load attempt and loader-stats cancellation identity. The native
+method delegates unchanged; only the two existing user-directed DVR seeks are
+initiated by the harness.
+
+This explanation requires the reviewed player/browser identity, a single native
+edge-mode clamp from outside the advertised live window, and complete ordered
+records through the asynchronous abort. Settled or intervened seeks, other
+writers, untrusted events, completed/superseded loads and unrelated errors remain
+blocking. There is no time-proximity allowance. Raw errors remain visible;
+historical traces without the new causal proof retain their original failed
+result. Existing startup observation, decoded playback, timing, telemetry and
+memory limits are unchanged.
+
 The native files remain attributed to `b7230dc`; re-evaluation does not replace
 new exact-candidate verification under the current
 [local-only policy](development.md#github-actions). The [release checklist](release-checklist.md) still
