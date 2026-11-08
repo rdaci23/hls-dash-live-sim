@@ -94,8 +94,10 @@ that every future commit has passed. For the candidate, inspect the exact
   public announcement. A policy file alone does not activate the feature.
 - [x] Recorded the clean-clone review and all 11 routine CI passes for
   implementation candidate `824c39e`; [scope and evidence](release-review.md).
-- [ ] Run the final publication candidate from a clean clone with all local
-  checks passing; review its exact packaged files before tagging.
+- [ ] Run the final publication candidate from a clean clone and review its exact
+  packaged files before tagging. Preserve every result and assess any new failure.
+  The two [documented DASH findings](release-review.md#accepted-beta-limitations--7-november-2026)
+  are accepted beta limitations; automated checks are unchanged.
 - [ ] Decide and configure required checks/branch protection for the public repo.
 - [x] Recorded all six full browser playback passes for `824c39e`, tied to the
   [exact reviewed implementation](release-review.md).

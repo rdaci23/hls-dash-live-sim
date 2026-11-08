@@ -287,6 +287,11 @@ not relabel the implementation candidate's evidence as a new verification run.
 
 ### Known limits
 
+- Two intermittent DASH verification findings are accepted for beta: decoded-audio
+  probe startup timed out once, and a text-outage playback gap lacked causal
+  attribution. Both targeted reruns passed; causes remain unknown. See the
+  [recorded results](docs/release-review.md#accepted-beta-limitations--7-november-2026).
+
 - Default dash.js HTTP-error rendition fallback failed its optional probe.
   Simulator fault isolation passed independently. The DASH adaptation check uses
   one continuous Period; multi-Period ABR has a known dash.js timer exception.

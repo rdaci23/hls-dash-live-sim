@@ -21,6 +21,21 @@ testing is optional; add `--extended-soak` explicitly when it is useful. The
 128 MiB per-process and aggregate memory-growth limits remain unchanged. Local
 passes retain their actual environment; untested CI-matrix targets stay unverified.
 
+## Accepted beta limitations — 7 November 2026
+
+On candidate `ac8c924` (macOS ARM64, Chrome 156.0.8078.80, dash.js 5.2.1),
+the full local review executed 52 stages: 51 passed and the targeted browser
+stage failed two cases. In DASH framing, the decoded-audio probe processing clock
+did not advance before fault injection, so the healthy lead-in was not verified.
+In DASH text outage, a 5.448-second rendered gap during the fault lacked accepted
+causal attribution; simulator restoration and subsequent decoded continuation
+were observed. Separate targeted reruns on the same commit passed both cases,
+including delivery, restoration and decoded recovery. The causes remain unknown;
+the reruns do not change the original failed result or establish a fix. The
+maintainer accepts these two specific findings as beta limitations. Any new
+unexplained failure requires separate assessment. Test thresholds and automated
+review outcomes remain unchanged.
+
 ## Historical implementation candidate — 30 October 2026
 
 Candidate `824c39ec9702f219fd13d42e7e05d69a60ebdbb3` passed the

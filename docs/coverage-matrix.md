@@ -26,6 +26,10 @@ unverified. Repository visibility and npm publication require separate approval.
 | UTC faults | Explicit local UTC GET/HEAD failure, malformed response and bounded skew; other HEAD exclusions remain. | Normal synchronization stays enabled. Playback recovery from every clock fault is unverified. |
 | Concurrent endurance | One browser plus two HTTP viewers per protocol, churn/slow reads/cancel, A/V markers, retention/fairness, memory and drained ownership. | Required ten-minute smoke needs actual elapsed time, complete diagnostic parts and the exact candidate. Four-hour stress testing is optional and reported separately. Short development runs cannot qualify either duration. |
 
+The [accepted beta limitations](release-review.md#accepted-beta-limitations--7-november-2026)
+record the failed DASH startup and text-outage observations and their successful
+targeted reruns. They do not broaden browser recovery claims.
+
 Named-fault errors remain visible. Unexplained exceptions during healthy playback
 block verification. A documented client limitation is not relabelled as a simulator
 defect or hidden by changing the player retry settings without recording them.

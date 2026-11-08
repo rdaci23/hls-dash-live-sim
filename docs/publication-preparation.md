@@ -4,7 +4,9 @@ The repository and npm package remain private. These are cutover preparations,
 not authorization to publish. The final candidate must satisfy the
 [core roadmap](scenario-roadmap.md), [candidate review](release-review.md) and
 [release checklist](release-checklist.md). Historical green CI runs do not qualify
-new commits.
+new commits. The maintainer accepts the two specific
+[documented DASH findings](release-review.md#accepted-beta-limitations--7-november-2026)
+as beta limitations; preserve failed results and assess any new failure separately.
 
 ## Before requesting publication approval
 
