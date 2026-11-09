@@ -174,7 +174,7 @@ always stays false because publication requires the decisions below. Interrupted
 or failed checks retain evidence and return a failing exit status. No archive is
 published or installed globally. Review the retained file list manually as well.
 
-## Remaining publication decisions
+## Publication decisions and cutover status
 
 The maintainer confirmed authority to publish the extracted simulator source as a
 separate repository on 30 October 2026; see [source provenance](extraction.md).
@@ -183,16 +183,11 @@ That confirmation resolves the publication-authority question.
 MIT license selection is complete for project-owned code, documentation and
 generated media fixtures. Required third-party attribution is retained.
 
-- Confirm a private security contact or enable GitHub private vulnerability
-  reporting at public cutover, then verify the button before public announcement.
-  [Current policy and availability](../SECURITY.md).
-- Configure required checks/branch protection at public cutover. The current
-  private-repository plan rejects these settings; do not change visibility just
-  to enable them.
-- Version 0.2.0 is finalized as the first public beta; the
-  [changelog](../CHANGELOG.md) is prepared. Create the tag/release and set its date
-  only after publication approval and candidate verification.
-- Explicitly approve any visibility change. This work keeps the repo private.
+- Private vulnerability reporting is enabled; see the [security policy](../SECURITY.md).
+- Main branch protection requires pull requests and resolved conversations. Actions
+  remains disabled, and no disabled status check is required.
+- Version 0.2.0 was published as a public beta at reviewed commit `42fa357`.
+  npm publication remains a separate decision.
 
 The simulator owns valid streams, delivered faults, restoration and diagnostics.
 Known dash.js HTTP fallback/multi-Period ABR behavior is documented as client

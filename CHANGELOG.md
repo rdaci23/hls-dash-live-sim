@@ -3,11 +3,10 @@
 User-visible changes and compatibility limits are recorded here. Version numbers
 describe the simulator; recorded player results apply only to their tested scope.
 
-## 0.2.0 — Unreleased
+## 0.2.0 — 2026-11-09
 
-First public beta, prepared on 30 October 2026. The version is finalized; the
-`v0.2.0` tag, GitHub release and public announcement are pending. Install from a
-[source checkout](docs/getting-started.md); no npm release is published.
+First public beta. The `v0.2.0` release identifies reviewed commit `42fa357`.
+Install from a [source checkout](docs/getting-started.md); no npm release is published.
 
 ### Verification fixes
 

@@ -11,13 +11,11 @@ Use GitHub private vulnerability reporting when available: open the repository's
 and select **Report a vulnerability**. That form sends details privately to the
 maintainers.
 
-Availability depends on GitHub repository settings; this policy file does not
-enable the form. If it is unavailable, existing collaborators should use their
+Private vulnerability reporting is enabled for this repository; this policy file does not
+itself enable the form. If it is unavailable, existing collaborators should use their
 established private maintainer contact. If you lack a private contact, ask only
 for a reporting channel; do not include vulnerability details, credentials or an
-exploit in an issue. No public security email address is provided. Maintainers
-must enable and verify the form before public announcement; see the
-[publication checklist](docs/release-checklist.md).
+exploit in an issue. No public security email address is provided. See the [publication checklist](docs/release-checklist.md) for release practices.
 
 Include the affected commit/version, platform, relevant configuration, expected
 versus actual behavior and a minimal reproduction using generated samples or

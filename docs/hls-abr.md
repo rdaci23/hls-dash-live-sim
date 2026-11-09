@@ -133,4 +133,4 @@ rendition fallback, jitter-driven recovery, sustained outages, measured manifest
 freeze/resume and native-device bandwidth recovery require separate evidence.
 Audio is muxed; rendered video measurements do not establish perceived audio
 quality. Internet-isolated Roku, Apple, Android and additional Roku models remain
-unverified. The [release checklist](release-checklist.md) and repository remain private.
+unverified. See the [release checklist](release-checklist.md) for remaining verification limits.
