@@ -13,7 +13,7 @@ process-safety work before a public release can be trusted.
 Historical baseline review. See [implementation status](implementation.md) for the fixes and current verification.
 
 Review date: 28 October 2026. Reviewed commit: `55952e9`.
-The repository remains private. No simulator implementation was changed in this
+The repository was private at the time of this historical review. No simulator implementation was changed in this
 review. The attached [observations](research-evidence.json) distinguish measured
 behavior from the additional source findings below.
 

@@ -1,14 +1,14 @@
 # Publication preparation
 
-The repository and npm package remain private. These are cutover preparations,
-not authorization to publish. The final candidate must satisfy the
+The repository is public and the npm package remains private. These historical
+cutover preparations describe the first public beta. The reviewed candidate satisfies the
 [core roadmap](scenario-roadmap.md), [candidate review](release-review.md) and
 [release checklist](release-checklist.md). Historical green CI runs do not qualify
 new commits. The maintainer accepts the two specific
 [documented DASH findings](release-review.md#accepted-beta-limitations--7-november-2026)
 as beta limitations; preserve failed results and assess any new failure separately.
 
-## Before requesting publication approval
+## Historical candidate review procedure
 
 1. Commit the candidate and run `npm run release:review -- --output output/final-review`.
    Keep every report, closed diagnostic manifest and its named parts. This includes
@@ -30,11 +30,11 @@ as beta limitations; preserve failed results and assess any new failure separate
 5. Obtain explicit approval for public visibility. No verification command,
    workflow or package script changes visibility, publishes npm or creates a tag.
 
-## Settings to apply at the approved cutover
+## Cutover settings and maintenance
 
-The current private plan rejects branch-protection access. [GitHub documents the
+The former private plan rejected branch-protection access. [GitHub documents the
 plan availability](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches). Prepare
-settings now; do not change visibility to work around the restriction.
+settings for the public repository.
 
 - Protect `main`, prohibit force pushes and branch deletion, and require pull
   requests and resolved review conversations for future changes.
@@ -56,7 +56,7 @@ settings now; do not change visibility to work around the restriction.
   whether the chosen GitHub plan provides the desired security checks.
 - Verify visibility, protection and the security-reporting route before announcing
   the project. Create the `v0.2.0` release at the verified commit and date the
-  unreleased changelog only after the explicit publication decision.
+  changelog after the explicit publication decision. The `v0.2.0` release is published at `42fa357`.
 
 Apple, Android, additional Roku models and internet-isolated Roku playback remain
 unverified. Native recovery work, commercial DRM, advertising, low-latency

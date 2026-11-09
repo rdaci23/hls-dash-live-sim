@@ -56,7 +56,7 @@ exceptions and unexplained rendered gaps over four seconds fail the checks.
 
 These checks are narrower than the three-minute healthy release gate. Invalid
 restart counterparts, DVR pause/seek/join/freeze cases and endurance remain open
-in the [core roadmap](scenario-roadmap.md). Repository/npm remain private.
+in the [core roadmap](scenario-roadmap.md). The npm package remains private.
 
 ## Intentional invalid counterparts
 

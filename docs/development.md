@@ -4,7 +4,7 @@
 
 For a checkout, use Node.js 24 LTS and npm. Verification is currently local-only.
 The preserved hosted workflow defines Ubuntu 24.04 and macOS 15 checks for Node
-22, 24 and 26, but those jobs are disabled during private preparation.
+22, 24 and 26, but those jobs are currently disabled.
 The package still declares the legacy Node 20.3 engine floor;
 that floor and Windows are not part of this CI matrix. Prefer a maintained Node
 release. No runtime compatibility requirement is changed by this documentation.

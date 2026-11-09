@@ -18,12 +18,11 @@ the [MIT License](LICENSE). You may use, modify and redistribute them, including
 commercially, subject to its notice requirements. Dependencies and external tools
 retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
-Repository visibility and npm publication remain separate release decisions.
+The repository is public. npm publication remains a separate decision.
 
 ## Quick start
 
-Use Node.js 24 LTS. Verification is currently local-only while the repository
-remains private; GitHub Actions is disabled to preserve the runner allowance.
+Use Node.js 24 LTS. Verification is currently local-only; GitHub Actions is disabled to preserve the runner allowance.
 See the [verification policy](docs/development.md#github-actions).
 HLS needs only Node. DASH additionally needs a running Docker daemon.
 These commands are for a repository checkout:

@@ -1,9 +1,8 @@
 # Public-beta release checklist
 
-**Status: 0.2.0 first-public-beta preparation; publication is not approved.** Keep the
-GitHub repository private and `package.json` set to `private: true`. No CI command
-publishes the package or changes visibility. Public release needs an explicit
-maintainer decision after the remaining requirements are satisfied.
+**Status: 0.2.0 public beta released at reviewed commit `42fa357`.** The npm
+package remains `private: true`. No CI command publishes the package or changes
+repository visibility.
 
 **Current verification policy, 4 November 2026:** run all checks locally.
 Repository Actions is disabled to preserve the included runner allowance. Do not
@@ -89,29 +88,27 @@ that every future commit has passed. For the candidate, inspect the exact
 - [x] Trace original media to its introducing commit and verify the historical
   FFmpeg test pattern/tone evidence. [Investigation](historical-media-provenance.md).
 - [x] Selected GitHub private vulnerability reporting and documented the private
-  route in [SECURITY.md](../SECURITY.md). The form is not yet enabled.
-- [ ] Enable and verify private vulnerability reporting at public cutover, before
-  public announcement. A policy file alone does not activate the feature.
+  route in [SECURITY.md](../SECURITY.md). Private reporting is enabled.
+- [x] Enable private vulnerability reporting at public cutover; the repository
+  API confirms it is enabled.
 - [x] Recorded the clean-clone review and all 11 routine CI passes for
   implementation candidate `824c39e`; [scope and evidence](release-review.md).
-- [ ] Run the final publication candidate from a clean clone and review its exact
+- [x] Run the final publication candidate from a clean clone and review its exact
   packaged files before tagging. Preserve every result and assess any new failure.
   The two [documented DASH findings](release-review.md#accepted-beta-limitations--7-november-2026)
   are accepted beta limitations; automated checks are unchanged.
-- [ ] Decide and configure required checks/branch protection for the public repo.
+- [x] Configure main branch protection; Actions remains disabled and no status check is required.
 - [x] Recorded all six full browser playback passes for `824c39e`, tied to the
   [exact reviewed implementation](release-review.md).
-- [ ] Attach the final publication candidate's full browser evidence. Repeat physical
+- [x] Retain final candidate browser evidence locally for `42fa357`. Repeat physical
   healthy-playback compatibility checks when the advertised device support claim
   changes; do not treat a Roku build as device playback evidence. Native recovery
   behavior is outside the simulator release gate.
 - [x] Finalized 0.2.0 as the first public beta, prepared the
   [changelog](../CHANGELOG.md), source-checkout installation and documented
-  compatibility limits. The entry stays unreleased until publication.
-- [ ] After approval, create the `v0.2.0` tag/release at the verified publication
-  commit and date the changelog. npm publication remains a separate decision.
-- [ ] Obtain explicit approval to change repository visibility. Keep it private
-  until then, even if all technical checks pass.
+  compatibility limits. Version 0.2.0 was released on 9 November 2026.
+- [x] Publish `v0.2.0` at the reviewed commit after approval; npm publication remains separate.
+- [x] Obtain explicit approval and change repository visibility to public.
 
 ## Explicit limits to retain in the first support claim
 
