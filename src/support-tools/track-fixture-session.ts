@@ -3,7 +3,7 @@ import { startHlsim, type HlsSession, type HLSStartOptions } from "./hls-sim-run
 import { startDashFaultProxy } from "./dash-fault-proxy.js";
 import { loadScenario } from "./scenario.js";
 import { setFaultConfigPath, applyConfigOverride } from "./live-stream-fault-config.js";
-import { portNumber, bindHost } from "./safe-http.js";
+import { portNumber, bindHost, playerAccess } from "./safe-http.js";
 import { validateScenarioStart } from "./scenario-runs.js";
 import path from "node:path";
 export interface TrackFixtureOptions extends HLSStartOptions {
@@ -49,7 +49,7 @@ export async function startTrackFixture(options: TrackFixtureOptions): Promise<O
         applyConfigOverride({ profile: options.faultProfile });
       if (options.verbose !== undefined)
         applyConfigOverride({ logging: { verbose: options.verbose } });
-      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol),serviceHooks:publisher.services.hooks(), listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile,diagnosticsRotateFiles:options.diagnosticsRotateFiles,diagnosticsMaxFileBytes:options.diagnosticsMaxFileBytes, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2 });
+      const proxy = await startDashFaultProxy({lifecycleHooks:publisher.lifecycle.hooks(options.protocol),serviceHooks:publisher.services.hooks(),redundantStreams:options.redundantStreams, listenPort: port, upstreamPort: origin.port, host, manifestPath: '/dash/manifest.mpd', diagnosticsFile: options.diagnosticsFile,diagnosticsRotateFiles:options.diagnosticsRotateFiles,diagnosticsMaxFileBytes:options.diagnosticsMaxFileBytes, scenario: definition, scenarioStart: options.scenarioStart, controlToken: options.controlToken, videoTracks: options.videoRenditions ?? 2, access: playerAccess(options.allowedHosts, options.allowedPlayerOrigins) });
       session = { url: `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(':') ? '[' + host + ']' : host}:${port}/dash/manifest.mpd`, diagnostics: proxy.diagnostics, networkOwnership: proxy.networkOwnership,resourceOwnership:proxy.resourceOwnership, get scenario() { return proxy.scenario; }, runs: proxy.runs, close: () => proxy.close() };
       console.info('Owned DASH track fixture ready: ' + session.url);
     }

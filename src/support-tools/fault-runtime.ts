@@ -171,7 +171,7 @@ export class FaultRuntime {
       this.activations.delete(category);
     }
     if (!mode || mode === "off") return false;
-    if (mode === "random" && Math.random() >= 0.4) return false;
+    if (mode === "random" && this.random() >= 0.4) return false;
     if (mode === "once" && this.consumed.has(category)) return false;
     const effect = this.effect(category, mode, trace, { action });
     if (mode === "once") {
@@ -218,14 +218,14 @@ export class FaultRuntime {
     if (this.closed) return;
     const config = this.config;
     const profile = this.timeline?.profile();
-    const ms = this.timeline ? 0 : config.segment?.latencyMs ?? 0;
+    const ms = this.timeline ? (method === "GET" && jitterEligible ? profile?.latencyMs ?? 0 : 0) : config.segment?.latencyMs ?? 0;
     const jitterMs = method === "GET" && jitterEligible ? (profile ? profile.jitterMs : config.network?.jitterMs ?? 0) : 0;
     const track = /^(?:media|init):((?:video|audio|text):\d+)$/.exec(lane)?.[1];
     const trackNetwork = lane.startsWith("media:") ? profile?.tracks?.[track] : undefined;
     if (this.timeline && track) trace?.logical({ trackId: track });
     if (this.timeline && method === "GET" && jitterEligible) this.timeline.observe(trace, profile);
     const extra = jitterMs ? this.timeline ? this.timeline.jitter(lane, jitterMs, profile) : Math.floor(this.random() * (jitterMs + 1)) : 0;
-    const fixed = ms ? this.effect("latency", "always", trace, { delayMs: ms, action: "delay" }) : undefined;
+    const fixed = ms ? this.timeline ? this.timeline.effect("latency", trace, "delay", { delayMs: ms }, profile) : this.effect("latency", "always", trace, { delayMs: ms, action: "delay" }) : undefined;
     const jitter = jitterMs ? this.timeline ? this.timeline.effect("jitter", trace, "delay", { jitterMs, delayMs: extra }, profile) : this.effect("jitter", "always", trace, { jitterMs, delayMs: extra, action: "delay" }) : undefined;
     const trackExtra=trackNetwork?.jitterMs?this.timeline.jitter(lane+":track",trackNetwork.jitterMs,profile):0;
     const trackJitter=trackNetwork?.jitterMs?this.timeline.effect("jitter",trace,"delay",{networkScope:"track",jitterMs:trackNetwork.jitterMs,delayMs:trackExtra},profile):undefined;

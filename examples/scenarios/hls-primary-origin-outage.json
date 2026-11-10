@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "kind": "outage",
+      "target": { "resource": "manifest", "track": "video", "segment": "each", "origin": "primary" },
+      "status": 503,
+      "afterMs": 15000,
+      "beforeMs": 45000
+    },
+    {
+      "kind": "outage",
+      "target": { "track": "video", "segment": "each", "origin": "primary" },
+      "status": 503,
+      "afterMs": 15000,
+      "beforeMs": 45000
+    }
+  ]
+}

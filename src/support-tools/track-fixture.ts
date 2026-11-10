@@ -214,6 +214,7 @@ export class TrackFixturePublisher {
       const clock=this.services.utc(req.method);send(res,clock.status,clock.body,{'Content-Type':'text/plain',Date:clock.date,'Cache-Control':'no-store'},req.method);
       return;
     }
+    if(url.pathname==='/license'&&this.services.protocol==='dash'){const license=this.services.license(req.method);send(res,license.status,license.body,{'Content-Type':license.type,'Cache-Control':'no-store'},req.method);return;}
     const key=this.services.key(url.pathname,req.method);if(key){res.once('finish',()=>key.body.fill(0));res.once('close',()=>key.body.fill(0));send(res,key.status,key.body,{'Content-Type':'application/octet-stream','Cache-Control':'no-store'},req.method);return;}
     const generationMatch=/^\/generation-(\d{1,2})(\/.*)$/.exec(url.pathname),generation=generationMatch?Number(generationMatch[1]):0,pathname=generationMatch?generationMatch[2]:url.pathname;
     if(!this.lifecycle.allGenerations.some(g=>g.id===generation))throw new HttpError(404,'Unknown fixture generation');

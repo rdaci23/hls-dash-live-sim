@@ -18,7 +18,7 @@ test('owned HLS media playlists share a constant target duration across audio, v
   }}
  }
 });
-async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 test('owned optional fixture has exact common loops, genuine three-rung video, distinguishable audio and bounded caption samples',async()=>{
  const root=path.resolve(__dirname,'../assets/track-sample'),index=JSON.parse(await fs.readFile(path.join(root,'index.json'),'utf8'));assert.equal(index.tracks.length,7);
  for(const t of index.tracks){const initBytes=await fs.readFile(path.join(root,t.init)),init=initialization(initBytes);assert.equal(init.timescale,t.timescale);if(t.type==='audio')assert.equal(initBytes.includes(Buffer.from('edts')),false,'coded audio loop must not be shortened by a priming edit');if(t.type==='video')assert.deepEqual([init.width,init.height],[[320,180],[640,360],[960,540]][Number(t.id.split(':')[1])]);let end=0n;

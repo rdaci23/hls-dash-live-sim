@@ -84,10 +84,39 @@ apply to UTC GET **and HEAD**, without changing media/manifest/init/key HEAD
 exclusions. Publication/availability clocks keep advancing normally; the bad
 clock is deliberate. Outside the named window, local UTC is healthy again.
 
-Version-1 `services` accepts only a supported kind, afterMs/beforeMs and skewMs
-for utc-skew. Windows are at most 60 seconds, scheduling at most one day ahead;
+`utc-drift` is a clock that runs fast or slow instead of jumping: its error
+starts at zero and grows by `driftMsPerSecond` (nonzero, within ±5000) for each
+second inside the window, then the clock is correct again. It separates players
+that synchronise once from those that keep re-synchronising. Preset:
+[`local-utc-drift`](../examples/scenarios/local-utc-drift.json).
+
+`pdt-skew` is the HLS counterpart on the generated stream (no fixture needed):
+inside the window every media playlist reports `EXT-X-PROGRAM-DATE-TIME` shifted
+by `skewMs`. Segment availability does not change. Preset:
+[`hls-pdt-skew`](../examples/scenarios/hls-pdt-skew.json), run with
+`npm run hls -- --scenario examples/scenarios/hls-pdt-skew.json`.
+
+Version-1 `services` accepts only a supported kind, afterMs/beforeMs, skewMs
+for utc-skew and pdt-skew, and driftMsPerSecond for utc-drift. Windows are at most 60 seconds, scheduling at most one day ahead;
 skew must be 1–300 seconds in either direction. Arbitrary URLs, headers, file paths
 and compositions are rejected.
+
+## Local licence endpoint
+
+The DASH tracks fixture serves `/license`, which accepts the GET or POST a
+player's DRM stack sends and answers with a ClearKey-shaped JSON body.
+`license-unavailable` returns 503 and `license-denied` returns 403 inside the
+window; outside it the endpoint answers 200. The run passes after a healthy
+response, a failed one and a restored one.
+
+```sh
+npm run dash -- --fixture tracks --scenario examples/scenarios/local-license-denied.json
+```
+
+The fixture media is not encrypted and the returned keys match no content. This
+exercises a player's licence request, retry and error reporting; it does not
+test decryption or a real DRM system. Point the player's licence URL at
+`http://<host>:<port>/license`.
 
 ## Verification
 

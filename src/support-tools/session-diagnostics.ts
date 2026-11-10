@@ -80,6 +80,8 @@ export interface DiagnosticFields {
   applications?: number;
   result?: "pending" | "passed" | "failed" | "incomplete";
   requestId?: string;
+  /** Session-scoped pseudonym for the requesting client; never an address. */
+  clientId?: string;
   method?: string;
   resourceId?: string;
   resourceKind?: ResourceKind;
@@ -115,7 +117,9 @@ export interface DiagnosticFields {
     | "replace_payload"
     | "delay_headers"
     | "drip_body"
-    | "break_framing";
+    | "break_framing"
+    | "reset_connection"
+    | "withhold_response";
 }
 export interface DiagnosticEvent extends DiagnosticFields {
   schemaVersion: 1;
@@ -183,6 +187,8 @@ const values = {
     "delay_headers",
     "drip_body",
     "break_framing",
+    "reset_connection",
+    "withhold_response",
     "corrupt_range",
     "capture_manifest",
     "hold_manifest",
@@ -216,6 +222,7 @@ function diagnosticSlot(): Required<DiagnosticEvent> {
     applications: undefined,
     result: undefined,
     requestId: undefined,
+    clientId: undefined,
     method: undefined,
     resourceId: undefined,
     resourceKind: undefined,
@@ -251,6 +258,7 @@ const fieldPatterns = Object.freeze({
   requestId: uuidPattern, runId: uuidPattern,
   faultId: /^fault_(?:[a-f0-9]{32}|[a-f0-9-]{36})$/,
   resourceId: /^resource_[a-f0-9]{24}$/,
+  clientId: /^client_[a-f0-9]{16}$/,
   scenarioId: /^scenario_[a-f0-9]{32}$/,
   segmentId: /^segment_[a-f0-9]{32}$/,
   ruleId: /^rule:\d{1,2}$/,
@@ -335,6 +343,11 @@ export class SessionDiagnostics {
       "resource_" +
       createHmac("sha256", this.secret).update(value).digest("hex").slice(0, 24)
     );
+  }
+  /** Pseudonym for a client key ("addr:<ip>" or "id:<X-Sim-Client-Id>"). It is keyed
+   * by this session's secret, so it cannot be reversed or linked across sessions. */
+  clientId(key: string): string {
+    return "client_" + createHmac("sha256", this.secret).update("client:" + key).digest("hex").slice(0, 16);
   }
   private fileWrite(line: string): void {
     if (this.fd === undefined) return;
@@ -501,6 +514,8 @@ export class RequestTrace {
   private deliveryFields: DiagnosticFields = {};
   delivery(fields: DiagnosticFields): void { Object.assign(this.deliveryFields, fields); }
   private observers: Array<(outcome: RequestOutcome) => void> = [];
+  /** In-memory client identity for scenario attempt lanes; never exported. */
+  readonly clientKey: string;
   constructor(
     private diagnostics: SessionDiagnostics,
     req: IncomingMessage,
@@ -522,6 +537,11 @@ export class RequestTrace {
       resourceKind: "other",
       resourceSource: "local",
     };
+    const suppliedClient = req.headers?.["x-sim-client-id"];
+    this.clientKey = typeof suppliedClient === "string" && /^[\w.-]{1,64}$/.test(suppliedClient)
+      ? "id:" + suppliedClient
+      : "addr:" + String(req.socket?.remoteAddress ?? "").replace(/^::ffff:/, "");
+    this.resourceFields.clientId = diagnostics.clientId(this.clientKey);
     res.setHeader("X-Sim-Session-Id", diagnostics.sessionId);
     res.setHeader("X-Sim-Request-Id", this.requestId);
     this.record("request.started");
@@ -538,6 +558,7 @@ export class RequestTrace {
   resource(value: string, kind: ResourceKind, source: ResourceSource): void {
     this.resourceFields = {
       ...(this.resourceFields.runId ? { runId: this.resourceFields.runId } : {}),
+      clientId: this.resourceFields.clientId,
       resourceId: this.diagnostics.resourceId(value),
       resourceKind: kind,
       resourceSource: source,
@@ -628,8 +649,9 @@ export class RequestTrace {
     if (this.terminal) return;
     this.terminal = true;
     for (const effect of this.effects) effect.finish();
-    this.record("request.aborted", { status: this.res.statusCode, durationMs: Math.round((performance.now() - this.started) * 1000) / 1000 });
-    this.notify({ outcome: "aborted", status: this.res.statusCode, bodyBytes: this.deliveryFields.bodyBytes ?? 0 });
+    const status = this.res.headersSent ? this.res.statusCode : undefined;
+    this.record("request.aborted", { ...(status === undefined ? {} : { status }), durationMs: Math.round((performance.now() - this.started) * 1000) / 1000 });
+    this.notify({ outcome: "aborted", status, bodyBytes: this.deliveryFields.bodyBytes ?? 0 });
   }
 }
 export interface RequestOutcome {

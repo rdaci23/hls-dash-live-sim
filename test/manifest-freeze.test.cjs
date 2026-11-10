@@ -22,7 +22,7 @@ async function serve(t, handler) {
   t.after(() => { server.closeAllConnections(); return new Promise(r => server.close(r)); });
   return { url: 'http://127.0.0.1:' + server.address().port, port: server.address().port };
 }
-async function port() { const server = http.createServer(); await new Promise(r => server.listen(0, '127.0.0.1', r)); const p = server.address().port; await new Promise(r => server.close(r)); return p; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 const text = async url => { const r = await fetch(url); assert.equal(r.status, 200); return r.text(); };
 test('HLS manifest freeze preserves live publication and retention clocks', () => {
   let now = 0;

@@ -72,8 +72,9 @@ npm run dash -- --asset abr
 
 Use the actual MPD URL printed at startup. First start downloads the pinned
 livesim2 image. It is AMD64-only; ARM Docker hosts use emulation. Ctrl+C closes
-the supervised session and its owned container. `--detach` is a legacy flag;
-the Node process remains in the foreground.
+the supervised session and its owned container, as does closing the terminal.
+A container left behind by a killed session is removed the next time DASH starts
+from the same directory.
 
 Only the Advanced legacy shared-file workflow requires stream/controller commands
 to share an absolute `--fault-config` path. Legacy sessions sharing a file share
@@ -145,7 +146,10 @@ npm start -- livesim --sim-type hls --host 0.0.0.0
 
 Replace the loopback host in the player URL with this computer's LAN address.
 Browser players must be served from localhost or this computer's network
-addresses; unrelated website origins are rejected.
+addresses; other hosts and website origins receive 403 unless declared with
+`--allow-host` (for example `10.0.2.2` for the Android emulator) or
+`--allow-player-origin` (for example a hosted demo player).
+[Connect a player](docs/getting-started.md#connect-a-player).
 
 Stream access and control access are separate. Keep control on loopback unless
 you need LAN control. Set `HLS_DASH_CONTROL_TOKEN` to a token of at least 16
@@ -230,6 +234,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [DASH ladder and ABR](docs/dash-abr.md) | Optional multi-rendition sample, automatic bandwidth switching and separate HTTP fallback compatibility probe. |
 | [Playback gates](docs/playback-gates.md) | Numeric acceptance gates, reproducible browser/Roku commands and recorded hardware results. |
 | [Release checklist](docs/release-checklist.md) | Completed preparation and unresolved public-release requirements. |
+| [Glossary](docs/scenarios.md#glossary) | One-line definitions of scenario, preset, run, rule, session controls, fixture and related terms. |
 | [Contributing](CONTRIBUTING.md) | Change scope, validation and handling sensitive test inputs. |
 | [Fixture provenance](assets/README.md) | Procedural media sources and regeneration. |
 | [Verification history](docs/verification-history.md) | Older reports and why they are not current release evidence. |

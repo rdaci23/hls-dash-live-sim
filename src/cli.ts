@@ -32,8 +32,13 @@ async function starting<T extends { close(): Promise<void> }>(
     process.exitCode = 143;
     controller.abort(new Error("Startup cancelled by SIGTERM"));
   };
+  const hangup = () => {
+    process.exitCode = 129;
+    controller.abort(new Error("Startup cancelled by SIGHUP"));
+  };
   process.on("SIGINT", interrupt);
   process.on("SIGTERM", terminate);
+  process.on("SIGHUP", hangup);
   let session: T | undefined;
   try {
     session = await start(controller.signal);
@@ -45,6 +50,7 @@ async function starting<T extends { close(): Promise<void> }>(
   } finally {
     process.removeListener("SIGINT", interrupt);
     process.removeListener("SIGTERM", terminate);
+    process.removeListener("SIGHUP", hangup);
   }
 }
 
@@ -64,8 +70,9 @@ async function supervise(
       process.exit(1);
     }
   };
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
+  // Stay subscribed: a repeated Ctrl+C or a closed terminal must not kill the
+  // process before its owned container has been removed.
+  for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(name, shutdown);
   if (show) {
     try {
       const response = await fetch(session.url, {
@@ -75,8 +82,7 @@ async function supervise(
         throw new Error(`Manifest request failed: ${response.status}`);
       console.info(await response.text());
     } catch (error) {
-      process.removeListener("SIGINT", shutdown);
-      process.removeListener("SIGTERM", shutdown);
+      for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.removeListener(name, shutdown);
       await session.close();
       throw error;
     }
@@ -137,6 +143,8 @@ const startOptions = (builder) =>
       type: "boolean",
       description: "Emit redacted request/fault diagnostic events to stderr",
     })
+    .option("allow-host", { type: "array", string: true, description: "Extra Host name a player may use for this stream, e.g. 10.0.2.2 (Android emulator) or my-mac.local" })
+    .option("allow-player-origin", { type: "array", string: true, description: "Extra browser origin allowed to load this stream, e.g. https://hlsjs.video-dev.org, or null for file:// pages" })
     .option("showManifest", {
       alias: "show-manifest",
       type: "boolean",
@@ -170,6 +178,7 @@ async function runTemplate(name: string, args) {
           verbose: args.verbose,
           port: args.port,
           host: args.host,
+          allowedHosts: args["allow-host"], allowedPlayerOrigins: args["allow-player-origin"], redundantStreams: args["redundant-streams"],
           asset: template.isDynamic ? undefined : template.asset,
           manifestUrl: template.sourceUrl,
           ...auth(args),
@@ -189,6 +198,7 @@ async function runTemplate(name: string, args) {
           verbose: args.verbose,
           port: args.port,
           host: args.host,
+          allowedHosts: args["allow-host"], allowedPlayerOrigins: args["allow-player-origin"], redundantStreams: args["redundant-streams"],
           mode: args.mode,
           windowSegments: template.windowSegments,
           rendition: template.rendition,
@@ -204,7 +214,7 @@ async function runTemplate(name: string, args) {
 
 const program = yargs(hideBin(process.argv))
   .fail((message, error) => {
-    throw error ?? new Error(message);
+    throw error ?? new Error(`${message}\nRun with --help to list commands and options.`);
   })
   .scriptName("hls-dash-live-sim")
   .usage("$0 <command> [options]")
@@ -272,6 +282,8 @@ const program = yargs(hideBin(process.argv))
           description: "Disable only for HLS MP4 VoD mode",
         })
         .option("fault-proxy", { type: "boolean", default: true })
+        .option("redundant-streams", { type: "boolean", description: "Advertise a /backup copy of the stream (HLS redundant variants, DASH BaseURLs) for failover scenarios" })
+        .option("legacy-url-routes", { type: "boolean", description: "Serve HLS origin /pl|/seg|/key?u= routes; default only on loopback hosts" })
         .option("fault-config", { type: "string" })
         .option("fault-profile", { type: "string" })
         .option("periods-per-hour", {
@@ -334,6 +346,7 @@ const program = yargs(hideBin(process.argv))
       const common = {
         port: args.port,
         host: args.host,
+        allowedHosts: args["allow-host"], allowedPlayerOrigins: args["allow-player-origin"], redundantStreams: args["redundant-streams"],
         name: args.name,
         image: args.image,
         open: args.open,
@@ -374,6 +387,7 @@ const program = yargs(hideBin(process.argv))
               mode: args.mode,
               windowSegments: args["window-segments"],
               proxy: args.proxy,
+              legacyUrlRoutes: args["legacy-url-routes"],
               dummyContent: args["dummy-content"],
             }),
       );
@@ -428,7 +442,14 @@ for (const name of ["sports", "news", "ott", "mobile", "low-latency"])
         .option("detach", { type: "boolean" }),
     (args: any) => runTemplate(name, args),
   );
-program
+const report = (error: unknown) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exitCode ??= 1;
+};
+// Usage errors are thrown synchronously, before any promise exists. Uncaught,
+// Node prints the throwing line of yargs' minified bundle around the message.
+try {
+  program
   .check((args) => {
     if(args["diagnostics-rotate-files"]!==undefined&&(!args["diagnostics-file"]||!Number.isInteger(args["diagnostics-rotate-files"])||Number(args["diagnostics-rotate-files"])<2||Number(args["diagnostics-rotate-files"])>256))throw new Error("diagnostics-rotate-files requires diagnostics-file and an integer from 2 to 256");
     if (args.port !== undefined) portNumber(args.port as number);
@@ -447,7 +468,7 @@ program
   .strict()
   .help()
   .parseAsync()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode ??= 1;
-  });
+  .catch(report);
+} catch (error) {
+  report(error);
+}

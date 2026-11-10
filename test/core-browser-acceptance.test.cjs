@@ -61,6 +61,7 @@ test('buffer starvation and long gaps need measured buffer state, affected adver
 });
 test('healthy unexercised targets remain explicit observations; a baseline cap cannot substitute for a constrained phase',()=>{
   const e=evidence();e.scenario.rules[0].applied=0;e.scenario.rules[0].selected=0;e.scenario.result='incomplete';e.audit=[];audit(source(e,[]));const result=policy(e);assert.equal(result.passed,true,result.failures.join('; '));assert.equal(result.classification,'target-not-exercised');assert.equal(result.assessment.faultObserved,false);assert.equal(result.assessment.browserRecoveryVerified,false);
+  const strict=policy(e,{requireFaultObserved:true});assert.equal(strict.passed,false);assert.equal(strict.classification,'blocked');assert.match(strict.failures.join('; '),/fault delivery to the browser was not observed/);
   const n=network();n.diagnostics.events.filter(v=>v.fault).forEach(v=>{v.phaseId='phase:0';v.bandwidthKbps=1500;});assert.equal(evaluate(n).faultObserved,false);assert.deepEqual(evaluate(n).unobservedPhases,['phase:1']);
 });
 test('only explicitly recorded teardown cancellations after the observation cutoff are excluded from playback failures',()=>{

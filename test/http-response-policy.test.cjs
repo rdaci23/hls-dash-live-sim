@@ -13,7 +13,7 @@ const { HttpResponsePolicy, parseHttpPolicy } = require('../dist/support-tools/h
 const { parseScenario } = require('../dist/support-tools/scenario.js');
 const config = require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(() => config.applyConfigOverride({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } }));
-async function port() { const s = http.createServer(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 const definition = resource => ({ version: 1, seed: 42, rules: [], http: { target: { resource, track: resource === 'manifest' ? 'root' : 'video:0' }, validators: true, ranges: resource !== 'manifest' } });
 for (const protocol of ['hls','dash']) for (const resource of ['manifest','init','media']) test(`${protocol} ${resource}: real conditional responses, HEAD, byte ranges and If-Range resume`, async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'http-policy-')), origin = await createOrigin(); let session;

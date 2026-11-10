@@ -6,7 +6,7 @@ agreed otherwise. Official releases, npm publication and repository settings are
 maintained separately from ordinary contributions.
 The [release checklist](docs/release-checklist.md) records the remaining decisions.
 
-Private-release preparation uses local verification only. GitHub Actions is
+The repository is a public beta; verification is local only. GitHub Actions is
 disabled; do not re-enable it or dispatch hosted checks without explicit
 maintainer approval. Preserve exact-commit local evidence and all acceptance
 limits. [Current verification policy](docs/development.md#github-actions).

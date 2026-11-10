@@ -27,7 +27,10 @@ DASH root MPD accept this header, and only with GET/HEAD. Bad versions, resource
 kinds and methods return 400 before run controls or fault selection. Media, keys,
 initialization and UTC cannot use it to bypass faults. Legacy `/pl?u=…` proxy
 wrappers also reject previews; use the registered playlist URLs returned by the
-manifest instead. Ordinary legacy requests retain their behavior.
+manifest instead. Ordinary legacy requests retain their behavior on loopback
+sessions. A session bound to a non-loopback host (`--host 0.0.0.0`) answers them
+with 404 unless started with `--legacy-url-routes`, because they fetch any path
+on a permitted origin with that origin's credentials.
 
 The browser still accepts only local simulator URLs, sends no control token or
 cookies to manifest origins, rejects redirects and bounds the preview body/time.

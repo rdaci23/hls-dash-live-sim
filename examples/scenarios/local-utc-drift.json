@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "services": {
+    "kind": "utc-drift",
+    "afterMs": 30000,
+    "beforeMs": 60000,
+    "driftMsPerSecond": 500
+  }
+}

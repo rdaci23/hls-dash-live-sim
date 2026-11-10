@@ -7,7 +7,8 @@ export interface TimelinePhase {
   tracks?: Record<string,TrackNetwork>;
   afterMs: number;
   beforeMs: number;
-  network: { bandwidthKbps: number; jitterMs: number };
+  /** latencyMs: fixed delay before each manifest/media GET response; absent means none. */
+  network: { bandwidthKbps: number; jitterMs: number; latencyMs?: number };
   manifestFreeze: boolean;
 }
 export const HEALTHY_PROFILE = Object.freeze({ bandwidthKbps: 0, jitterMs: 0, manifestFreeze: false });
@@ -16,10 +17,11 @@ export interface TimelineProfile {
   phaseId?: string;
   bandwidthKbps: number;
   jitterMs: number;
+  latencyMs?: number;
   manifestFreeze: boolean;
 }
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
-type EffectKind = "bandwidth" | "jitter" | "freeze";
+type EffectKind = "bandwidth" | "jitter" | "freeze" | "latency";
 interface Observation { index: number; applied: Set<EffectKind>; trackApplied:Set<EffectKind>; }
 
 export function parseTimeline(input: unknown): TimelinePhase[] {
@@ -36,7 +38,10 @@ export function parseTimeline(input: unknown): TimelinePhase[] {
     if (!integer(phase.afterMs, 86400000) || !integer(phase.beforeMs, 86400000) || phase.beforeMs <= phase.afterMs || phase.afterMs < previousEnd)
       throw new Error("Invalid scenario: timeline phases must be ordered, non-overlapping finite windows within one day");
     previousEnd = phase.beforeMs;
-    if (phase.network !== undefined) object(phase.network, ["bandwidthKbps", "jitterMs"]);
+    if (phase.network !== undefined) object(phase.network, ["bandwidthKbps", "jitterMs", "latencyMs"]);
+    const latencyMs = phase.network?.latencyMs === undefined ? 0 : phase.network.latencyMs;
+    if (!integer(latencyMs, 60000)) throw new Error("Invalid scenario: timeline latencyMs must be an integer from 0 to 60000");
+    if (latencyMs && phase.tracks !== undefined) throw new Error("Invalid scenario: fixed latency with per-track shaping is not verified");
     const bandwidthKbps = phase.network?.bandwidthKbps === undefined ? 0 : phase.network.bandwidthKbps;
     const jitterMs = phase.network?.jitterMs === undefined ? 0 : phase.network.jitterMs;
     if (!integer(bandwidthKbps, 1000000) || !integer(jitterMs, 60000) || (phase.manifestFreeze !== undefined && typeof phase.manifestFreeze !== "boolean"))
@@ -50,7 +55,7 @@ export function parseTimeline(input: unknown): TimelinePhase[] {
         if(!integer(bandwidthKbps,1000000)||!integer(jitterMs,60000))throw Error("Invalid scenario: invalid per-track network bounds");tracks[track]={bandwidthKbps,jitterMs};
       }
     }
-    return { ...(tracks?{tracks}:{}),afterMs: phase.afterMs, beforeMs: phase.beforeMs, network: { bandwidthKbps, jitterMs }, manifestFreeze: phase.manifestFreeze ?? false };
+    return { ...(tracks?{tracks}:{}),afterMs: phase.afterMs, beforeMs: phase.beforeMs, network: { bandwidthKbps, jitterMs, ...(latencyMs ? { latencyMs } : {}) }, manifestFreeze: phase.manifestFreeze ?? false };
   });
 }
 
@@ -69,7 +74,7 @@ export class ScenarioTimeline {
     return this.invalid ? "jitter_capacity_exceeded" : undefined;
   }
   private trackStates:Record<string,{completed:number;bandwidth:number;jitter:number}>[];
-  private states: Array<{ selected: number; completed: number; cancelled: number; bandwidth: number; jitter: number; freeze: number }>;
+  private states: Array<{ selected: number; completed: number; cancelled: number; bandwidth: number; jitter: number; freeze: number; latency: number }>;
   constructor(
     readonly phases: readonly TimelinePhase[],
     private seed: number,
@@ -79,7 +84,7 @@ export class ScenarioTimeline {
   ) {
     this.boundaries = phases.flatMap(p => [p.afterMs, p.beforeMs]);
     this.trackStates=phases.map(p=>Object.fromEntries(Object.keys(p.tracks??{}).map(track=>[track,{completed:0,bandwidth:0,jitter:0}])));
-    this.states = phases.map(() => ({ selected: 0, completed: 0, cancelled: 0, bandwidth: 0, jitter: 0, freeze: 0 }));
+    this.states = phases.map(() => ({ selected: 0, completed: 0, cancelled: 0, bandwidth: 0, jitter: 0, freeze: 0, latency: 0 }));
     this.sync();
   }
   private at(): number { return this.closed ? this.stoppedAt : this.elapsed(); }
@@ -126,7 +131,7 @@ export class ScenarioTimeline {
       if (![200, 206].includes(outcome.status) || !outcome.bodyBytes || this.at() >= this.phases[index].beforeMs) return;
       state.completed++;
       for (const kind of applied) state[kind]++;
-      const track=this.trackStates[index][trace.trackId];if(track && trace.targetKind === "media"){track.completed++;for(const kind of trackApplied)if(kind!=="freeze")track[kind]++;}
+      const track=this.trackStates[index][trace.trackId];if(track && trace.targetKind === "media"){track.completed++;for(const kind of trackApplied)if(kind==="bandwidth"||kind==="jitter")track[kind]++;}
     });
     // Kept on the trace via closures rather than exporting request identities.
     entries.set(index, { index, applied,trackApplied });
@@ -138,7 +143,7 @@ export class ScenarioTimeline {
     const index = this.phase(trace, profile);
     if (index < 0) return;
     const entry = this.effects.get(trace).get(index);
-    const fault: DiagnosticFault = kind === "freeze" ? "manifest.freeze" : kind === "bandwidth" ? "response.bandwidth" : "response.jitter";
+    const fault: DiagnosticFault = kind === "freeze" ? "manifest.freeze" : kind === "bandwidth" ? "response.bandwidth" : kind === "latency" ? "response.latency" : "response.jitter";
     // A cold capture alone cannot prove a held snapshot. Completed successful
     // responses are counted by the outcome observer, not by fault selection.
     if (kind !== "freeze" || action === "hold_manifest") entry.applied.add(kind);
@@ -159,7 +164,7 @@ export class ScenarioTimeline {
     return this.phases.map((p, index) => {
       const state = this.states[index];
       const tracks=Object.entries(p.tracks??{}).map(([track,network])=>({track,...network,...this.trackStates[index][track]}));
-      const verified = tracks.every(t=>t.completed>0&&(!t.bandwidthKbps||t.bandwidth>0)&&(!t.jitterMs||t.jitter>0)) && state.completed > 0 && (!p.network.bandwidthKbps || state.bandwidth > 0) && (!p.network.jitterMs || state.jitter > 0) && (!p.manifestFreeze || state.freeze > 0);
+      const verified = tracks.every(t=>t.completed>0&&(!t.bandwidthKbps||t.bandwidth>0)&&(!t.jitterMs||t.jitter>0)) && state.completed > 0 && (!p.network.bandwidthKbps || state.bandwidth > 0) && (!p.network.jitterMs || state.jitter > 0) && (!p.network.latencyMs || state.latency > 0) && (!p.manifestFreeze || state.freeze > 0);
       let result: "passed" | "failed" | "incomplete" | "pending";
       if (this.invalid) result = "failed";
       else if (this.at() >= p.beforeMs) result = verified ? "passed" : "incomplete";

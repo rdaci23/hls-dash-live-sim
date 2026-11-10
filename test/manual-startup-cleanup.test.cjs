@@ -1,6 +1,6 @@
 const{test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),http=require('node:http');
 const{startHlsim}=require('../dist/support-tools/hls-sim-runner.js'),{startDashFaultProxy}=require('../dist/support-tools/dash-fault-proxy.js'),{FaultRuntime}=require('../dist/support-tools/fault-runtime.js');const config=require('../dist/support-tools/live-stream-fault-config.js');
-async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 for(const protocol of ['hls','dash'])test(protocol+' rejected manual preset closes fault runtime and diagnostic file before binding a port',async t=>{
  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'manual-startup-cleanup-')),faultConfigPath=path.join(directory,'faults.json'),scenarioFile=path.join(directory,'scenario.json'),diagnosticsFile=path.join(directory,'requests.jsonl'),p=await port();let closes=0;const original=FaultRuntime.prototype.close;
  t.after(()=>fs.rm(directory,{recursive:true,force:true}));config.setFaultConfigPath(faultConfigPath);

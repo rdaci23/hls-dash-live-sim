@@ -9,7 +9,7 @@
     "hls-dash-live-sim": "dist/cli.js"
   },
   "engines": {
-    "node": ">=20.3"
+    "node": ">=22"
   },
   "repository": {
     "type": "git",
@@ -21,7 +21,7 @@
     "start": "node dist/cli.js",
     "livesim": "node dist/cli.js livesim",
     "hls": "node dist/cli.js livesim start --sim-type hls",
-    "dash": "node dist/cli.js livesim start --sim-type dash --detach",
+    "dash": "node dist/cli.js livesim start --sim-type dash",
     "templates": "node dist/cli.js list-manifest-templates",
     "fault-control": "node dist/cli.js fault-control",
     "test": "npm run build && node --test test/*.test.cjs",

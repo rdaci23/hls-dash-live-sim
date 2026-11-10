@@ -10,6 +10,7 @@ import {
   listen,
   sessionServer,
   HttpError,
+  type PlayerAccess,
 } from "./safe-http.js";
 import { SessionFaultConfigSource } from "./live-stream-fault-config.js";
 import { FaultRuntime } from "./fault-runtime.js";
@@ -33,6 +34,20 @@ export interface DashFaultProxyOptions {
   scenarioStart?: "auto" | "manual";
   controlToken?: string;
   videoTracks?: number;
+  access?: PlayerAccess;
+  /** Advertise two MPD BaseURLs: the stream itself and a /backup copy of it. */
+  redundantStreams?: boolean;
+}
+/** Two alternative MPD-level BaseURLs. Players treat them as failover choices. */
+export function redundantBaseUrls(mpd: string, manifestPath: string): string {
+  if (/<(?:\w+:)?BaseURL\b/.test(mpd)) throw new HttpError(422, "Redundant streams need an MPD without its own BaseURL");
+  const directory = manifestPath.slice(0, manifestPath.lastIndexOf("/") + 1).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const urls = `<BaseURL serviceLocation="primary">${directory}</BaseURL><BaseURL serviceLocation="backup">/backup${directory}</BaseURL>`;
+  // The schema orders ProgramInformation before BaseURL.
+  const anchor = /<\/ProgramInformation>|<ProgramInformation\b[^>]*\/>/.exec(mpd) ?? /<MPD\b[^>]*>/.exec(mpd);
+  if (!anchor) throw new HttpError(422, "Redundant streams need an MPD document");
+  const at = anchor.index + anchor[0].length;
+  return mpd.slice(0, at) + urls + mpd.slice(at);
 }
 export interface DashFaultProxy {
   resourceOwnership:()=>Record<string,number>;
@@ -51,6 +66,9 @@ export async function startDashFaultProxy(
   const controlToken=options.controlToken??process.env.HLS_DASH_CONTROL_TOKEN??"";
   const definition = options.scenario ? parseScenario(options.scenario) : undefined;
   const interactive=manual||!definition&&controlToken.length>=16;
+  const redundant = !!options.redundantStreams;
+  if (definition?.rules.some(rule => rule.target.origin) && !redundant)
+    throw new Error("Origin targets require a session started with --redundant-streams");
   if (definition?.rules.some(rule => rule.target.resource === "manifest" && !["root", "any"].includes(rule.target.track)))
     throw new Error("DASH has one root MPD; manifest targets must use track root or any");
   if (definition?.rules.some(rule => rule.target.resource === "init" && rule.target.track === "root"))
@@ -78,21 +96,22 @@ export async function startDashFaultProxy(
     interactive || !!scenario?.definition.lifecycle || (scenario?.definition.http?.target.resource === "init" || scenario?.definition.cache?.target.resource === "init") || !!scenario?.definition.rules.some(rule => rule.target.resource === "init"),!!options.lifecycleHooks) : undefined;
   const controls=new SessionControls({diagnostics,protocol:"dash",token:controlToken,source:configSource,legacyManual:manual,externallyManaged:!!definition&&!manual,
     supportsKeys:()=>false,manualSnapshot:()=>faults.snapshot(),
-    resetManual:async()=>{faults.close();await transport.cancelManual();snapshots.setFrozen(false);faults=new FaultRuntime(Math.random,undefined,configSource);},
+    resetManual:async()=>{faults.close();await transport.cancelManual();snapshots.setFrozen(false);scenarioIndex?.setHeld(false);faults=new FaultRuntime(Math.random,undefined,configSource);},
   });
   let faults = new FaultRuntime(Math.random, scenario?.timeline,configSource);
   const snapshots = new ManifestSnapshots<{
     body: Buffer; headers: Record<string, string>; status: number;
   }>(128, !scenario,configSource);
-  let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: true, initialization: true, videoTracks: options.videoTracks,
+  const setFrozen = (frozen: boolean) => { snapshots.setFrozen(frozen); scenarioIndex?.setHeld(frozen); };
+  let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => setFrozen(profile.manifestFreeze));
+  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "dash",lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks,redundant, generated: true, initialization: true, videoTracks: options.videoTracks,
     publicationAvailable: (kind,track) => scenarioIndex?.publicationAvailable(kind,track) ?? false,
     advancingManifest: () => scenarioIndex?.advancing() ?? false,
     resourceAvailable: (kind, track) => kind === "manifest" && ["root", "any"].includes(track) || (scenarioIndex?.available(kind, track) ?? false) }, async (next, previousRunId) => {
-    scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
+    scenario?.close(); setFrozen(false); unsubscribeTimeline?.();
     if (previousRunId) await transport.cancelRun(previousRunId);
     faults.close(); scenario = next; faults = new FaultRuntime(Math.random, next?.timeline,configSource);
-    unsubscribeTimeline = next?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
+    unsubscribeTimeline = next?.timeline?.subscribe(profile => setFrozen(profile.manifestFreeze));
   }, controlToken, manual?definition:undefined, {
     manualConflict:()=>configSource.hasManualConflict(),enabled:()=>controls.allowsScenarioDelivery(),
     httpControlAllowed:()=>controls.allowsLegacyScenarioWrites(),onChanged:()=>controls.scenarioChanged(),
@@ -105,7 +124,7 @@ export async function startDashFaultProxy(
   const transport = sessionServer(async (req, res, signal, trace) => {
     let { scenario, faults } = context();
     try {
-      if (preflight(req, res, options.host, true)) return;
+      if (preflight(req, res, options.host, true, options.access)) return;
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const observing = manifestPreview(req,res,requestUrl.pathname === new URL(options.manifestPath ?? "/manifest.mpd",upstreamBase).pathname,trace);
       if (observing) scenario = undefined;
@@ -162,19 +181,24 @@ export async function startDashFaultProxy(
       }
       if (/^\/\//.test(req.url ?? ""))
         throw new HttpError(400, "Invalid proxy path");
-      const advertised = options.serviceHooks?.classify(upstreamBase+request.pathname+request.search)??scenarioIndex?.resolve(upstreamBase+request.pathname+request.search);
-      const manifest = advertised ? advertised.kind === "manifest" : request.pathname.toLowerCase().endsWith(".mpd");
+      // A redundant copy is the same upstream resource under /backup.
+      const backup = redundant && request.pathname.startsWith("/backup/");
+      const pathname = backup ? request.pathname.slice("/backup".length) : request.pathname;
+      const identified = options.serviceHooks?.classify(upstreamBase+pathname+request.search)??scenarioIndex?.resolve(upstreamBase+pathname+request.search);
+      // The backup copy is the same resource with its own attempt history.
+      const advertised = identified && backup ? { ...identified, key: identified.key + ":backup", origin: "backup" as const } : identified;
+      const manifest = advertised ? advertised.kind === "manifest" : pathname.toLowerCase().endsWith(".mpd");
       // livesim2 puts stream options in the path. Query time/cache selectors must
       // not let a client escape an active freeze or grow its snapshot cache.
       const manifestKey = request.pathname;
       const segment = advertised ? ["media","init"].includes(advertised.kind) : /\.(m4s|mp4|cmfv|cmfa|m4v|m4a|m4i)$/i.test(
-        request.pathname,
+        pathname,
       );
       const logical = manifest
-        ? { kind: "manifest" as const, trackId: "root", trackType: "root" as const, key: `dash:manifest:${request.pathname}` }
+        ? { kind: "manifest" as const, trackId: "root", trackType: "root" as const, key: `dash:manifest:${request.pathname}`, ...(backup ? { origin: "backup" as const } : {}) }
         : advertised;
       trace.resource(
-        upstreamBase + request.pathname + request.search,
+        upstreamBase + pathname + request.search,
         manifest ? "manifest" : logical?.kind === "init" ? "init" : segment ? "segment" : "other",
         "livesim2",
       );
@@ -182,7 +206,9 @@ export async function startDashFaultProxy(
       if (scenario) scenario.assertCompatible();
       // Media/manifest latency faults must not skew the UTC reference itself.
       if (!observing && (!scenario || scenario.timeline) && (manifest || segment)) {
-        await faults.delay(signal, trace, req.method, true, manifest ? `manifest:${request.pathname}` : `${logical?.kind ?? "media"}:${logical?.trackId ?? "unknown"}`);
+        // Only advertised manifests own a jitter lane; arbitrary paths share one.
+        const knownManifest = advertised?.kind === "manifest" || pathname === new URL(options.manifestPath ?? "/manifest.mpd", upstreamBase).pathname;
+        await faults.delay(signal, trace, req.method, true, manifest ? knownManifest ? `manifest:${pathname}` : "manifest:unknown" : `${logical?.kind ?? "media"}:${logical?.trackId ?? "unknown"}`);
       }
       const profile = scenario?.timeline?.profile();
       if (
@@ -191,12 +217,21 @@ export async function startDashFaultProxy(
         segment &&
         !logical &&
         req.method === "GET"
-      )
+      ) {
+        // A path the origin does not have is not media that escaped a rule: answer
+        // it as missing. Anything the origin would serve still invalidates the run.
+        const probe = await fetchRemote(upstreamBase + pathname + request.search, policy, { method: "HEAD", signal }).catch(() => undefined);
+        if (probe && [404, 410].includes(probe.status)) {
+          scenario.unknownMedia();
+          send(res, probe.status, "Unknown DASH resource", {}, req.method);
+          return;
+        }
         scenario.unidentifiedMedia();
+      }
       const failure = scenario
         ? scenario.decide(logical, req.headers.range, trace, req.method, req.headers)
         : segment && req.method !== "HEAD"
-          ? faults.segmentStatus(request.pathname, trace)
+          ? faults.segmentStatus(pathname, trace)
           : 0;
       if (failure) {
         send(res, failure, "Injected DASH resource failure", scenario?.failureHeaders(trace) ?? {}, req.method);
@@ -217,7 +252,7 @@ export async function startDashFaultProxy(
       }
       if (manifest && !observing) snapshots.assertCapacity(manifestKey);
       const remote = await fetchRemote(
-        upstreamBase + request.pathname + request.search,
+        upstreamBase + pathname + request.search,
         policy,
         {
           method: req.method === "HEAD" && !scenario?.handlesHttp(trace) ? "HEAD" : "GET",
@@ -252,6 +287,7 @@ export async function startDashFaultProxy(
           if (scenarioIndex)
             scenarioIndex.observe(text, remote.url);
           if (scenarioIndex) scenario?.manifestBindings(trace,scenarioIndex.manifestBindings());
+          if (redundant) remote.body = Buffer.from(redundantBaseUrls(text, pathname));
           const choice = observing ? {value:remote,action:undefined} : snapshots.observe(manifestKey, remote);
           if (choice.action) faults.frozen(trace, choice.action === "capture", latestProfile);
           remote.body = choice.value.body;
@@ -263,7 +299,7 @@ export async function startDashFaultProxy(
         segment && req.method !== "HEAD" && !scenario
           ? faults.corrupt(
               remote.body,
-              request.pathname,
+              pathname,
               remote.status === 206,
               trace,
             )
@@ -305,6 +341,7 @@ export async function startDashFaultProxy(
     diagnostics.close(); configSource.close();
     throw error;
   }
+  console.info(`Session controls: ${controls.available ? "enabled for this token" : controls.report().reason ?? "unavailable"}`);
   return {
     upstreamBase,
     networkOwnership:()=>faults.ownership(),

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "seed": 20261110,
+  "rules": [
+    {
+      "id": "video-loss",
+      "target": {
+        "track": "video",
+        "segment": "each"
+      },
+      "attempts": [
+        1
+      ],
+      "probability": 0.02,
+      "maxApplications": 10000,
+      "status": 503,
+      "expectRetry": false
+    }
+  ]
+}

@@ -15,7 +15,7 @@ const { startDashFaultProxy } = require('../dist/support-tools/dash-fault-proxy.
 const config = require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(() => config.applyConfigOverride({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 },
   network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } }));
-async function port() { const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const value = server.address().port; await new Promise(resolve => server.close(resolve)); return value; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 function harness(t, data) {
   const diagnostics = new SessionDiagnostics('hls'); let now = 0;
   const engine = new ScenarioEngine(data, diagnostics, () => now);

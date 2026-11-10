@@ -83,7 +83,7 @@ const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { startDashFaultProxy } = require('../dist/support-tools/dash-fault-proxy.js');
 const { createOrigin } = require('../scripts/resource-scenarios/origin.cjs');
 const wire = require('../scripts/retry-scenarios/verify.cjs');
-async function port() { const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); const result = server.address().port; await new Promise(resolve => server.close(resolve)); return result; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 for (const protocol of ['hls', 'dash']) for (const [resource, ranged] of [['media', false], ['manifest', false], ['init', false], ['media', true]])
   test(`${protocol} ${resource}${ranged ? ' range' : ''} wire sequence: 503/503/503/success with unaffected requests`, async t => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'multi-retry-')); let session, origin;

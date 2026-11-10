@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "services": { "kind": "license-unavailable", "afterMs": 20000, "beforeMs": 40000 }
+}

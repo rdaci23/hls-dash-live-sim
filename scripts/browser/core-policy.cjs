@@ -7,7 +7,7 @@ const { evaluate } = require('./core-acceptance.cjs');
 const { read: completeDiagnostics } = require('./complete-diagnostics.cjs');
 const { expectedCase, CASES } = require('./core-cases.cjs');
 function rawManifest(bytes) { return { file: 'raw.json', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }; }
-function qualify(report, { raw, rawBytes, diagnostics, requireContinuation = false, commit, caseId = report?.caseId } = {}) {
+function qualify(report, { raw, rawBytes, diagnostics, requireContinuation = false, requireFaultObserved = false, commit, caseId = report?.caseId } = {}) {
   const failures = [];
   try {
     const bytes = rawBytes === undefined ? Buffer.from(JSON.stringify(raw, null, 2) + '\n') : Buffer.from(rawBytes);
@@ -25,6 +25,8 @@ function qualify(report, { raw, rawBytes, diagnostics, requireContinuation = fal
     protocol: report.protocol, browserVersion: report.browserVersion, playerVersion: report.playerVersion });
   failures.push(...assessment.failures);
   if (!assessment.observationCompleted) failures.push('Core browser observation was not completed');
+  // A qualification must not pass on healthy playback that never met the fault.
+  if (requireFaultObserved && !assessment.faultObserved) failures.push('Required fault delivery to the browser was not observed (target not exercised)');
   if (requireContinuation && !assessment.playerContinuedAfterRestoration) failures.push('Required rendered continuation was not verified');
   return { passed: !failures.length, failures: [...new Set(failures)], classification: failures.length ? 'blocked' : assessment.faultObserved ? 'observed-continuation' : 'target-not-exercised', report, assessment };
 }

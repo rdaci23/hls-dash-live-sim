@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [],
+  "services": {
+    "kind": "pdt-skew",
+    "afterMs": 20000,
+    "beforeMs": 50000,
+    "skewMs": 30000
+  }
+}

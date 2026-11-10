@@ -4,7 +4,8 @@ import { HttpError, sendHeaders } from "./safe-http.js";
 import type { RequestTrace } from "./session-diagnostics.js";
 
 export interface TransportFault {
-  kind: "stall" | "abort" | "header-delay" | "drip" | "framing";
+  /** reset closes the connection before any response; no-response holds it silent first. */
+  kind: "stall" | "abort" | "header-delay" | "drip" | "framing" | "reset" | "no-response";
   network?: true;
   chunkBytes?: number;
   intervalMs?: number;
@@ -77,6 +78,16 @@ export class TransportDelivery {
       }
     };
     try {
+      if (fault.kind === "reset" || fault.kind === "no-response") {
+        // The origin body was valid, so the action is committed before any byte is sent.
+        ready();
+        if (fault.kind === "no-response") { trace.record("transport.stalled"); await delay(fault.durationMs!, undefined, { signal: bounded }); }
+        bounded.throwIfAborted();
+        trace.record("transport.aborted"); trace.abortResponse();
+        const socket = res.socket as (typeof res.socket & { resetAndDestroy?: () => void }) | null;
+        if (socket?.resetAndDestroy) socket.resetAndDestroy(); else res.destroy();
+        return;
+      }
       if (fault.kind === "header-delay") await delay(fault.durationMs!, undefined, { signal: bounded });
       bounded.throwIfAborted();
       if (fault.kind === "framing" && fault.framing === "chunked") {
@@ -130,7 +141,7 @@ export class TransportDelivery {
       ready();
       res.end();
     } catch (error) {
-      progress();
+      if (res.headersSent) progress();
       if (deadline.signal.aborted && !signal.aborted) {
         trace.cancel("transport_deadline");
         if (!res.destroyed) res.destroy();

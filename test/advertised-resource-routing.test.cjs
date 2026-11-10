@@ -3,7 +3,7 @@ const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:pa
 const {createOrigin}=require('../scripts/resource-scenarios/origin.cjs');
 const {startDashFaultProxy}=require('../dist/support-tools/dash-fault-proxy.js');
 const config=require('../dist/support-tools/live-stream-fault-config.js');
-async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 test('DASH advertised media/init identity takes precedence over misleading filename extensions',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'advertised-routing-')),origin=await createOrigin();let session;
  t.after(async()=>{await session?.close();await origin.close();await fs.rm(dir,{recursive:true,force:true});});

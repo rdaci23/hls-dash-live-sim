@@ -112,7 +112,10 @@ queries and fragments. Authorization headers, cookies, media/key bodies, profile
 labels, config paths and raw exception messages are omitted. A per-session keyed
 hash identifies resources: the same target gets the same ID within a session,
 and different sessions use different resource IDs. A changed signed URL gets a
-different ID. Scenario logical segment IDs separately normalize the supported
+different ID. Request events also carry `clientId`, a per-session keyed hash of
+the requester (its `X-Sim-Client-Id` header if sent, otherwise its address); the
+address and the header value themselves are never exported, and the hash differs
+between sessions. Scenario logical segment IDs separately normalize the supported
 track/template/sequence identity, including cache queries on local DASH media. Responses
 and the normal `--show-manifest`/template/Docker console output are outside the
 diagnostic export format.
@@ -124,7 +127,9 @@ events in order. The export is a point-in-time snapshot: its own request and oth
 active requests may not yet have a terminal event.
 
 Optional JSONL files stop at **10 MiB**, with room reserved for a
-`diagnostics.file_limit` marker. They do not rotate or grow indefinitely. After
+`diagnostics.file_limit` marker. By default they do not rotate or grow
+indefinitely; `--diagnostics-rotate-files <2-256>` opts in to append-only rotation
+across that many 10 MiB files (see [endurance](endurance.md)). After
 the limit, streaming and recent-history recording continue. A file write failure
 also leaves streaming active and emits `diagnostics.file_error` to recent history
 and a generic console message; a partial final line is rolled back when possible.

@@ -161,8 +161,12 @@ explicit internet-dependent test option. `nowMS` is a per-request diagnostic and
 must not be used to claim coherent fixed-time or time-skew playback. A shared
 virtual clock remains future work.
 
-The [stabilization evidence](stabilization-verification.json) records the latest
-measured browser and device results, including failures and unverified gates.
+The [stabilization evidence](stabilization-verification.json) records the last
+committed browser and device measurements (29 October 2026), including failures
+and unverified gates. It was taken on a pre-release commit that is not part of
+the published history, so it is historical context rather than evidence for the
+current commit. The six-case browser gate and the Roku runner now report
+`browserGatesPassed`/`releaseQualified` as false when run from a modified tree.
 Prior JSON evidence remains historical and retains its original versions and
 limitations. License/notices, public packaging and CI coverage remain separate
 release requirements; no command here changes repository visibility or publishes.

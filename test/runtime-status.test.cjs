@@ -8,13 +8,7 @@ const config = require('../dist/support-tools/live-stream-fault-config.js');
 const { FaultRuntime } = require('../dist/support-tools/fault-runtime.js');
 const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { startDashFaultProxy } = require('../dist/support-tools/dash-fault-proxy.js');
-async function port() {
-  const server = http.createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const value = server.address().port;
-  await new Promise(resolve => server.close(resolve));
-  return value;
-}
+async function port() { return require("./helpers/free-port.cjs")(); }
 test('runtime snapshots observe one-shot consumption and rearming without triggering faults', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime-status-'));
   let runtime;

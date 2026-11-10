@@ -64,7 +64,7 @@ the response. Later rules cannot assign a second status to that request.
 | `target.track` | Media: video/audio/text or an alias such as video:0. Manifest/init also accept any; root selects a root manifest or HLS direct-playlist init. |
 | `target.segment`       | `next`, `each`, or an exact locator such as `{"kind":"number","value":"42"}` / `{"kind":"time","value":"22034830098432"}`. Values are unsigned 64-bit decimal strings.                                                                       |
 | `attempts`             | Eligible request attempts, default `[1]`; unique integers from 1 to 1000. Timed outages require `"all"` (their default).                                                                                                                                                                    |
-| `status`               | Mutually exclusive with `transport`. An explicit failure status: 403, 404, 408, 429, 500, 502, 503 or 504.                                                                                                                                                                        |
+| `status`               | Mutually exclusive with `transport`. An explicit failure status: 401 (requires a `headers.challenge`), 403, 404, 408, 429, 500, 502, 503 or 504.                                                                                                                                                                        |
 | `maxApplications`      | Selection cap from 1 to 10000, default 1. Reserved when selected so concurrent requests cannot exceed the cap.                                                                                                                               |
 | `probability`          | From 0 to 1, default 1. Uses the seed rather than global random state.                                                                                                                                                                       |
 | `afterMs` / `beforeMs` | Inclusive start / exclusive end in monotonic elapsed milliseconds since the proxy scenario session starts; maximum one day. `afterMs` defaults to 0. These are session-time gates; content presentation-time scheduling remains future work. |
@@ -120,8 +120,10 @@ A rule with `"kind": "outage"` requires `target.segment: "each"`, a finite
 `maxApplications: 10000` is a safety bound: exhausting it during the window fails
 the run explicitly instead of silently restoring service. The rule stays pending
 until the end, then passes only if at least one injected response completed and
-all selected responses completed correctly. No traffic, early shutdown or cancelled
-injections cannot pass. Ordinary rules retain their quota/retry semantics.
+all selected responses completed correctly. No traffic or early shutdown cannot
+pass. If a client abandons an injected response, the outage stays in force and
+the rule is marked failed until a later injected response completes; the report
+counts these in `cancelledInjections`. Ordinary rules retain their quota/retry semantics.
 
 The server outcome proves injection only, not player recovery. Generated HLS
 muxes audio/video, so its preset targets `video`; the DASH preset has separate
@@ -131,7 +133,85 @@ check independent audio delivery, healthy controls and restoration.
 See [sustained outage recovery](sustained-outages.md) for the two presets, the
 explicit player retry profile and rendered browser acceptance checks.
 
+## Missing segments
+
+A rule with `"kind": "gap"` removes one advertised media segment for good: a
+playlist or MPD lists it, but every request for it fails. It requires
+`target.segment: "next"`, a `status`, all attempts and probability 1.
+
+```json
+{ "kind": "gap", "target": { "track": "video", "segment": "next" }, "status": 404, "afterMs": 10000 }
+```
+
+The first segment nobody has requested yet, inside the time window, becomes the
+hole. It is missing for every client, and in every rendition the target matches
+(`video` covers all video renditions; `video:0` only one). Retries never heal it,
+and it stays missing after the rule passes. The rule passes once a later segment
+on a matching track is delivered in full, which shows the player moved past the
+hole; the report names the segment in `gapSegment`. See
+[`missing-segment-gap`](../examples/scenarios/missing-segment-gap.json).
+
+## Targeting one client
+
+Add `target.client` to make a rule apply only to requests that carry that
+`X-Sim-Client-Id` header. Other players on the same session are unaffected:
+
+```json
+{ "kind": "outage", "target": { "track": "video", "segment": "each", "client": "player-b" },
+  "status": 503, "afterMs": 10000, "beforeMs": 30000 }
+```
+
+A client is matched by the header only, never by address, so the player under
+test must send it. See
+[`one-client-video-outage`](../examples/scenarios/one-client-video-outage.json).
+
+## Redundant streams and failover
+
+Start generated HLS with `--redundant-streams` to advertise every variant twice
+in the master playlist: the primary URL, then a `/backup/...` copy with the same
+attributes, as HLS redundant streams. Both copies serve the same segments.
+`target.origin` (`primary` or `backup`) then limits a rule to one copy:
+
+```sh
+npm run hls -- --redundant-streams --scenario examples/scenarios/hls-primary-origin-outage.json
+```
+
+[That preset](../examples/scenarios/hls-primary-origin-outage.json) fails the
+primary media playlists and segments for 30 seconds while the backup stays
+healthy. The server report proves the outage was delivered; whether the player
+switched is visible in the diagnostics as requests to the backup copy. Origin
+targets are rejected without `--redundant-streams`.
+
+For DASH the same flag adds two alternative `BaseURL` elements to the MPD, the
+stream's own directory and a `/backup` copy of it, labelled with
+`serviceLocation` `primary` and `backup`. It needs the fault proxy and an MPD
+that has no `BaseURL` of its own. This is tested against a local stand-in
+origin, not yet against the Docker engine or a player.
+
 ## Replaying and checking outcomes
+
+`GET /scenario` returns the run report. The fields that answer "did the fault
+reach the client, and did that client recover?":
+
+| Field | Meaning |
+| --- | --- |
+| `rules[].selected` | Requests this rule chose to fault. |
+| `rules[].applied` | Faulted responses fully written by the simulator (fault delivered). |
+| `rules[].recovered` | With `expectRetry`: the same client's next attempt of the same download finished with nonempty 200/206 bytes. HTTP evidence only, not rendered playback. |
+| `rules[].failure` | Why a rule failed, for example `retry_failed` or `injected_response_cancelled`. |
+| `rules[].result`, `result` | `pending` (still waiting), `passed`, `failed`, or `incomplete` (window or session ended before the rule was exercised). |
+| `trackedDownloads` | Download histories currently retained (at most 10000). |
+| `evictedDownloads` | Older histories retired to stay within that bound. |
+| `trackedClients` | Distinct clients seen on targeted resources. More than one means other viewers shared the run. |
+| `unidentifiedMediaRequests`, `invalidReason` | Why a run was invalidated, when it was. |
+
+Attempts are counted per client. A client is the remote IP address, or the value
+of an `X-Sim-Client-Id` request header (letters, digits, `.`, `_`, `-`; up to 64
+characters) when the player can send one. Another device requesting the faulted
+segment neither consumes the next attempt nor satisfies `expectRetry`. Two
+players on the same computer share an address: give each a distinct
+`X-Sim-Client-Id`, or run one player per session. Client identities stay in
+memory and are never written to diagnostics or evidence.
 
 Each rule has selected/applied counts. With `expectRetry`, all configured HTTP
 failures must complete in order, each subsequent attempt starting after its
@@ -171,18 +251,49 @@ responses. Reports remain inspectable through `session.scenario.report()` after
   Number/Time SegmentTemplates and finite SegmentTimelines. Empty timelines at a
   period boundary are allowed. Media requests without an observed identity
   invalidate an active run with HTTP 409, rather than consuming a guessed target.
+- A DASH request for a media-like path the origin does not have is answered
+  with the origin's 404 and counted in `unknownMediaRequests`; it does not
+  invalidate the run. A path the origin would serve but the MPD never
+  advertised still does.
 - Manual faults, including network bandwidth/jitter, must be off at startup.
   Conflicting requests during a scenario invalidate the run. Timeline-owned
   sessions require them off even after their final phase. Settled results are
   retained and completed finite scenarios allow healthy playback to continue.
-- HTTP statuses, bounded downstream body stalls/aborts, and optional timed bandwidth, seeded jitter and manifest freeze
-  are supported. Scenario-driven fixed latency, corruption, DRM, ads and
+- HTTP statuses, bounded downstream body stalls/aborts, connection resets and
+  withheld responses, missing segments, and optional timed bandwidth, fixed
+  latency, seeded jitter and manifest freeze are supported. Real DRM, ads and
   device-specific recovery actions remain later work.
-- Active attempt history is capped at 10000 downloads. The DASH index is bounded
-  to 10000 retained resources, 128 tracks and 256 template scopes. Capacity
-  exhaustion fails explicitly; counters are never silently evicted and reset.
+- Active attempt history is capped at 10000 downloads. Beyond that the oldest
+  history that no retry assertion is bound to is retired and counted in
+  `evictedDownloads`, so long probabilistic runs such as
+  [`random-video-loss`](../examples/scenarios/random-video-loss.json) keep serving.
+  A retired download that is requested again starts at attempt 1. The DASH index
+  is bounded to 10000 retained resources, 128 tracks and 256 template scopes;
+  exhausting those still fails explicitly.
   Completed finite scenarios stop allocating/indexing new media indefinitely.
 - HTTP recovery assertions establish server behavior. General browser recovery,
   ABR fallback and new scenarios still need their own player checks. The initial
   404/retry cases have recorded browser and one-model Roku coverage; see
   [playback gates](playback-gates.md).
+
+## Glossary
+
+The documentation uses these words as follows. Other pages are not renamed to match.
+
+| Term | Meaning |
+| --- | --- |
+| Scenario (definition) | A versioned JSON file of ordered `rules` and/or a `timeline`, loaded with `--scenario`; immutable once loaded or prepared. |
+| Preset | A ready-made scenario definition: a file under `examples/scenarios/` or an item in the control page's Scenarios catalog. |
+| Run | One execution of a scenario definition in a session, from start (or **Start test**) to a settled result; reported at `GET /scenario`. |
+| Rule | One entry in `rules`: a target, eligible attempts and an HTTP status or transport fault, optionally with `expectRetry`. |
+| Timeline / phase | The optional `timeline` array; each phase is a finite window of bandwidth, jitter, latency or manifest freeze. See [network timelines](network-scenarios.md). |
+| Download | One logical resource plus normalized byte range; the unit that attempts are counted against. |
+| Attempt | The nth request for the same download by the same client. |
+| Client | A requester identified by remote IP address or `X-Sim-Client-Id` header. |
+| Selected / applied / recovered | Report counts: requests a rule chose to fault, faulted responses fully written, and retries that then succeeded over HTTP. |
+| Session | One running simulator process and its stream, with its own `sessionId`, settings and evidence. |
+| Manual faults | Fault settings applied directly (fault file or the Manual faults tab) rather than by a scenario; must be off for a scenario run. |
+| Session controls | The authenticated `/session-control` API and control-page tabs scoped to one connected simulator. See [session controls](session-controls.md). |
+| Scenario controls | The Scenarios part of session controls: Prepare, Start and Stop a preset interactively. See [scenario controls](scenario-controls.md). |
+| Legacy (shared) fault file | The `--fault-config` JSON file written by the control server's older mode; separate from session controls. |
+| Fixture / owned | A fixture is locally generated test media, such as [`--fixture tracks`](track-fixtures.md); "owned" marks project-authored media, processes or containers that need no external service, as opposed to an external origin being proxied. |

@@ -19,16 +19,13 @@ async function server(t, handler) {
     port: s.address().port,
   };
 }
-async function unusedPort() {
-  const s = http.createServer();
-  await new Promise((r) => s.listen(0, "127.0.0.1", r));
-  const p = s.address().port;
-  await new Promise((r) => s.close(r));
-  return p;
-}
+async function unusedPort() { return require("./helpers/free-port.cjs")(); }
 async function launch(t, args) {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "sim-safe-"));
-  const child = spawn(process.execPath, [cli, ...args], { cwd });
+  // Never inherit a developer's control token or shared fault files.
+  const env = { ...process.env };
+  for (const name of ["HLS_DASH_CONTROL_TOKEN", "HLS_FAULT_CONFIG", "DASH_FAULT_CONFIG"]) delete env[name];
+  const child = spawn(process.execPath, [cli, ...args], { cwd, env });
   let output = "";
   child.stdout.on("data", (b) => (output += b));
   child.stderr.on("data", (b) => (output += b));
@@ -147,14 +144,18 @@ test("proxy denies undeclared destinations and never forwards credentials across
 });
 
 test("invalid CLI values fail before opening a server or starting Docker", async (t) => {
-  for (const args of [
-    ["livesim", "--port", "-2"],
-    ["livesim", "--periods", "1.5"],
-    ["livesim", "--typo-port", "3333"],
-    ["fault-control", "--host", "0.0.0.0"],
+  for (const [args, message] of [
+    [["livesim", "--port", "-2"], /port must be an integer from 1 to 65535/],
+    [["livesim", "--periods", "1.5"], /periods must be an integer from 1 to 60/],
+    [["livesim", "--typo-port", "3333"], /Unknown argument/],
+    [["fault-control", "--host", "0.0.0.0"], /LAN fault control requires a --control-token/],
   ]) {
     const command = await launch(t, args);
-    assert.equal(await command.exit, 1, command.output());
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(Error("CLI did not exit: " + command.output())), 15000).unref());
+    assert.equal(await Promise.race([command.exit, timeout]), 1, command.output());
+    assert.match(command.output(), message);
+    assert.doesNotMatch(command.output(), /ready|listening/i, "no server may start");
+    assert.ok(command.output().length < 2000, "usage errors stay short: " + command.output().length);
   }
 });
 
@@ -262,7 +263,14 @@ test("configuration survives atomic replacement and rejects malformed updates", 
     99,
     "metadata-only file events retain in-memory overrides",
   );
-  await fs.writeFile(file, "{broken");
-  await sleep(100);
+  // Wait past the 250 ms fallback poll so the rejected file was really read.
+  const errors = [], original = console.error;
+  console.error = (...values) => errors.push(values.join(" "));
+  try {
+    await fs.writeFile(file, "{broken");
+    for (let i = 0; i < 100 && !errors.length; i++) await sleep(20);
+  } finally { console.error = original; }
+  assert.equal(errors.length, 1, "the malformed update is reported once");
+  assert.match(errors[0], /Keeping last valid configuration/);
   assert.equal(getFaultConfig().segment.latencyMs, 99);
 });

@@ -14,11 +14,13 @@ import {
   bindHost,
   portNumber,
   assertPortAvailable,
+  playerAccess,
 } from "./safe-http.js";
-import { ownershipArgs, assertOwnedContainer } from "./container-ownership.js";
+import { ownershipArgs, assertOwnedContainer, orphanedOwner, MANAGED_LABEL, WORKSPACE_LABEL, workspaceId } from "./container-ownership.js";
 import {
   setFaultConfigPath,
   applyConfigOverride,
+  activeManualFaultNotice,
 } from "./live-stream-fault-config.js";
 import { startDashFaultProxy } from "./dash-fault-proxy.js";
 import { ScenarioRuns, validateScenarioStart } from "./scenario-runs.js";
@@ -64,6 +66,10 @@ export interface LivesimStartOptions {
   scenarioStart?: "auto" | "manual";
   controlToken?: string;
   verbose?: boolean;
+  allowedHosts?: string[];
+  allowedPlayerOrigins?: string[];
+  /** Advertise the stream and a /backup copy as alternative MPD BaseURLs. */
+  redundantStreams?: boolean;
 }
 export interface LivesimStopOptions {
   name?: string;
@@ -156,6 +162,21 @@ async function freeInternalPort(): Promise<number> {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   return port;
 }
+/** Remove containers left by a supervisor that died without cleanup (closed
+ * terminal, SIGKILL). Best effort: startup never fails because of it. */
+async function reapOrphans(): Promise<void> {
+  try {
+    const listed = await exec("docker", ["ps", "-a", "--filter", `label=${MANAGED_LABEL}=true`, "--filter", `label=${WORKSPACE_LABEL}=${workspaceId()}`, "--format", "{{.ID}}"], { timeout: 15000 });
+    let removed = 0;
+    for (const id of listed.stdout.trim().split(/\s+/).filter(Boolean)) {
+      const inspected = JSON.parse((await exec("docker", ["inspect", id], { timeout: 15000 })).stdout)[0];
+      if (!orphanedOwner(inspected?.Config?.Labels)) continue;
+      await exec("docker", ["rm", "-f", inspected.Id], { timeout: 15000 });
+      removed++;
+    }
+    if (removed) console.info(`Removed ${removed} orphaned DASH container(s) left by an earlier session in this workspace.`);
+  } catch { /* another session may be removing it; ownership stays unchanged */ }
+}
 function periodsOption(options: LivesimStartOptions): number | undefined {
   if (options.periodStartTimes)
     throw new Error(
@@ -200,6 +221,8 @@ export async function startLivesim2(
   signal?.throwIfAborted();
   validateScenarioStart(options.scenarioStart, options.controlToken);
   const definition = loadScenario(options.scenarioFile);
+  if (options.redundantStreams && options.faultProxy === false)
+    throw new Error("--redundant-streams requires the DASH fault proxy; enable --fault-proxy");
   if ((definition || options.scenarioStart === "manual") && options.faultProxy === false)
     throw new Error("Scenarios require the DASH fault proxy");
   if (
@@ -211,6 +234,7 @@ export async function startLivesim2(
     );
   const port = portNumber(options.port ?? 8888);
   const host = bindHost(options.host);
+  const access = playerAccess(options.allowedHosts, options.allowedPlayerOrigins);
   await assertPortAvailable(port, host);
   if (options.preserveManifest)
     throw new Error(
@@ -263,6 +287,8 @@ export async function startLivesim2(
     applyConfigOverride({ profile: options.faultProfile });
   if (options.verbose !== undefined)
     applyConfigOverride({ logging: { verbose: options.verbose } });
+  const manualNotice = activeManualFaultNotice();
+  if (manualNotice) console.warn(manualNotice);
   try {
     await exec("docker", ["info"], { timeout: 15000, signal });
   } catch {
@@ -271,6 +297,8 @@ export async function startLivesim2(
       "Docker daemon is not available; start Docker Desktop and retry",
     );
   }
+  await reapOrphans();
+  signal?.throwIfAborted();
   const name = options.name ?? `hls-dash-${randomUUID().slice(0, 8)}`;
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/.test(name))
     throw new Error("Invalid container name");
@@ -414,6 +442,8 @@ export async function startLivesim2(
         scenarioStart: options.scenarioStart,
         controlToken: options.controlToken,
         videoTracks: asset === "abr" ? 2 : asset === "sample" ? 1 : undefined,
+        access,
+        redundantStreams: options.redundantStreams,
       });
     signal?.throwIfAborted();
     const displayHost =

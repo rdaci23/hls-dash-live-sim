@@ -276,6 +276,18 @@ export function isFaultLoggingVerbose(): boolean {
 }
 /** Allocation-free observation, refreshed before config change subscribers run. */
 export function hasManualFaultConflict(): boolean { return activeManualConflict; }
+/** Startup notice: a reused shared file can carry faults from an earlier session. */
+export function activeManualFaultNotice(): string | undefined {
+  if (!activeManualConflict) return undefined;
+  const active = [
+    ...Object.entries(faultModes(activeConfig)).filter(([, mode]) => mode && mode !== "off").map(([name, mode]) => `${name}=${mode}`),
+    ...(activeConfig.segment?.latencyMs ? [`latencyMs=${activeConfig.segment.latencyMs}`] : []),
+    ...(activeConfig.network?.bandwidthKbps ? [`bandwidthKbps=${activeConfig.network.bandwidthKbps}`] : []),
+    ...(activeConfig.network?.jitterMs ? [`jitterMs=${activeConfig.network.jitterMs}`] : []),
+    ...(activeConfig.manifest?.freeze === "always" ? ["manifestFreeze"] : []),
+  ];
+  return `Manual faults are active from ${activePath}: ${active.join(", ")}. Reset that file or pass a new --fault-config for a healthy stream.`;
+}
 export function getFaultConfigPath(): string {
   return activePath;
 }

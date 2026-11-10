@@ -12,7 +12,7 @@ const { parseScenario } = require('../dist/support-tools/scenario.js');
 const { parseResponseHeaders, responseHeaders } = require('../dist/support-tools/scenario-response-headers.js');
 const config = require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(() => config.applyConfigOverride({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } }));
-async function port() { const s = http.createServer(); await new Promise(r=>s.listen(0,'127.0.0.1',r)); const p=s.address().port; await new Promise(r=>s.close(r)); return p; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 for(const protocol of ['hls','dash'])for(const resource of ['manifest','init','media'])for(const status of statuses)test(`${protocol} ${resource} ${status}: safe headers, HEAD exclusion, isolated failure and restoration`,async t=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'status-headers-')),origin=await createOrigin();let session;
   t.after(async()=>{await session?.close();await origin.close();await fs.rm(dir,{recursive:true,force:true});});

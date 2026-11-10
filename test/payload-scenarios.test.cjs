@@ -12,7 +12,7 @@ const { parseScenario } = require('../dist/support-tools/scenario.js');
 const { PayloadSnapshots } = require('../dist/support-tools/payload-fault.js');
 const config = require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(() => config.applyConfigOverride({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } }));
-async function port() { const s = http.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const p = s.address().port; await new Promise(resolve => s.close(resolve)); return p; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 for (const protocol of ['hls', 'dash']) for (const kind of kinds) test(`${protocol} ${kind}: delivered payload, valid control, isolation, HEAD and restoration`, async t => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'payload-')), origin = await createOrigin(); let session;
   t.after(async () => { await session?.close(); await origin.close(); await fs.rm(dir, { recursive: true, force: true }); });

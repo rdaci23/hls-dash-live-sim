@@ -8,13 +8,7 @@ const net = require('node:net');
 const http = require('node:http');
 const { randomUUID } = require('node:crypto');
 
-async function port() {
-  const server = net.createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const value = server.address().port;
-  await new Promise(resolve => server.close(resolve));
-  return value;
-}
+async function port() { return require("./helpers/free-port.cjs")(); }
 async function control(t, token) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'control-ui-test-'));
   const address = await port();

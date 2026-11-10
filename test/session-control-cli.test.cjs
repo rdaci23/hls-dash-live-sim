@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path'),http=require('node:http'),{spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),pause=ms=>new Promise(r=>setTimeout(r,ms));
-async function port(){const server=http.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const value=server.address().port;await new Promise(r=>server.close(r));return value;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 async function stop(child){if(child.exitCode!==null||child.signalCode!==null)return;const done=new Promise(r=>child.once('close',r));child.kill('SIGTERM');let timer;try{await Promise.race([done,new Promise((_,reject)=>{timer=setTimeout(()=>{child.kill('SIGKILL');reject(Error('Owned CLI failed to close'));},5000);})]);}finally{clearTimeout(timer);}}
 async function ready(child,url){for(let n=0;n<150;n++){if(child.exitCode!==null)throw Error('Owned CLI exited early');try{const r=await fetch(url,{signal:AbortSignal.timeout(500)});if(r.ok)return await r.json();}catch{}await pause(30);}throw Error('Owned CLI did not become ready');}
 for(const protocol of ['hls','dash'])test(`${protocol}: streaming CLI forwards its explicit simulator token without an environment token`,{timeout:20000},async t=>{

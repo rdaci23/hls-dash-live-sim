@@ -37,6 +37,26 @@ export function loopback(host: string): boolean {
   return host === "localhost" || host === "::1" || /^127\./.test(host);
 }
 
+/** Extra player access beyond this machine's own addresses; always explicit. */
+export interface PlayerAccess { hosts: string[]; origins: string[] }
+export function playerAccess(hosts: string[] = [], origins: string[] = []): PlayerAccess {
+  return {
+    hosts: hosts.map(value => {
+      const host = String(value).toLowerCase().replace(/^\[|\]$/g, "");
+      if (!net.isIP(host) && !/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(host))
+        throw new Error("allow-host must be a host name or IP address without scheme, port or path");
+      return host;
+    }),
+    origins: origins.map(value => {
+      if (value === "null") return value; // file:// and sandboxed pages
+      const url = httpUrl(value);
+      if (url.pathname !== "/" || url.search || url.hash)
+        throw new Error("allow-player-origin must contain only scheme, host and port, or the literal null");
+      return url.origin;
+    }),
+  };
+}
+
 export function httpUrl(value: string): URL {
   let url: URL;
   try {
@@ -398,6 +418,7 @@ export function preflight(
   res: http.ServerResponse,
   host = "127.0.0.1",
   scenarioControls = false,
+  access?: PlayerAccess,
 ): boolean {
   const localHosts = new Set([
     "localhost",
@@ -417,31 +438,35 @@ export function preflight(
   const hostname = (url: URL) => url.hostname.replace(/^\[|\]$/g, "");
   try {
     const requested = hostname(new URL("http://" + req.headers.host));
-    if (!local(requested)) throw new Error();
+    const declaredHost = access?.hosts.includes(requested.toLowerCase()) === true;
+    if (!declaredHost && !local(requested)) throw new Error();
     if (
       req.headers.origin &&
+      !access?.origins.includes(req.headers.origin) &&
       !local(hostname(new URL(req.headers.origin)))
     )
       throw new Error();
-    if (loopback(host) && !loopback(requested.replace(/^\[|\]$/g, "")))
+    if (!declaredHost && loopback(host) && !loopback(requested.replace(/^\[|\]$/g, "")))
       throw new Error();
   } catch {
-    send(res, 403, "Only local player origins may access this session");
+    send(res, 403, "Only local player origins may access this session; declare others with --allow-host or --allow-player-origin");
     return true;
   }
   const controlPath = new URL(req.url ?? "/", "http://localhost").pathname;
   const controls = scenarioControls && (/^\/scenario\/(arm|start|reset|stop|access)$/.test(controlPath) || /^\/session-control\/(mode|apply|inject|clear|arm|start|stop)$/.test(controlPath));
+  // The fixture's local licence endpoint takes the POST a player's DRM stack sends.
+  const license = controlPath === "/license";
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": controls ? "GET, HEAD, POST, OPTIONS" : "GET, HEAD, OPTIONS",
-      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range, Authorization, X-Sim-Manifest-Preview" + (controls ? ", Content-Type, X-Sim-Session-Id" : ""),
+      "Access-Control-Allow-Methods": controls || license ? "GET, HEAD, POST, OPTIONS" : "GET, HEAD, OPTIONS",
+      "Access-Control-Allow-Headers": "Range, If-Match, If-Unmodified-Since, If-None-Match, If-Modified-Since, If-Range, Authorization, X-Sim-Manifest-Preview, X-Sim-Client-Id" + (controls ? ", Content-Type, X-Sim-Session-Id" : license ? ", Content-Type" : ""),
       "Access-Control-Expose-Headers": `Date, Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Retry-After, Age, Cache-Control, WWW-Authenticate, X-Sim-Manifest-Preview, ${TRACE_HEADERS}`,
     });
     res.end();
     return true;
   }
-  if (!(controls ? ["GET", "HEAD", "POST"] : ["GET", "HEAD"]).includes(req.method ?? "")) {
+  if (!(controls || license ? ["GET", "HEAD", "POST"] : ["GET", "HEAD"]).includes(req.method ?? "")) {
     send(res, 405, "Method not allowed", { Allow: "GET, HEAD, OPTIONS" });
     return true;
   }

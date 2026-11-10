@@ -135,9 +135,11 @@ async function main() {
   const events = diagnosticText.trim().split('\n').filter(Boolean).map(JSON.parse);
   report = { schemaVersion: 1, recordedAt: new Date().toISOString(), protocol, test, identity, commit, workingTreeModified,
     engineImage: protocol === 'dash' ? DEFAULT_IMAGE : undefined,
-    ...(test === 'outage' ? evaluateRokuOutage : evaluateRoku)({ protocol, test, records, periods: [...periods.values()], events, scenario: session?.scenario?.report(), identity, clockResourceId, clockProbeId, consoleErrors, restorationProbes }),
+    ...(test === 'outage' ? evaluateRokuOutage : evaluateRoku)({ deviceClientId: session?.diagnostics?.clientId?.('addr:' + device), protocol, test, records, periods: [...periods.values()], events, scenario: session?.scenario?.report(), identity, clockResourceId, clockProbeId, consoleErrors, restorationProbes }),
     harnessError, scenario: session?.scenario?.report() };
   if (harnessError) { report.passed = false; report.releaseQualified = false; report.failures.push('Harness failure: ' + harnessError); }
+  // A passing run on uncommitted sources stays a development result.
+  if (workingTreeModified) report.releaseQualified = false;
   await fs.writeFile(path.join(directory, 'native.json'), JSON.stringify({ records, periods: [...periods.values()], consoleErrors, restorationProbes }, null, 2) + '\n');
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(`${report.passed ? 'PASS' : 'FAIL'}: ${path.join(directory, 'report.json')}`);

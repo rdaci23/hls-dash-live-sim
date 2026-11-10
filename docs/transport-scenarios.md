@@ -50,10 +50,18 @@ Use exactly one of `status` or `transport` in each [scenario rule](scenarios.md)
 
 | Field | Behavior |
 | --- | --- |
-| `kind` | `stall` pauses then resumes; `abort` closes an incomplete response. |
+| `kind` | `stall` pauses then resumes; `abort` closes an incomplete response; `reset` closes the connection before any response; `no-response` holds the request silent for `durationMs`, then closes it. |
 | `afterBytes` | Required integer from 0 to 8388608, relative to the selected response body/range. Zero means headers with no body before the action. Must be smaller than the actual body; otherwise the request returns 422 and the rule fails. |
-| `durationMs` | Required for stall, 1–30000 ms and smaller than `deadlineMs`. Forbidden for abort. |
+| `durationMs` | Required for stall and no-response, 1–30000 ms and smaller than `deadlineMs`. Forbidden for abort and reset. |
 | `deadlineMs` | Whole downstream delivery deadline, including slow-reader backpressure and resumed writing. Default 15000 ms, range 1–60000. Origin buffering has its separate existing deadline. |
+
+`reset` and `no-response` require `afterBytes: 0` and send no status line or
+headers, so the player sees a connection error or its own request timeout, not
+an HTTP failure. The connection is reset where the platform supports it. A
+player that gives up during a `no-response` hold has observed the fault, so
+that cancellation counts as applied. Presets:
+[`next-video-connection-reset`](../examples/scenarios/next-video-connection-reset.json)
+and [`next-video-no-response`](../examples/scenarios/next-video-no-response.json).
 
 Existing target/resource/track, time gates, attempt selection, seeded probability,
 application caps and first-matching-rule ownership apply. `expectRetry` retains

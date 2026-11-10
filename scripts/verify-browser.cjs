@@ -159,11 +159,13 @@ async function main() {
     })));
     if (interrupted) throw Error('Verification interrupted; completed case evidence remains in ' + directory);
   }
+  const workingTreeModified = !!execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim();
   const summary = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root }).toString().trim(),
-    workingTreeModified: !!execFileSync('git', ['status', '--porcelain'], { cwd: root }).toString().trim(),
+    workingTreeModified,
     gates: GATES, outageGates: cases.includes('outage') ? OUTAGE_GATES : undefined, smoke,
     sustainedOutageGatesPassed: reports.filter(r => r.test === 'outage').length === 2 && reports.filter(r => r.test === 'outage').every(r => r.passed),
-    browserGatesPassed: reports.filter(r => r.test !== 'outage').length === 6 && reports.filter(r => r.test !== 'outage').every(r => r.releaseQualified),
+    // Evidence from uncommitted sources cannot qualify the recorded commit.
+    browserGatesPassed: !workingTreeModified && reports.filter(r => r.test !== 'outage').length === 6 && reports.filter(r => r.test !== 'outage').every(r => r.releaseQualified),
     releaseReady: false, roku: { verified: false, reason: 'Physical target verification required separately' }, reports };
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(summary, null, 2) + '\n');
   console.log('Evidence: ' + path.join(directory, 'report.json'));

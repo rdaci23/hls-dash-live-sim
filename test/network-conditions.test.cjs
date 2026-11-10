@@ -11,13 +11,7 @@ const { SharedBandwidthLimiter } = require('../dist/support-tools/bandwidth-limi
 const { startHlsim } = require('../dist/support-tools/hls-sim-runner.js');
 const { startDashFaultProxy } = require('../dist/support-tools/dash-fault-proxy.js');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-async function port() {
-  const server = http.createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const value = server.address().port;
-  await new Promise(resolve => server.close(resolve));
-  return value;
-}
+async function port() { return require("./helpers/free-port.cjs")(); }
 async function fixture(t, protocol) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'network-conditions-'));
   let session;

@@ -3,6 +3,62 @@
 User-visible changes and compatibility limits are recorded here. Version numbers
 describe the simulator; recorded player results apply only to their tested scope.
 
+## Unreleased
+
+### Fixed
+
+- A long probabilistic scenario no longer turns the whole stream into HTTP 503
+  after 10000 tracked downloads; old unbound history is retired and counted.
+- A DASH manifest freeze longer than the index retention no longer invalidates
+  the run when a still-listed segment is requested.
+- Requests for unknown paths can no longer exhaust seeded jitter lanes and fail
+  a timeline scenario.
+- Scenario attempts are counted per client, so another viewer cannot satisfy or
+  consume a retry assertion. Clients are told apart by IP address or an optional
+  `X-Sim-Client-Id` header.
+- Closing the terminal or pressing Ctrl+C twice no longer leaves the DASH
+  container running; orphans from a killed session are removed at the next start.
+- Startup warns when the fault file already holds active manual faults, and
+  reports whether session controls are enabled.
+- CLI usage errors print one short message instead of the argument parser's source.
+- HLS origin `/pl|/seg|/key?u=` routes are disabled on non-loopback hosts unless
+  `--legacy-url-routes` is given.
+- Manual `random` mode uses the injected random source.
+- A DASH request for a path the origin does not have no longer invalidates the
+  whole scenario run.
+- An outage keeps rejecting after a client abandons one injected response, and
+  a later completed injection clears that failure.
+- The six-case browser gate and Roku runner do not qualify a modified tree;
+  `browser:core --require-fault-observed` rejects runs where the fault never
+  reached the browser.
+
+### Added
+
+- `--allow-host` and `--allow-player-origin` for emulators, host names, hosted
+  demo players and `file://` pages.
+- Timeline `network.latencyMs` for a fixed manifest/media response delay, with
+  the `slow-origin-latency` preset.
+- The `random-video-loss` preset: seeded 2% video 503 loss for long runs.
+- `evictedDownloads` and `trackedClients` in scenario reports.
+- Connection-level faults: transport kinds `reset` (close before any response)
+  and `no-response` (hold the request silent, then close).
+- Rule kind `gap`: one advertised segment that never becomes available.
+- `target.client` limits a rule to one `X-Sim-Client-Id`.
+- `--redundant-streams` advertises a `/backup` copy of the stream (generated
+  HLS variants, or DASH MPD `BaseURL`s); `target.origin` fails one copy for
+  failover tests.
+- Clock faults: `utc-drift` on the DASH tracks fixture and `pdt-skew` on
+  generated HLS.
+- A local `/license` endpoint on the DASH tracks fixture with
+  `license-unavailable` and `license-denied`. It does not decrypt anything.
+- Nine presets for the above.
+- Request diagnostics carry `clientId`, a per-session pseudonym, and the Roku
+  runner uses it to reject an injected 404 that another client consumed.
+
+### Changed
+
+- The package now requires Node 22 or later (was 20.3, which was never verified).
+
 ## 0.2.0 — 2026-11-09
 
 First public beta. The `v0.2.0` release identifies reviewed commit `42fa357`.
@@ -301,7 +357,8 @@ not relabel the implementation candidate's evidence as a new verification run.
   Same-download 404 retry does not establish rendition fallback.
 - LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
   not supported. Fixed-time probes do not provide coherent virtual-clock playback.
-- Use Node 24 for setup; CI checks Node 22/24/26 on Linux/macOS. Windows and the
+- Use Node 24 for setup; the manually dispatched CI matrix targets Node 22/24/26
+  on Linux/macOS and does not run automatically. Windows and the
   declared legacy Node 20.3 floor are unverified. DASH needs Docker; the pinned
   AMD64 engine uses emulation on ARM hosts.
 

@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { ScenarioEngine, ScenarioDefinition, parseScenario, manualFaultConflict } from "./scenario.js";
 import { HttpError, send } from "./safe-http.js";
 import type { SessionDiagnostics } from "./session-diagnostics.js";
-export interface ScenarioCapabilities { protocol: "hls" | "dash";aesOnly?:boolean; lifecycleHooks?:LifecycleHooks;serviceHooks?:ServiceHooks; generated: boolean; ownedTracks?: boolean; initialization: boolean; videoTracks?: number; publicationAvailable?: (kind:string,track:string,segments?:number) => boolean; advancingManifest?: (track: string) => boolean; resourceAvailable?: (resource: string, track: string) => boolean; }
+export interface ScenarioCapabilities { protocol: "hls" | "dash";redundant?:boolean;aesOnly?:boolean; lifecycleHooks?:LifecycleHooks;serviceHooks?:ServiceHooks; generated: boolean; ownedTracks?: boolean; initialization: boolean; videoTracks?: number; publicationAvailable?: (kind:string,track:string,segments?:number) => boolean; advancingManifest?: (track: string) => boolean; resourceAvailable?: (resource: string, track: string) => boolean; }
 const presets = [
   ["next-video-retry", "One video 404 and retry", "both"],
   ["three-video-failures-retry", "Three video 503s and retry", "both"],
@@ -67,6 +67,17 @@ const presets = [
   ["owned-encoder-restart", "Valid source encoder restart", "both"],
   ["owned-event-completion", "Growing event finishes", "both"],
   ["network-cycle", "Bandwidth, jitter and manifest freeze", "both"],
+  ["random-video-loss", "Seeded 2% video 503 loss for long runs", "both"],
+  ["slow-origin-latency", "Fixed 1.5 s manifest and media response delay", "both"],
+  ["next-video-connection-reset", "Reset the connection before any response", "both"],
+  ["next-video-no-response", "Accept a video request and never answer", "both"],
+  ["missing-segment-gap", "One advertised video segment never appears", "both"],
+  ["one-client-video-outage", "Video outage for client player-b only", "both"],
+  ["hls-primary-origin-outage", "Primary copy down, backup healthy", "hls"],
+  ["local-utc-drift", "Local utc-drift", "dash"],
+  ["hls-pdt-skew", "Misreported PROGRAM-DATE-TIME", "hls"],
+  ["local-license-unavailable", "Local license-unavailable", "dash"],
+  ["local-license-denied", "Local license-denied", "dash"],
 ] as const;
 export function checkScenarioCapabilities(def: ScenarioDefinition, cap: ScenarioCapabilities): void {
   if (cap.protocol === "hls" && !cap.generated && !cap.ownedTracks && ((def.http?.target.resource === "media" || def.cache?.target.resource === "media" || def.publication?.kind === "segment-delay") || def.timeline || def.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
@@ -77,6 +88,7 @@ export function checkScenarioCapabilities(def: ScenarioDefinition, cap: Scenario
   if (def.publication?.kind === "rendition-lag" && cap.advancingManifest && !cap.advancingManifest(cap.protocol === "dash" ? "root" : def.publication.track)) throw new HttpError(422,"Publication lag requires an observed live/event playlist or dynamic MPD");
   if (def.publication && cap.publicationAvailable && !cap.publicationAvailable(def.publication.kind,def.publication.track,def.publication.segments)) throw new HttpError(422,"Publication target needs supported advancing metadata and complete availability timing");
   if(cap.aesOnly&&!['key-unavailable','wrong-key'].includes(def.services?.kind))throw new HttpError(422,"AES fixture composition requires a dedicated local-key preset");
+  if(def.rules.some(rule=>rule.target.origin)&&!cap.redundant)throw new HttpError(422,"Origin targets require a session started with --redundant-streams");
   if(def.services&&!cap.serviceHooks?.supports(def.services.kind))throw new HttpError(422,"Service action requires a compatible owned fixture/protocol");
   if(def.lifecycle&&!cap.lifecycleHooks?.supports(def.lifecycle.kind))throw new HttpError(422,"Lifecycle requires a supported owned fixture and mode");
   const targets = [...def.rules.map(rule => rule.target), ...(def.http ? [def.http.target] : []), ...(def.cache ? [def.cache.target] : []), ...(def.timeline?.flatMap(p=>Object.keys(p.tracks??{}).map(track=>({resource:"media",track})))??[]), ...(def.publication ? [{resource: def.publication.kind === "segment-delay" ? "media" : cap.protocol === "dash" ? "media" : "manifest",track:def.publication.track}] : [])];

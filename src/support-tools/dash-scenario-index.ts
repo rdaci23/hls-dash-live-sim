@@ -44,7 +44,17 @@ export class DashScenarioIndex {
     const url = new URL(value);
     return url.origin + url.pathname;
   }
+  private held = false;
+  private ttl = 60000;
+  /** A held manifest keeps advertising its references: suspend their expiry
+   * while it is served, then give them one more retention period. */
+  setHeld(held: boolean): void {
+    if (held === this.held) return;
+    this.held = held;
+    if (!held) { const expires = this.clock() + this.ttl; for (const entry of this.entries.values()) if (entry.expires < expires) entry.expires = expires; }
+  }
   private prune(): void {
+    if (this.held) return;
     const now = this.clock();
     this.entries.forEach((value,key)=>{
       if (value.expires < now) this.entries.delete(key);
@@ -67,8 +77,8 @@ export class DashScenarioIndex {
     const tracks = new Map(this.tracks),
       scopes = new Map(this.scopes);
     const source = new URL(base);
-    const expires =
-      this.clock() + Math.max(60000, (info.timeShiftBufferDepth ?? 30) * 2000);
+    const ttl = Math.max(60000, (info.timeShiftBufferDepth ?? 30) * 2000);
+    const expires = this.clock() + ttl;
     function local(value: string): URL {
       const url = new URL(value, base);
       if (url.origin !== source.origin || url.username || url.password)
@@ -222,6 +232,7 @@ export class DashScenarioIndex {
     )
       throw new HttpError(503, "DASH scenario retained index capacity reached");
     for (const [key, media] of next) this.entries.set(key, { media, expires });
+    this.ttl = ttl;
     this.periodCount = list(root.Period).length;
     this.bindings = bindings;
     this.dynamic = root["@_type"] === "dynamic";

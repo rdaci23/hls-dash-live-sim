@@ -13,9 +13,11 @@ published. See the [changelog](../CHANGELOG.md) for release scope and known limi
 | Run browser verification | Development dependencies and Google Chrome. |
 | Regenerate media fixtures | FFmpeg with libx264; existing samples work without it. |
 
-Routine CI uses Linux/Node 24. Manual full checks cover Node 22/24/26 on Linux and
-macOS. Windows and the declared legacy Node 20.3 floor are not verified. Use Node
-24 for the documented setup.
+The CI workflow defines a routine Linux/Node 24 job for pushes and pull requests,
+and a manually dispatched matrix for Node 22/24/26 on Linux and macOS. Hosted
+Actions is currently disabled, so neither runs automatically; checks are run
+locally ([policy](development.md#github-actions)). Windows is not verified. The package
+requires Node 22 or later; use Node 24 for the documented setup.
 
 ```sh
 git clone https://github.com/rdaci23/hls-dash-live-sim.git
@@ -63,10 +65,40 @@ read-only setup guidance. Existing automatic CLI scenarios remain managed by
 their startup definition. Legacy shared-file controls are a separate Advanced
 tool and still require matching file paths; inspecting a URL never retargets them.
 
+## Connect a player
+
 The control UI inspects streams; it does not contain a video player. Give the
-playback URL to your own HLS-capable player. A plain browser tab does not guarantee
-native HLS support. The automated Chrome checks bundle pinned hls.js/dash.js
-locally; see [verification commands](development.md).
+playback URL to your own player. A plain browser tab does not guarantee native
+HLS support. The automated Chrome checks bundle pinned hls.js/dash.js locally;
+see [verification commands](development.md).
+
+By default the simulator answers only requests addressed to this computer
+(`localhost`, `127.0.0.1` or one of its own IP addresses) and browser pages served
+from those addresses. Everything else receives HTTP 403. What works without
+extra options:
+
+- Native or command-line players: Safari, `ffplay`, VLC, a Roku or phone on the
+  LAN (start with `--host 0.0.0.0` and use this computer's LAN IP address).
+- A player page you serve from this computer, for example `http://localhost:3000`.
+
+Declare anything else explicitly when starting the stream:
+
+```sh
+# Android emulator (reaches the host as 10.0.2.2) or an mDNS/host name
+npm run hls -- --allow-host 10.0.2.2 --allow-host my-mac.local
+
+# A hosted demo player, or a page opened from disk (origin "null")
+npm run hls -- --allow-player-origin https://hlsjs.video-dev.org
+npm run hls -- --allow-player-origin null
+```
+
+`--allow-host` takes a bare host name or IP address; `--allow-player-origin`
+takes a scheme, host and optional port. Both can be repeated and apply to HLS,
+DASH and `--fixture tracks`. A hosted HTTPS page may still be stopped by the
+browser's own mixed-content or private-network rules before any request is sent.
+
+Startup prints whether session controls are enabled for the supplied token, and
+warns when the fault file already contains active manual faults.
 
 Follow the [three-minute demo](demo.md), then try the [three scenario recipes](scenario-recipes.md).
 

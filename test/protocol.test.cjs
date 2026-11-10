@@ -23,13 +23,7 @@ async function serve(t, handler) {
     port: s.address().port,
   };
 }
-async function unusedPort() {
-  const s = http.createServer();
-  await new Promise((r) => s.listen(0, "127.0.0.1", r));
-  const p = s.address().port;
-  await new Promise((r) => s.close(r));
-  return p;
-}
+async function unusedPort() { return require("./helpers/free-port.cjs")(); }
 async function config(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sim-protocol-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));

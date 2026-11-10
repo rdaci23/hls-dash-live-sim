@@ -189,13 +189,7 @@ async function directory(t) {
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   return dir;
 }
-async function port() {
-  const server = http.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const number = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
-  return number;
-}
+async function port() { return require("./helpers/free-port.cjs")(); }
 async function serve(t, handler) {
   const server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -393,8 +387,16 @@ test("specific decimal locators, bounded attempts and unresolved expectations ha
   );
   bounded.request(media(1));
   bounded.request(media(2));
-  assert.throws(() => bounded.request(media(3)), /capacity/);
-  assert.equal(bounded.engine.report().invalidReason, "capacity_exceeded");
+  // Unbound history is retired oldest-first and counted; the stream keeps serving.
+  assert.equal(bounded.request(media(3)).status, 0);
+  assert.equal(bounded.engine.report().invalidReason, undefined);
+  assert.equal(bounded.engine.report().trackedDownloads, 2);
+  assert.equal(bounded.engine.report().evictedDownloads, 1);
+  // History that a retry assertion is bound to is never retired.
+  const pinned = harness(t, definition(), 1);
+  assert.equal(pinned.request(media(1)).status, 404);
+  assert.throws(() => pinned.request(media(2)), /capacity/);
+  assert.equal(pinned.engine.report().invalidReason, "capacity_exceeded");
 });
 
 test("DASH indexing preserves integer precision, excludes init/audio and ignores cache query changes", () => {
@@ -605,4 +607,20 @@ test('both outage presets validate, and active outage rules continue to reject m
   config.applyConfigOverride({ network: { jitterMs: 1 } });
   assert.throws(() => h.request(media(2)), /manual faults off/);
   assert.equal(h.engine.report().invalidReason, 'manual_fault_conflict');
+});
+
+test('an abandoned outage response keeps the outage active and is cleared only by a later completed injection', t => {
+  const h = harness(t, outageDefinition());
+  h.time(100); h.request(media(1), { cancel: true });
+  assert.equal(h.engine.report().rules[0].failure, 'injected_response_cancelled');
+  assert.equal(h.request(media(1)).status, 503, 'the outage is still enforced after the cancellation');
+  assert.equal(h.request(media(2)).status, 503);
+  const during = h.engine.report().rules[0];
+  assert.equal(during.failure, undefined);
+  assert.deepEqual([during.selected, during.applied, during.cancelledInjections], [2, 2, 1]);
+  h.time(300); assert.equal(h.request(media(3)).status, 0);
+  assert.equal(h.engine.report().result, 'passed');
+  const last = harness(t, outageDefinition());
+  last.time(100); last.request(media(1)); last.request(media(2), { cancel: true });
+  last.time(300); assert.equal(last.engine.report().result, 'failed', 'a cancellation with no later injection still fails');
 });

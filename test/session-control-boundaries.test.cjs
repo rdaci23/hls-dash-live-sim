@@ -8,7 +8,7 @@ const {TrackFixturePublisher}=require('../dist/support-tools/track-fixture.js');
 const {variantEntries,attributes}=require('../dist/support-tools/hls-playlist.js');
 const TOKEN='boundary-tests-control-token',PREVIEW={'X-Sim-Manifest-Preview':'baseline-v1'};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function port(){const server=http.createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const value=server.address().port;await new Promise(resolve=>server.close(resolve));return value;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 function deferred(){let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};}
 async function bounded(promise,label,timeoutMs=5000){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error(label+' timed out')),timeoutMs))]);}finally{clearTimeout(timer);}}
 function request(url,{method='GET',headers={},body}={}){

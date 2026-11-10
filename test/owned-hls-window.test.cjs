@@ -4,7 +4,7 @@ const {startTrackFixture}=require('../dist/support-tools/track-fixture-session.j
 const {LiveHlsTimeline}=require('../dist/support-tools/live-hls.js');
 const {mediaSegments}=require('../dist/support-tools/hls-playlist.js');
 const invalid=/Owned HLS live window.*three target durations/i;
-async function unusedPort(){const server=http.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;await new Promise(r=>server.close(r));return port;}
+async function unusedPort() { return require("./helpers/free-port.cjs")(); }
 
 test('owned HLS live rejects three/four segments for both supported ladders',()=>{
  for(const rungs of [2,3])for(const window of [3,4])

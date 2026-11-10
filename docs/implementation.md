@@ -193,5 +193,5 @@ remain outside the verified support claim. Sports/news/OTT/mobile presets report
 the sample's actual renditions/windows rather than promising those features.
 
 The [release checklist](release-checklist.md) tracks licensing, notices and other
-public-beta requirements. Repository visibility and npm publication are separate
-maintainer decisions.
+public-beta requirements. The GitHub repository is public; the package is not
+published to npm, which remains a separate maintainer decision.

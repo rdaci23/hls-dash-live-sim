@@ -1,5 +1,5 @@
 import { manifestPreview, MANIFEST_PREVIEW } from "./manifest-preview.js";
-import type { ServiceHooks } from "./scenario-services.js";
+import type { ServiceDefinition, ServiceHooks } from "./scenario-services.js";
 import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import path from "node:path";
 import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
@@ -18,12 +18,15 @@ import {
   sessionServer,
   bindHost,
   portNumber,
+  loopback,
+  playerAccess,
 } from "./safe-http.js";
 import { ownershipArgs, assertOwnedContainer } from "./container-ownership.js";
 import {
   SessionFaultConfigSource,
   setFaultConfigPath,
   applyConfigOverride,
+  activeManualFaultNotice,
 } from "./live-stream-fault-config.js";
 import {
   mediaSegments,
@@ -75,6 +78,13 @@ export interface HLSStartOptions {
   scenarioStart?: "auto" | "manual";
   controlToken?: string;
   verbose?: boolean;
+  /** Extra Host names (emulator aliases, mDNS names) and browser origins. */
+  allowedHosts?: string[];
+  allowedPlayerOrigins?: string[];
+  /** `/pl|/seg|/key?u=` routes; default only while bound to loopback. */
+  legacyUrlRoutes?: boolean;
+  /** Advertise a /backup copy: generated HLS variants, or DASH MPD BaseURLs. */
+  redundantStreams?: boolean;
 }
 export interface HLSStopOptions {
   name?: string;
@@ -163,6 +173,8 @@ export async function startHlsim(
     );
   const host = bindHost(options.host);
   const port = portNumber(options.port ?? 8899);
+  const access = playerAccess(options.allowedHosts, options.allowedPlayerOrigins);
+  const legacyUrlRoutes = options.legacyUrlRoutes ?? loopback(host);
   const mode = options.mode ?? "live";
   if (!["live", "event", "vod"].includes(mode))
     throw new Error("mode must be live, event or vod");
@@ -175,9 +187,30 @@ export async function startHlsim(
     applyConfigOverride({ profile: options.faultProfile });
   if (options.verbose !== undefined)
     applyConfigOverride({ logging: { verbose: options.verbose } });
+  const manualNotice = activeManualFaultNotice();
+  if (manualNotice) console.warn(manualNotice);
   if (options.proxy === false) return startVod(options, host, port);
   if (definition?.cache?.kind === "manifest-rollback" && definition.cache.target.track === "root") throw new Error("HLS rollback requires a media-playlist track rather than the master");
   const dummy = options.dummyContent ?? !options.manifestUrl;
+  const redundant = !!options.redundantStreams;
+  if (redundant && !dummy) throw new Error("HLS --redundant-streams requires the generated sample stream");
+  if (definition?.rules.some(rule => rule.target.origin) && !redundant)
+    throw new Error("Origin targets require a session started with --redundant-streams");
+  // A redundant copy is the same stream under /backup; map it onto the primary routes.
+  const primaryPath = (pathname: string) => redundant && pathname.startsWith("/backup/live/") ? pathname.slice("/backup".length) : pathname;
+  // The generated stream owns one service action: a misreported PROGRAM-DATE-TIME.
+  let pdtAction: { id: string; definition: ServiceDefinition; elapsed: () => number } | undefined;
+  const serviceHooks: ServiceHooks | undefined = options.serviceHooks ?? (dummy ? {
+    supports: kind => kind === "pdt-skew" && mode !== "vod",
+    start: (id, definition, elapsed) => { if (pdtAction) throw new Error("A service action is already active"); pdtAction = { id, definition, elapsed }; },
+    cancel: id => { if (pdtAction?.id === id) pdtAction = undefined; },
+    classify: () => undefined,
+  } : undefined);
+  const pdtOffsetMs = () => {
+    const action = pdtAction; if (!action) return 0;
+    const elapsed = action.elapsed();
+    return elapsed >= action.definition.afterMs && elapsed < action.definition.beforeMs ? action.definition.skewMs ?? 0 : 0;
+  };
   if (definition && !dummy && !options.ownedFixture && ((definition.http?.target.resource === "media" || definition.cache?.target.resource === "media" || definition.publication?.kind === "segment-delay") || definition.timeline || definition.rules.some(rule => !rule.target.resource || rule.target.resource === "media")))
     throw new Error(
       "HLS media/timeline scenarios require generated sample media; origin scenarios support only manifest and init targets",
@@ -246,7 +279,9 @@ export async function startHlsim(
     if (url.pathname === "/proxy.m3u8")
       return { url: options.manifestUrl, kind: "playlist" };
     else if (["/pl", "/seg", "/key"].includes(url.pathname))
-      return {
+      // These routes fetch any path on a permitted origin with its credentials.
+      // LAN sessions serve only advertised resource IDs unless opted in.
+      return !legacyUrlRoutes ? undefined : {
         url: url.searchParams.get("u") ?? "",
         kind:
           url.pathname === "/pl"
@@ -266,10 +301,10 @@ export async function startHlsim(
   }); } catch(error) { configSource.close();throw error; }
   let scenario: ScenarioEngine | undefined;
   try {
-    if (definition && !manual) scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks);
+    if (definition && !manual) scenario = new ScenarioEngine(definition,diagnostics,undefined,undefined,options.lifecycleHooks,serviceHooks);
   } catch (error) {
     diagnostics.close(); configSource.close();
-    throw error;
+    throw manualNotice && error instanceof Error && /manual faults off/.test(error.message) ? new Error(`${error.message}. ${manualNotice}`) : error;
   }
   const controls = new SessionControls({ diagnostics, protocol:"hls", token:controlToken, source:configSource, legacyManual:manual, externallyManaged:!!definition&&!manual,
     supportsKeys:()=>!dummy&&(options.ownedAes||resources.has("key")),
@@ -282,7 +317,7 @@ export async function startHlsim(
   if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();configSource.close();throw new Error("Publication actors require a live/event sample"); }
   const snapshots = new ManifestSnapshots<string>(128, !scenario, configSource);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks:options.serviceHooks, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
+  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks,redundant, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
     publicationAvailable: (kind,track,count) => dummy ? mode !== "vod" && (kind !== "rendition-lag" || (options.windowSegments ?? 6) > (count ?? 1)) : scenarioIndex?.publicationAvailable(kind,track,count) ?? false,
     advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
@@ -300,7 +335,7 @@ export async function startHlsim(
     manualConflict:()=>configSource.hasManualConflict(), enabled:()=>controls.allowsScenarioDelivery(),
     httpControlAllowed:()=>controls.allowsLegacyScenarioWrites(), onChanged:()=>controls.scenarioChanged(),
     serviceAccessAllowed:()=>controls.allowsServiceAccess(),
-    createEngine:def=>new ScenarioEngine(def,diagnostics,undefined,undefined,options.lifecycleHooks,options.serviceHooks,()=>configSource.hasManualConflict()),
+    createEngine:def=>new ScenarioEngine(def,diagnostics,undefined,undefined,options.lifecycleHooks,serviceHooks,()=>configSource.hasManualConflict()),
   }) : undefined;
   } catch(error) { faults.close();snapshots.close();unsubscribeTimeline?.();scenario?.close();diagnostics.close();configSource.close();throw error; } })();
   controls.attachRuns(runs);
@@ -313,11 +348,11 @@ export async function startHlsim(
       await faults.sendMedia(response, ordinary.status, ordinary.body, ordinary.headers, method, signal, trace, enabled);
     };
     try {
-      if (preflight(req, res, host, true)) return;
+      if (preflight(req, res, host, true, access)) return;
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const rootPreview = requestUrl.pathname === "/proxy.m3u8";
       const childPreview = dummy
-        ? variants.some(v => requestUrl.pathname === "/live/" + v.uri)
+        ? variants.some(v => primaryPath(requestUrl.pathname) === "/live/" + v.uri)
         : /^\/r\/[a-f0-9]{32}\.m3u8$/.test(requestUrl.pathname) && lookupResource(requestUrl)?.kind === "playlist";
       const observing = manifestPreview(req, res, rootPreview || childPreview, trace);
       if (observing) scenario = undefined;
@@ -391,11 +426,14 @@ export async function startHlsim(
       if (runs) runs.assertHealthy();
       if (scenario) scenario.assertCompatible();
       if (!observing && (!scenario || scenario.timeline)) {
-        const requestVariant = url.pathname.match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
+        const requestVariant = primaryPath(url.pathname).match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
         const sourceLogical=options.ownedFixture?scenarioIndex?.resolve(lookupResource(url)?.url??options.manifestUrl):undefined;
         const lane = sourceLogical?.kind === "media" ? "media:"+sourceLogical.trackId : requestVariant
           ? `media:video:${variants.findIndex(variant => variant.uri.startsWith(requestVariant + "/"))}`
-          : `manifest:${url.pathname}`;
+          : (dummy ? url.pathname === "/proxy.m3u8" || variants.some(variant => primaryPath(url.pathname) === "/live/" + variant.uri) : !!lookupResource(url))
+            ? `manifest:${url.pathname}`
+            // Unknown paths must not allocate one seeded jitter lane each.
+            : "manifest:unknown";
         await faults.delay(signal, trace, req.method,
           dummy ? /\.(m3u8|ts)$/.test(url.pathname)
             : ["playlist", "segment", "init"].includes(lookupResource(url)?.kind),
@@ -416,10 +454,15 @@ export async function startHlsim(
             /^(low|main)\/stream.m3u8$/gm,
             (_line, name) => `/live/${name}/stream.m3u8`,
           );
-          await reply(200, rewritten, { "Content-Type": "application/vnd.apple.mpegurl" });
+          // Redundant streams list each variant twice: the primary URL, then its backup.
+          const advertised = !redundant ? rewritten : rewritten.split("\n").flatMap((line, index, lines) =>
+            lines[index - 1]?.startsWith("#EXT-X-STREAM-INF") && line.startsWith("/live/") ? [line, lines[index - 1], "/backup" + line] : [line]).join("\n");
+          await reply(200, advertised, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
         }
-        const match = url.pathname.match(
+        const backup = primaryPath(url.pathname) !== url.pathname;
+        const origin = backup ? { origin: "backup" as const } : {};
+        const match = primaryPath(url.pathname).match(
           /^\/live\/(low|main)\/(stream\.m3u8|segment-(\d+)\.ts)$/,
         );
         if (!match) throw new HttpError(404, "Unknown stream resource");
@@ -427,11 +470,12 @@ export async function startHlsim(
         if (!timeline) throw new HttpError(404, "Unknown rendition");
         if (match[2] === "stream.m3u8") {
           const trackId = `video:${variants.findIndex(variant => variant.uri.startsWith(match[1] + "/"))}`;
-          const failure = scenario?.decide({ kind: "manifest", trackId, trackType: "video", key: `hls:manifest:${match[1]}` }, req.headers.range, trace, req.method, req.headers);
+          const failure = scenario?.decide({ kind: "manifest", trackId, trackType: "video", key: `hls:manifest:${backup ? "backup:" : ""}${match[1]}`, ...origin }, req.headers.range, trace, req.method, req.headers);
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
           if (scenario?.serveCache(res,trace)) return;
           const profile = scenario?.timeline?.profile();
-          const choice = observing ? {value:timeline.playlist(match[1]),action:undefined} : snapshots.observe(url.pathname, timeline.playlist(match[1]));
+          const playlist = timeline.playlist(match[1], backup ? "/backup" : "", pdtOffsetMs());
+          const choice = observing ? {value:playlist,action:undefined} : snapshots.observe(url.pathname, playlist);
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
           await reply(200, choice.value, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
@@ -448,7 +492,8 @@ export async function startHlsim(
                 kind: "media",
                 trackType: "video",
                 trackId: `video:${variants.findIndex((variant) => variant.uri.startsWith(match[1] + "/"))}`,
-                key: `hls:${match[1]}:number:${sequence}`,
+                key: `hls:${backup ? "backup:" : ""}${match[1]}:number:${sequence}`,
+                ...origin,
                 availableAtMs: timeline.availableAtMs(sequence),
                 locator: { kind: "number", value: String(sequence) },
               },
@@ -648,6 +693,7 @@ export async function startHlsim(
     console.info(
       `Scenario ${scenario.scenarioId}; report: ${new URL("/scenario", url).href}`,
     );
+  console.info(`Session controls: ${controls.available ? "enabled for this token" : controls.report().reason ?? "unavailable"}`);
   if (!dummy)
     console.info("Proxy credentials are scoped to the manifest origin.");
   if (host === "0.0.0.0")
@@ -693,6 +739,8 @@ async function startVod(
   if (!source.startsWith(root + path.sep) || !fs.existsSync(source))
     throw new Error("source must be an existing file within vodroot");
   const image = options.image ?? "kaltura/nginx-vod-module:latest";
+  if (!options.image)
+    console.warn("MP4 VoD mode uses the unpinned third-party image kaltura/nginx-vod-module:latest; pass --image name@sha256:<digest> to pin a reviewed build.");
   execFileSync("docker", ["info"], { stdio: "pipe" });
   if (options.forcePull)
     execFileSync("docker", ["pull", image], { stdio: "inherit" });

@@ -34,13 +34,7 @@ async function serve(t, handler) {
     port: server.address().port,
   };
 }
-async function unusedPort() {
-  const server = http.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const port = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-}
+async function unusedPort() { return require("./helpers/free-port.cjs")(); }
 async function waitFor(check, timeoutMs = 1500) {
   const deadline = performance.now() + timeoutMs;
   while (performance.now() < deadline) {

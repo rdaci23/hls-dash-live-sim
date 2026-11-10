@@ -67,6 +67,11 @@ mean zero and omitted freeze means false. Settings never inherit from a precedin
 phase. Gaps and the end of the timeline restore unlimited bandwidth, no jitter
 and live manifests. Explicit healthy phases are allowed.
 
+`network.latencyMs` (0–60,000, optional) adds a fixed delay before every manifest
+and media GET response in that phase, for slow-origin and slow-manifest tests;
+see [`slow-origin-latency`](../examples/scenarios/slow-origin-latency.json). It
+does not delay HEAD, health, UTC or control requests and cannot be combined with
+per-track shaping.
 `bandwidthKbps` accepts integers from 0–1,000,000; `jitterMs` accepts 0–60,000;
 `manifestFreeze` accepts a boolean. Nulls and numeric strings are invalid.
 The cap remains shared across media/init GET bodies; per-rendition bandwidth

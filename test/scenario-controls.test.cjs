@@ -12,7 +12,7 @@ const { createOrigin } = require('../scripts/resource-scenarios/origin.cjs');
 const { verify } = require('../scripts/scenario-controls/verify.cjs');
 const config = require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(() => config.applyConfigOverride({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } }));
-async function port() { const s = http.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const p = s.address().port; await new Promise(resolve => s.close(resolve)); return p; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 async function start(t, protocol, options = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'scenario-controls-'));
   const token = randomUUID(), p = await port(); let session, origin;

@@ -76,6 +76,11 @@ can expire normally during a long freeze. Downloading all frozen references
 indefinitely is not part of the fault. Turning freeze off catches up to current
 time rather than replaying all elapsed manifests.
 
+During a DASH scenario the simulator keeps identifying media advertised by the
+held MPD for as long as it is held, plus one retention period after release. A
+late request or seek within a long freeze therefore receives the engine's normal
+answer instead of invalidating the run as unidentified media.
+
 ## Regression coverage and evidence
 
 The targeted regression tests cover generated HLS publication/expiry during

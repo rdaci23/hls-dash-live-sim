@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "rules": [],
+  "timeline": [
+    {
+      "afterMs": 15000,
+      "beforeMs": 45000,
+      "network": {
+        "latencyMs": 1500
+      }
+    },
+    {
+      "afterMs": 45000,
+      "beforeMs": 60000,
+      "network": {}
+    }
+  ]
+}

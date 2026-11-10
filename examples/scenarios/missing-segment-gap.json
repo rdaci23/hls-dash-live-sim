@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "seed": 42,
+  "rules": [
+    {
+      "kind": "gap",
+      "target": { "track": "video", "segment": "next" },
+      "status": 404,
+      "afterMs": 10000
+    }
+  ]
+}

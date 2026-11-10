@@ -1,6 +1,9 @@
 # Publication preparation
 
-The repository is public and the npm package remains private. These historical
+The GitHub repository is public (0.2.0 public beta) and the package is not
+published to npm (`private: true` in `package.json`). The steps below were written
+before the cutover and keep their original wording, including references to
+private preparation and pending visibility approval. These historical
 cutover preparations describe the first public beta. The reviewed candidate satisfies the
 [core roadmap](scenario-roadmap.md), [candidate review](release-review.md) and
 [release checklist](release-checklist.md). Historical green CI runs do not qualify

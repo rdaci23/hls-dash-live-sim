@@ -42,7 +42,9 @@ cap and crosses into starvation keeps its original request/fault identity. A
 cancelled crossing body additionally needs the actual shared profile transition,
 matching server fault cancellation and browser abort. It may explain a measured
 buffer wait; it cannot count as completed constrained delivery.
-`--require-continuation` remains available;
+`--require-fault-observed` fails a case classified `target-not-exercised`; the
+starvation qualification workflow passes it so healthy playback alone cannot
+qualify. `--require-continuation` remains available;
 it cannot disable integrity checks. Read `browserCompatibility`, `faultObserved`,
 `healthyWindowsVerified`, failures and `simulatorResult` separately. An unexercised
 target does not become a fallback/recovery pass. All reports retain

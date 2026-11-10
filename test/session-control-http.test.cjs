@@ -10,7 +10,7 @@ const config=require('../dist/support-tools/live-stream-fault-config.js');
 const TOKEN_A='session-http-a-control-token',TOKEN_B='session-http-b-control-token';
 const OFF={segment:{missing:'off',forbidden:'off',malformed:'off',latencyMs:0},network:{bandwidthKbps:0,jitterMs:0},manifest:{freeze:'off'},drm:{licenseFailure:'off',keyRotationMismatch:'off'}};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function port(){const server=http.createServer();await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const value=server.address().port;await new Promise(resolve=>server.close(resolve));return value;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 function request(url,{method='GET',headers={},body,timeoutMs=6000}={}){
  return new Promise((resolve,reject)=>{
   let settled=false;const parts=[];

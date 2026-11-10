@@ -29,18 +29,25 @@ export interface LogicalMedia {
   key: string;
   /** Source-owned address for lifecycle matching; never export it. */
   sourceUrl?: string;
+  /** Redundant-stream copy this resource was requested from; absent means primary. */
+  origin?: "backup";
   availableAtMs?: number;
   locator?: { kind: "number" | "time"; value: string };
 }
 export interface ScenarioRule {
   /** A bounded outage rejects every attempt until beforeMs, not a quota of failures. */
-  kind?: "outage";
+  /** A gap is one advertised segment that never becomes available. */
+  kind?: "outage" | "gap";
   id?: string;
   target: {
     /** Omission preserves the original media-only schema and fingerprints. */
     resource?: ScenarioResourceKind;
     track: string;
     segment: "next" | "each" | { kind: "number" | "time"; value: string };
+    /** Only requests carrying this X-Sim-Client-Id match. Omitted means every client. */
+    client?: string;
+    /** Redundant-stream copy to fail. Omitted means both. */
+    origin?: "primary" | "backup";
   };
   attempts: number[] | "all";
   afterMs: number;
@@ -139,7 +146,11 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         fail("rule IDs must be unique simple labels up to 64 characters");
       ids.add(rule.id);
     }
-    object(rule.target, ["resource", "track", "segment"], `${label} target`);
+    object(rule.target, ["resource", "track", "segment", "client", "origin"], `${label} target`);
+    if (rule.target.client !== undefined && (typeof rule.target.client !== "string" || !/^[\w.-]{1,64}$/.test(rule.target.client)))
+      fail(`${label} client must be an X-Sim-Client-Id of 1 to 64 letters, digits, dot, dash or underscore`);
+    if (rule.target.origin !== undefined && !["primary", "backup"].includes(rule.target.origin))
+      fail(`${label} origin must be primary or backup`);
     const resource = rule.target.resource === undefined ? "media" : rule.target.resource;
     if (!["media", "manifest", "init"].includes(resource))
       fail(`${label} resource must be media, manifest or init`);
@@ -167,12 +178,12 @@ export function parseScenario(input: unknown): ScenarioDefinition {
           `${label} segment requires number/time and an unsigned 64-bit decimal string value`,
         );
     }
-    if (rule.kind !== undefined && rule.kind !== "outage")
-      fail(`${label} kind must be outage`);
-    const outage = rule.kind === "outage";
-    const attempts = rule.attempts ?? (outage ? "all" : [1]);
+    if (rule.kind !== undefined && !["outage", "gap"].includes(rule.kind))
+      fail(`${label} kind must be outage or gap`);
+    const outage = rule.kind === "outage", gap = rule.kind === "gap";
+    const attempts = rule.attempts ?? (outage || gap ? "all" : [1]);
     if (
-      !(outage && attempts === "all") &&
+      !((outage || gap) && attempts === "all") &&
       (!Array.isArray(attempts) ||
         !attempts.length ||
         attempts.length > 100 ||
@@ -191,7 +202,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         `${label} time window must be within one day, with beforeMs greater than afterMs`,
       );
     const probability = rule.probability ?? 1,
-      maxApplications = rule.maxApplications ?? (outage ? 10000 : 1);
+      maxApplications = rule.maxApplications ?? (outage || gap ? 10000 : 1);
     if (
       typeof probability !== "number" ||
       !Number.isFinite(probability) ||
@@ -215,7 +226,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         if (typeof value.replacementTrack !== "string" || !/^(video|audio|text):(?:0|[1-9]\d{0,2})$/.test(value.replacementTrack) || value.replacementTrack === rule.target.track)
           fail(`${label} wrong-track-init requires a different advertised replacementTrack alias`);
       } else if (value.replacementTrack !== undefined) fail(`${label} replacementTrack only applies to wrong-track-init`);
-      if (rule.status !== undefined || rule.transport !== undefined || outage || timeline || rule.expectRetry)
+      if (rule.status !== undefined || rule.transport !== undefined || outage || gap || timeline || rule.expectRetry)
         fail(`${label} payload cannot combine with status, transport, outage, timeline or retry assertions`);
       payload = { kind: value.kind, ...(value.replacementTrack ? { replacementTrack: value.replacementTrack } : {}) };
     }
@@ -223,15 +234,15 @@ export function parseScenario(input: unknown): ScenarioDefinition {
     if (rule.transport !== undefined) {
       object(rule.transport, ["kind", "afterBytes", "durationMs", "deadlineMs", "chunkBytes", "intervalMs", "framing", "network"], `${label} transport`);
       const value = rule.transport;
-      if (!["stall", "abort", "header-delay", "drip", "framing"].includes(value.kind) || !integer(value.afterBytes, 0, 8 * 1024 * 1024))
+      if (!["stall", "abort", "header-delay", "drip", "framing", "reset", "no-response"].includes(value.kind) || !integer(value.afterBytes, 0, 8 * 1024 * 1024))
         fail(`${label} transport requires a supported kind and afterBytes from 0 to 8388608`);
       const deadlineMs = value.deadlineMs ?? 15000;
       if (!integer(deadlineMs, 1, 60000)) fail(`${label} transport deadlineMs must be from 1 to 60000`);
-      if (["stall", "header-delay"].includes(value.kind) && (!integer(value.durationMs, 1, 30000) || value.durationMs >= deadlineMs))
+      if (["stall", "header-delay", "no-response"].includes(value.kind) && (!integer(value.durationMs, 1, 30000) || value.durationMs >= deadlineMs))
         fail(`${label} stall durationMs must be from 1 to 30000 and smaller than deadlineMs`);
-      if (!["stall", "header-delay"].includes(value.kind) && value.durationMs !== undefined)
+      if (!["stall", "header-delay", "no-response"].includes(value.kind) && value.durationMs !== undefined)
         fail(`${label} abort does not accept durationMs`);
-      if (["header-delay", "drip", "framing"].includes(value.kind) && value.afterBytes !== 0) fail(`${label} this transport action requires afterBytes 0`);
+      if (["header-delay", "drip", "framing", "reset", "no-response"].includes(value.kind) && value.afterBytes !== 0) fail(`${label} this transport action requires afterBytes 0`);
       if (value.kind === "drip") {
         if (!integer(value.chunkBytes, 1, 65536) || !integer(value.intervalMs, 1, 1000)) fail(`${label} drip requires chunkBytes 1..65536 and intervalMs 1..1000`);
       } else if (value.chunkBytes !== undefined || value.intervalMs !== undefined) fail(`${label} only drip accepts chunkBytes/intervalMs`);
@@ -241,10 +252,10 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       if (value.network !== undefined && value.network !== true) fail(`${label} network must be true when explicitly supplied`);
       if (value.network && (!timeline || resource !== "media" || !["header-delay", "drip"].includes(value.kind) || timeline.some(phase => phase.manifestFreeze || phase.tracks)))
         fail(`${label} combined network supports media header-delay or drip with a non-freezing timeline`);
-      if (rule.status !== undefined || outage || (timeline && !value.network))
+      if (rule.status !== undefined || outage || gap || (timeline && !value.network))
         fail(`${label} transport cannot combine with status, outage or a network timeline`);
       transport = { kind: value.kind, afterBytes: value.afterBytes,
-        ...(["stall", "header-delay"].includes(value.kind) ? { durationMs: value.durationMs } : {}),
+        ...(["stall", "header-delay", "no-response"].includes(value.kind) ? { durationMs: value.durationMs } : {}),
         ...(value.kind === "drip" ? { chunkBytes: value.chunkBytes, intervalMs: value.intervalMs } : {}),
         ...(value.kind === "framing" ? { framing: value.framing } : {}),
         ...(value.network ? { network: true as const } : {}), deadlineMs };
@@ -261,6 +272,14 @@ export function parseScenario(input: unknown): ScenarioDefinition {
         `${label} outage requires each, all attempts, a finite beforeMs, probability 1 and no expectRetry`,
       );
     if (
+      gap &&
+      (resource !== "media" || segment !== "next" || attempts !== "all" ||
+        probability !== 1 || rule.expectRetry === true || rule.status === undefined)
+    )
+      fail(
+        `${label} gap requires a media target, segment next, all attempts, a status, probability 1 and no expectRetry`,
+      );
+    if (
       rule.expectRetry &&
       (segment === "each" ||
         probability !== 1 ||
@@ -274,7 +293,7 @@ export function parseScenario(input: unknown): ScenarioDefinition {
       );
     return {
       ...(rule.id ? { id: rule.id } : {}),
-      ...(outage ? { kind: "outage" as const } : {}),
+      ...(outage ? { kind: "outage" as const } : gap ? { kind: "gap" as const } : {}),
       target: {
         ...(resource === "media" ? {} : { resource }),
         track: rule.target.track,
@@ -282,6 +301,8 @@ export function parseScenario(input: unknown): ScenarioDefinition {
           typeof segment === "string"
             ? segment
             : { kind: segment.kind, value: segment.value },
+        ...(rule.target.client ? { client: rule.target.client } : {}),
+        ...(rule.target.origin ? { origin: rule.target.origin } : {}),
       },
       attempts:
         attempts === "all" ? "all" as const : [...attempts].sort((a, b) => a - b),
@@ -330,7 +351,15 @@ interface RuleState {
   firstAttempt?: number;
   targetId?: string;
   targetOrdinal?: number;
+  /** The one segment a gap rule removed, shared by every client and rendition it matches. */
+  /** Injected outage/gap responses the client abandoned before they completed. */
+  cancelled?: number;
+  gap?: { identity: string; locator?: { kind: "number" | "time"; value: string }; atMs: number };
 }
+const sameSegment = (gap: RuleState["gap"], media: LogicalMedia, identity: string): boolean =>
+  gap.locator && media.locator
+    ? gap.locator.kind === media.locator.kind && gap.locator.value === media.locator.value
+    : gap.identity === identity;
 interface Attempts {
   count: number;
   firstSeenMs: number;
@@ -363,6 +392,8 @@ export class ScenarioEngine {
   private ordinals = new Map<string, number>();
   private trackCounts = new Map<string, number>();
   private elapsed = 0;
+  private evicted = 0;
+  private clients = new Set<string>();
   private unidentified = 0;
   private invalid?:
     "manual_fault_conflict" | "capacity_exceeded" | "unidentified_media";
@@ -461,6 +492,9 @@ export class ScenarioEngine {
           : "Scenario run is invalid; inspect /scenario and restart with compatible settings",
       );
   }
+  private unknown = 0;
+  /** A media-like path the origin does not have; counted, never a run failure. */
+  unknownMedia(): void { this.unknown++; }
   unidentifiedMedia(): never {
     this.unidentified++;
     this.invalid = "unidentified_media";
@@ -485,6 +519,12 @@ export class ScenarioEngine {
     const state = this.states[index],
       rule = this.definition.rules[index];
     if (this.invalid || state.failure) return "failed";
+    if (rule.kind === "gap") {
+      // The hole never heals; the rule passes once a later segment is delivered.
+      if (state.applied > 0 && state.recovered) return "passed";
+      return this.closed || (!state.gap && rule.beforeMs !== undefined && this.time() >= rule.beforeMs)
+        ? "incomplete" : "pending";
+    }
     if (rule.kind === "outage") {
       // A quota must never silently restore service before the promised end.
       if (this.time() >= rule.beforeMs!) {
@@ -529,7 +569,9 @@ export class ScenarioEngine {
     const rules = this.definition.rules;
     const matches = (rule: ScenarioRule) =>
       (rule.target.resource ?? "media") === media.kind &&
-      (rule.target.track === "any" || rule.target.track === media.trackType || rule.target.track === media.trackId);
+      (rule.target.track === "any" || rule.target.track === media.trackType || rule.target.track === media.trackId) &&
+      (!rule.target.client || trace.clientKey === "id:" + rule.target.client) &&
+      (!rule.target.origin || (media.origin ?? "primary") === rule.target.origin);
     if (!rules.some(matches)) return 0;
     this.tracks.add(media.trackId);
     // Byte ranges are separate download attempts, not retries of other ranges.
@@ -548,12 +590,23 @@ export class ScenarioEngine {
       : "full";
     const identity = media.kind === "media" ? media.key : `${media.kind}:${media.key}`;
     const lane = media.kind === "media" ? media.trackId : `${media.kind}:${media.trackId}`;
-    const key = identity + ":range:" + normalizedRange;
+    // Attempts belong to one client: another viewer's download of the same
+    // resource is neither this player's retry nor its next attempt.
+    const client = trace.clientKey ?? "";
+    if (client && this.clients.size < 1024) this.clients.add(client);
+    const key = identity + ":range:" + normalizedRange + (client ? ":client:" + client : "");
     const elapsed = this.time();
     let attempt = this.attempts.get(key);
     if (!attempt) {
       // Completed finite runs do not allocate forever as a live stream advances.
-      if (this.settled) return 0;
+      // A settled run stops tracking new downloads, except for a gap's own segment.
+      if (this.settled && !this.states.some(state => state.gap && sameSegment(state.gap, media, identity))) return 0;
+      if (this.attempts.size >= this.capacity) {
+        // Retire the oldest history that no rule is bound to. Long probabilistic
+        // runs keep serving; the report counts every retired download.
+        const bound = new Set(this.states.map(state => state.bound));
+        for (const old of this.attempts.keys()) if (!bound.has(old)) { this.attempts.delete(old); this.evicted++; break; }
+      }
       if (this.attempts.size >= this.capacity) {
         this.invalid = "capacity_exceeded";
         throw new HttpError(
@@ -567,10 +620,12 @@ export class ScenarioEngine {
     attempt.count++;
     const ordinal = attempt.count;
     let segmentOrdinal = this.ordinals.get(identity);
+    const fresh = segmentOrdinal === undefined;
     if (segmentOrdinal === undefined) {
       segmentOrdinal = (this.trackCounts.get(lane) ?? 0) + 1;
       this.trackCounts.set(lane, segmentOrdinal);
       this.ordinals.set(identity, segmentOrdinal);
+      if (this.ordinals.size > this.capacity) this.ordinals.delete(this.ordinals.keys().next().value);
     }
     const segmentId = "segment_" + hash(identity).slice(0, 32);
     trace.logical({
@@ -591,21 +646,41 @@ export class ScenarioEngine {
     );
     for (const [index, rule] of rules.entries()) {
       const state = this.states[index];
+      // An outage or gap keeps rejecting after a client abandons one response.
+      const abandoned = !!rule.kind && state.failure === "injected_response_cancelled";
       if (
-        state.failure ||
-        (rule.kind !== "outage" && state.selected >= rule.maxApplications) ||
+        (state.failure && !abandoned) ||
+        (!rule.kind && state.selected >= rule.maxApplications) ||
         !matches(rule)
       )
         continue;
+      const hole = rule.kind === "gap" && !!state.gap && sameSegment(state.gap, media, identity);
+      if (rule.kind === "gap" && state.gap && !hole) {
+        // A later segment delivered in full shows the player moved past the hole.
+        const later = state.gap.locator && media.locator && state.gap.locator.kind === media.locator.kind
+          ? BigInt(media.locator.value) > BigInt(state.gap.locator.value)
+          : attempt.firstSeenMs >= state.gap.atMs;
+        if (later) trace.onOutcome(outcome => {
+          if (state.applied > 0 && outcome.outcome === "completed" && [200, 206].includes(outcome.status) && outcome.bodyBytes > 0) state.recovered = true;
+        });
+        continue;
+      }
       // Exact locators can match several tracks/ranges. A retry assertion binds
       // one download; its failure quota must not migrate to another identity.
       if (rule.expectRetry && state.firstAttempt !== undefined && state.bound !== key) continue;
       if (
-        elapsed < rule.afterMs ||
-        (rule.beforeMs !== undefined && elapsed >= rule.beforeMs)
+        !hole &&
+        (elapsed < rule.afterMs ||
+        (rule.beforeMs !== undefined && elapsed >= rule.beforeMs))
       )
         continue;
-      if (rule.target.segment === "next") {
+      if (rule.kind === "gap") {
+        if (!state.gap) {
+          // Only a segment nobody has requested yet can become the hole.
+          if (!fresh) continue;
+          state.gap = { identity, ...(media.locator ? { locator: { ...media.locator } } : {}), atMs: elapsed };
+        }
+      } else if (rule.target.segment === "next") {
         if (!state.bound) {
           // An old segment's retry cannot become the next segment after a time gate.
           if (media.kind === "media" && (ordinal !== 1 || attempt.firstSeenMs < rule.afterMs)) continue;
@@ -653,16 +728,16 @@ export class ScenarioEngine {
         faultId: "fault_" + hash(`${this.scenarioId}:${index}`).slice(0, 32),
         fault: rule.payload ? "scenario.payload" : rule.transport ? "scenario.transport" : "scenario.status",
         mode:
-          rule.maxApplications === 1 && rule.kind !== "outage"
+          rule.maxApplications === 1 && !rule.kind
             ? "once"
             : rule.probability < 1
               ? "random"
               : "always",
-        action: rule.payload ? "replace_payload" : rule.transport ? (rule.transport.kind === "stall" ? "stall_body" : rule.transport.kind === "header-delay" ? "delay_headers" : rule.transport.kind === "drip" ? "drip_body" : rule.transport.kind === "framing" ? "break_framing" : "abort_body") : "response",
+        action: rule.payload ? "replace_payload" : rule.transport ? (rule.transport.kind === "stall" ? "stall_body" : rule.transport.kind === "header-delay" ? "delay_headers" : rule.transport.kind === "drip" ? "drip_body" : rule.transport.kind === "framing" ? "break_framing" : rule.transport.kind === "reset" ? "reset_connection" : rule.transport.kind === "no-response" ? "withhold_response" : "abort_body") : "response",
         ...(rule.transport ? { afterBytes: rule.transport.afterBytes,
           stallMs: rule.transport.durationMs, deadlineMs: rule.transport.deadlineMs } : { status: rule.status }),
       });
-      if (rule.maxApplications === 1 && rule.kind !== "outage") effect.consumed();
+      if (rule.maxApplications === 1 && !rule.kind) effect.consumed();
       const payload = rule.payload ? { fault: rule.payload, effect, ready: false } : undefined;
       if (payload) this.payloadDeliveries.set(trace, payload);
       const delivery = rule.transport ? { fault: rule.transport, effect, ready: false } : undefined;
@@ -673,13 +748,25 @@ export class ScenarioEngine {
         applications: state.selected,
       });
       trace.onOutcome((outcome) => {
-        if (outcome.outcome === "cancelled")
-          state.failure = "injected_response_cancelled";
-        else if (payload ? (!payload.ready || outcome.status !== 200 || outcome.outcome !== "completed") : delivery ? (!delivery.ready || ![200, 206].includes(outcome.status) ||
-          outcome.outcome !== (["abort", "framing"].includes(rule.transport.kind) ? "aborted" : "completed")) :
+        const silent = ["reset", "no-response"].includes(rule.transport?.kind);
+        if (outcome.outcome === "cancelled") {
+          // A player that gives up on a withheld response has observed the fault.
+          if (rule.transport?.kind === "no-response" && delivery?.ready) state.applied++;
+          else {
+            state.failure = "injected_response_cancelled";
+            // The abandoned response is not evidence either way; a later completed
+            // injection of the same outage or gap clears the failure.
+            if (rule.kind) { state.selected--; state.cancelled = (state.cancelled ?? 0) + 1; }
+          }
+        }
+        else if (payload ? (!payload.ready || outcome.status !== 200 || outcome.outcome !== "completed") : delivery ? (!delivery.ready || (silent ? outcome.status !== undefined : ![200, 206].includes(outcome.status)) ||
+          outcome.outcome !== (["abort", "framing", "reset", "no-response"].includes(rule.transport.kind) ? "aborted" : "completed")) :
           outcome.outcome !== "completed" || outcome.status !== rule.status)
           state.failure = "unexpected_fault_response";
-        else state.applied++;
+        else {
+          state.applied++;
+          if (rule.kind && state.failure === "injected_response_cancelled") state.failure = undefined;
+        }
         trace.record("scenario.result", {
           ruleId,
           result: this.stateStatus(index),
@@ -755,6 +842,8 @@ export class ScenarioEngine {
         ...(state.boundAttempt === undefined ? {} : { boundAttempt: state.boundAttempt }),
         targetId: state.targetId,
         targetOrdinal: state.targetOrdinal,
+        ...(state.gap?.locator ? { gapSegment: state.gap.locator } : {}),
+        ...(state.cancelled ? { cancelledInjections: state.cancelled } : {}),
         result: this.stateStatus(index),
       };
     });
@@ -781,7 +870,10 @@ export class ScenarioEngine {
               : "pending",
       invalidReason: this.invalid ?? this.timeline?.failureReason,
       trackedDownloads: this.attempts.size,
+      evictedDownloads: this.evicted,
+      trackedClients: this.clients.size,
       unidentifiedMediaRequests: this.unidentified,
+      unknownMediaRequests: this.unknown,
       tracks: [...this.tracks].sort(),
       ...(this.definition.rules.some(rule => rule.transport) ? { transport: this.transportStatus() } : {}),
       rules,

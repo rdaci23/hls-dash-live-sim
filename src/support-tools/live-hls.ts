@@ -87,7 +87,8 @@ export class LiveHlsTimeline {
         this.retention
     );
   }
-  playlist(rendition: string): string {
+  /** prefix selects a redundant copy's URLs; pdtOffsetMs misreports the wall clock. */
+  playlist(rendition: string, prefix = "", pdtOffsetMs = 0): string {
     const { first, end } = this.boundsAt(this.frozen ?? this.positionTime());
     const lines = [
       "#EXTM3U",
@@ -104,13 +105,13 @@ export class LiveHlsTimeline {
         lines.push("#EXT-X-DISCONTINUITY");
       const segment = this.segments[sequence % this.segments.length];
       const epoch =
-        this.wallStartedAt -
+        this.wallStartedAt + pdtOffsetMs -
         this.initialOffset * 1000 +
         this.timeAt(sequence) * 1000;
       lines.push(
         `#EXT-X-PROGRAM-DATE-TIME:${new Date(epoch).toISOString()}`,
         `#EXTINF:${segment.duration.toFixed(6)},`,
-        `/live/${rendition}/segment-${sequence}.ts`,
+        `${prefix}/live/${rendition}/segment-${sequence}.ts`,
       );
     }
     if (this.mode === "vod") lines.push("#EXT-X-ENDLIST");

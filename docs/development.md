@@ -5,9 +5,8 @@
 For a checkout, use Node.js 24 LTS and npm. Verification is currently local-only.
 The preserved hosted workflow defines Ubuntu 24.04 and macOS 15 checks for Node
 22, 24 and 26, but those jobs are currently disabled.
-The package still declares the legacy Node 20.3 engine floor;
-that floor and Windows are not part of this CI matrix. Prefer a maintained Node
-release. No runtime compatibility requirement is changed by this documentation.
+The package requires Node 22 or later, the oldest release in that matrix;
+Windows is not part of it.
 
 ```sh
 npm ci
@@ -32,7 +31,7 @@ use your existing Chrome installation.
 
 | Command | Coverage | Requirements |
 | --- | --- | --- |
-| `npm run test:ui` | Real legacy and session-scoped HLS/DASH UI journeys, discovery, drafts/conflicts, exports and keyboard/narrow-window checks. | Chrome; Node-only owned fixtures; no device. |
+| `npm run test:ui` | Real legacy and session-scoped HLS/DASH control-page journeys: authentication, settings, latency, discovery, drafts/conflicts, viewer and stream status, clipboard, exports/downloads and keyboard/narrow-window checks. | Google Chrome; Node-only owned fixtures (DASH viewer responses use a local fixture); no device. |
 | `npm run endurance:driver` | Decoded native Chrome startup, CSP origin isolation, main/worker exceptions, console errors and owned-process/protocol cleanup. | Chrome; no Docker; about 30 seconds. |
 | `npm run endurance:smoke` | Ten-minute concurrent HLS/DASH browser plus two HTTP viewers each, drift/RSS/cleanup and complete rotated evidence. | Chrome, no Docker; about ten minutes. |
 | `npm run endurance:release` | Optional four-hour stress test, with the same ownership/evidence gates. | Chrome; explicit opt-in; keep the host awake; duration cannot be shortened. |
@@ -47,7 +46,6 @@ use your existing Chrome installation.
 | `npm run notices:check` | Lockfile inventory, preserved license/NOTICE hashes and scope match. | Node; no network or installed optional platform packages needed. |
 | `npm run typecheck` | TypeScript checking. | Development dependencies. |
 | `npm test` | Builds assets, then API, protocol, safety, diagnostics, scenarios, bandwidth/jitter timing and evidence regressions. | No Docker/browser; optional integrations are reported as skipped. |
-| `npm run test:ui` | Real control-page JS, authentication, settings, latency and HLS/DASH viewer, stream status, clipboard and exact download interactions. | Google Chrome. DASH viewer responses use a local fixture here. |
 | `npm run test:docker` | Actual pinned livesim2, A/V resources and period-boundary timelines, clock headers, multi-rendition fault isolation and owned-container cleanup. | Docker and pinned image already present. |
 | `npm run manifest:verify` | Two 20-second manifest freeze/resume cycles for both protocols, with live media and local UTC checks. | Node; DASH requires Docker and pinned image; about two minutes. |
 | `npm run network:verify` | Timed HLS/DASH profiles, pacing, byte preservation, manifest freeze/resume and identical seeded jitter on replay. | DASH needs Docker/pinned image; `--protocol hls` needs Node only; about 40 seconds. |
@@ -97,8 +95,10 @@ DASH ladder. Stop sessions first. [Provenance](../assets/README.md).
 the included runner allowance. No active runs remained when it was disabled.
 Run routine, integration, browser, package and release checks locally. Do not
 enable Actions, dispatch workflows or retry old runs without explicit maintainer
-approval, including when local checks become green. Keep the repository and npm
-package private. Pushing a commit does not authorize hosted verification.
+approval, including when local checks become green. The repository is public;
+keep the npm package private. Pushing a commit does not authorize hosted
+verification. The workflow files keep their `push`/`pull_request` triggers, so
+re-enabling Actions, or a fork with Actions enabled, runs the routine job.
 
 Use the local checks above and the clean-clone review:
 

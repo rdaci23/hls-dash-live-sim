@@ -33,7 +33,7 @@ jobs:
         run: |
           SIM_IMAGE=$(node -p 'require("./dist/support-tools/dash-sim-runner.js").DEFAULT_IMAGE')
           docker pull --platform linux/amd64 "$SIM_IMAGE"
-      - run: npm run browser:core -- --case ${{ matrix.protocol }}-starvation --output output/ci-starvation
+      - run: npm run browser:core -- --case ${{ matrix.protocol }}-starvation --require-fault-observed --output output/ci-starvation
       - name: Retain complete starvation evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

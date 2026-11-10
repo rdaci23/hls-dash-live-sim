@@ -1,6 +1,6 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http');
 const {capture,read,assess}=require('../scripts/browser/hls-audio-restoration.cjs');
-async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 test('retained advertised HLS controls prove contiguous AAC/video timing and reject byte, clock and metadata corruption',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'audio-restore-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));const session=await require('../dist/support-tools/track-fixture-session.js').startTrackFixture({protocol:'hls',port:await port(),faultConfigPath:path.join(dir,'faults.json'),scenarioFile:path.resolve('examples/scenarios/independent-audio-outage.json')});let proof;try{proof=await capture(session,dir,new AbortController().signal);}finally{await session.close();}
  const events=session.diagnostics.snapshot().events,sourceEpochMs=Date.parse(events.find(e=>e.event==='scenario.started').timestamp);assert.equal(assess(proof).passed,true);await read(dir,proof,{events,sourceEpochMs});assert.ok(proof.sequences.length>=4);

@@ -11,13 +11,7 @@ const cli = path.resolve(__dirname, "../dist/cli.js");
 const root = path.resolve(__dirname, "..");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function unusedPort() {
-  const server = net.createServer();
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const port = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
-  return port;
-}
+async function unusedPort() { return require("./helpers/free-port.cjs")(); }
 
 async function waitFor(check, diagnostics = () => "") {
   for (let i = 0; i < 100; i++) {

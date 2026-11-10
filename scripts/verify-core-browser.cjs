@@ -15,7 +15,7 @@ const { qualify, qualifyDirectory, rawManifest } = require('./browser/core-polic
 const root = path.resolve(__dirname, '..');
 const { CASES } = require('./browser/core-cases.cjs');
 async function port() { const s = http.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const p = s.address().port; await new Promise(resolve => s.close(resolve)); return p; }
-async function run(caseId, directory, signal, requireContinuation = false) {
+async function run(caseId, directory, signal, requireContinuation = false, requireFaultObserved = false) {
   const [protocol, profile] = caseId.split('-');
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   const workingTreeModified = !!execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim();
@@ -102,14 +102,14 @@ async function run(caseId, directory, signal, requireContinuation = false) {
     playerVersion,
     diagnosticFile: diagnostics?.completeFile, engineImage: protocol === 'dash' ? DEFAULT_IMAGE : undefined, injectionMs, restoredMs, auditDropped, harnessError, ...result };
   const rawBytes = Buffer.from(JSON.stringify(raw, null, 2) + '\n'); report.rawEvidence = rawManifest(rawBytes);
-  const policy = qualify(report, { raw, rawBytes, diagnostics, requireContinuation, caseId }); report.passed = policy.passed; report.failures = policy.failures;
+  const policy = qualify(report, { raw, rawBytes, diagnostics, requireContinuation, requireFaultObserved, caseId }); report.passed = policy.passed; report.failures = policy.failures;
   await fs.writeFile(path.join(directory, 'raw.json'), rawBytes, { mode: 0o600 });
   await fs.writeFile(path.join(directory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
   console.log(caseId + ': ' + report.browserCompatibility + (report.failures.length ? ' — ' + report.failures.join('; ') : ''));
   return report;
 }
 async function main() {
-  const args = require('yargs/yargs')(process.argv.slice(2)).option('case', { choices: [...CASES, 'all'], default: 'all' }).option('output', { type: 'string', default: 'output/core-browser-' + Date.now() }).option('require-continuation', { type: 'boolean', default: false }).strict().parseSync();
+  const args = require('yargs/yargs')(process.argv.slice(2)).option('case', { choices: [...CASES, 'all'], default: 'all' }).option('output', { type: 'string', default: 'output/core-browser-' + Date.now() }).option('require-continuation', { type: 'boolean', default: false }).option('require-fault-observed', { type: 'boolean', default: false, description: 'Fail when the fault never reached the browser (target-not-exercised)' }).strict().parseSync();
   const directory = path.resolve(args.output); await fs.mkdir(path.dirname(directory), { recursive: true }); await fs.mkdir(directory, { mode: 0o700 });
   const capture = (...params) => execFileSync('git', params, { cwd: root, encoding: 'utf8' }).trim(), commit = capture('rev-parse', 'HEAD');
   let workingTreeModified = !!capture('status', '--porcelain');
@@ -117,10 +117,10 @@ async function main() {
   const abort = new AbortController(), stop = () => abort.abort(); process.once('SIGINT', stop); process.once('SIGTERM', stop);
   const checks = []; let executionError;
   try { for (const caseId of args.case === 'all' ? CASES : [args.case]) {
-    const caseDirectory = path.join(directory, caseId), report = await run(caseId, caseDirectory, abort.signal, args['require-continuation']);
+    const caseDirectory = path.join(directory, caseId), report = await run(caseId, caseDirectory, abort.signal, args['require-continuation'], args['require-fault-observed']);
     workingTreeModified ||= sourceChanged(); report.workingTreeModified ||= workingTreeModified;
     await fs.writeFile(path.join(caseDirectory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });
-    const qualification = await qualifyDirectory(caseDirectory, { commit, caseId, requireContinuation: args['require-continuation'] });
+    const qualification = await qualifyDirectory(caseDirectory, { commit, caseId, requireContinuation: args['require-continuation'], requireFaultObserved: args['require-fault-observed'] });
     report.qualification = { passed: qualification.passed, failures: qualification.failures, classification: qualification.classification };
     report.passed = qualification.passed; report.failures = qualification.failures;
     await fs.writeFile(path.join(caseDirectory, 'report.json'), JSON.stringify(report, null, 2) + '\n', { mode: 0o600 });

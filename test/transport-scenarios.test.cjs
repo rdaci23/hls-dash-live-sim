@@ -14,7 +14,7 @@ const { sessionServer, listen } = require('../dist/support-tools/safe-http.js');
 const { TransportDelivery } = require('../dist/support-tools/transport-fault.js');
 const config = require('../dist/support-tools/live-stream-fault-config.js');
 beforeEach(() => config.applyConfigOverride({ segment: { malformed: 'off', forbidden: 'off', missing: 'off', latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: 'off' }, drm: { licenseFailure: 'off', keyRotationMismatch: 'off' } }));
-async function port() { const s = http.createServer(); await new Promise(resolve => s.listen(0, '127.0.0.1', resolve)); const p = s.address().port; await new Promise(resolve => s.close(resolve)); return p; }
+async function port() { return require("./helpers/free-port.cjs")(); }
 async function start(t, protocol, resource, action, edit = () => {}, generatedManifest = false) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'transport-fault-')); let session, origin;
   t.after(async () => { await session?.close(); await origin?.close(); await fs.rm(dir, { recursive: true, force: true }); });

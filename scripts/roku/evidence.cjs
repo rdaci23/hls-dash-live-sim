@@ -48,7 +48,7 @@ function metricsFromSamples(records, periods) {
     startHostEpochMs: start ? start.receivedEpochMs - start.atMs : null,
     states: [...new Set(records.filter(s => s.state).map(s => s.state))] };
 }
-function evaluateRoku({ protocol, test, records, periods, events, scenario, identity, clockResourceId, clockProbeId, consoleErrors = [] }) {
+function evaluateRoku({ protocol, test, records, periods, events, scenario, identity, clockResourceId, clockProbeId, consoleErrors = [], deviceClientId }) {
   const m = metricsFromSamples(records, periods), failures = [];
   const check = (ok, reason) => { if (!ok) failures.push(reason); };
   check(identity.modelNumber && identity.softwareVersion && identity.softwareBuild, 'Exact model and OS/build were not identified');
@@ -62,6 +62,8 @@ function evaluateRoku({ protocol, test, records, periods, events, scenario, iden
   check(m.audioProgressSeconds !== null && m.audioProgressSeconds >= m.renderedDurationMs / 1000 - 4, 'Rendered audio progress was not verified');
   check(!events.some(e => ['diagnostics.file_limit', 'diagnostics.file_error'].includes(e.event)), 'Incomplete server diagnostics');
   const faults = events.filter(e => e.event === 'request.completed' && e.status === 404);
+  // Another client on the LAN must not be able to consume the device's injected fault.
+  if (deviceClientId) check(faults.every(e => e.clientId === deviceClientId), 'An injected 404 was served to a client other than the device');
   check(!events.some(e => e.event === 'request.completed' && e.status >= 400 && e.status !== 404), 'Unexpected HTTP failure');
   const faultMs = faults.length ? Date.parse(faults[0].timestamp) - m.startHostEpochMs : null;
   const retry = events.find(e => e.event === 'scenario.result' && e.result === 'passed');

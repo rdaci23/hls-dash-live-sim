@@ -15,13 +15,7 @@ const {
   MANAGED_LABEL,
   WORKSPACE_LABEL,
 } = require("../dist/support-tools/container-ownership.js");
-async function unusedPort() {
-  const s = http.createServer();
-  await new Promise((r) => s.listen(0, "127.0.0.1", r));
-  const port = s.address().port;
-  await new Promise((r) => s.close(r));
-  return port;
-}
+async function unusedPort() { return require("./helpers/free-port.cjs")(); }
 const array = (v) => (Array.isArray(v) ? v : [v]);
 
 test(

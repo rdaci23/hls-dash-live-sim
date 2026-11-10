@@ -11,7 +11,7 @@ const {catalog}=require('../scripts/resource-scenarios/verify.cjs');
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 beforeEach(()=>config.applyConfigOverride({segment:{malformed:'off',forbidden:'off',missing:'off',latencyMs:0},manifest:{freeze:'off'},network:{bandwidthKbps:0,jitterMs:0},drm:{licenseFailure:'off',keyRotationMismatch:'off'}}));
 const cacheDef=(kind='negative')=>({version:1,seed:42,rules:[],cache:{kind,target:{resource:kind==='negative'?'init':'manifest',track:kind==='negative'?'video:0':'root'},afterMs:kind==='negative'?0:1000,beforeMs:5000,...(kind==='negative'?{ttlMs:1500}:{})}});
-async function port(){const s=http.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+async function port() { return require("./helpers/free-port.cjs")(); }
 function trace(){const callbacks=[],events=[];return {callbacks,events,logical(){},runEffect(){},select(){return{prepare(){}}},record(event,fields){events.push({event,...fields})},onOutcome(f){callbacks.push(f)},finish(status,body){for(const cb of callbacks)cb({outcome:'completed',status,bodyBytes:Buffer.byteLength(body)})}};}
 test('cache schema is additive and rejects unsafe targeting and unverified compositions',()=>{
   assert.equal(parseScenario(cacheDef()).cache.kind,'negative');
