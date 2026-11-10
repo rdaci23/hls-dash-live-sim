@@ -5,8 +5,7 @@
 For a checkout, use Node.js 24 LTS and npm. Verification is currently local-only.
 The preserved hosted workflow defines Ubuntu 24.04 and macOS 15 checks for Node
 22, 24 and 26, but those jobs are currently disabled.
-The package still declares the legacy Node 20.3 engine floor;
-that floor and Windows are not part of this CI matrix. Prefer a maintained Node
+The npm beta requires Node 24 or newer; Windows is not part of this CI matrix. Prefer a maintained Node
 release. No runtime compatibility requirement is changed by this documentation.
 
 ```sh
@@ -76,7 +75,7 @@ use your existing Chrome installation.
 Regular tests and package smoke use isolated temporary fault files. Do not run tests
 against personal templates, origin credentials or the ignored default configuration.
 `test:package` does not install globally, replace your checkout dependencies, or
-change npm `private: true`. Source-checkout npm scripts require the source tree;
+publish to npm. Source-checkout npm scripts require the source tree;
 they are not promised as commands inside an installed production package.
 
 For development against a locally installed archive, use the executable commands

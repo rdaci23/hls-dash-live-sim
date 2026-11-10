@@ -117,4 +117,4 @@ for its ladder. Broader player recovery remains unverified. In particular,
 bandwidth downshift does not prove HTTP-error fallback; the DASH compatibility
 probe retains a failed default dash.js result separately from verified server
 fault isolation. Broader network profiles need separate evidence.
-The [release checklist](release-checklist.md) retains those limits; the npm package remains private.
+The [release checklist](release-checklist.md) retains those limits; the npm beta is public.

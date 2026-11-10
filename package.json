@@ -1,7 +1,7 @@
 {
   "name": "hls-dash-live-sim",
-  "version": "0.2.0",
-  "private": true,
+  "version": "0.2.1-beta.0",
+  "private": false,
   "license": "MIT",
   "description": "Standalone HLS and DASH live manifest simulation and fault injection",
   "type": "commonjs",
@@ -9,7 +9,7 @@
     "hls-dash-live-sim": "dist/cli.js"
   },
   "engines": {
-    "node": ">=20.3"
+    "node": ">=24"
   },
   "repository": {
     "type": "git",

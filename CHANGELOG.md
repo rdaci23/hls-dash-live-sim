@@ -3,10 +3,15 @@
 User-visible changes and compatibility limits are recorded here. Version numbers
 describe the simulator; recorded player results apply only to their tested scope.
 
+## 0.2.1-beta.0 — npm beta
+
+- Prepare npm distribution with Node.js 24 or newer and package installation guidance.
+- The streaming implementation and documented compatibility limits are unchanged.
+
 ## 0.2.0 — 2026-11-09
 
 First public beta. The `v0.2.0` release identifies reviewed commit `42fa357`.
-Install from a [source checkout](docs/getting-started.md); no npm release is published.
+At that release, installation was from a [source checkout](docs/getting-started.md).
 
 ### Verification fixes
 

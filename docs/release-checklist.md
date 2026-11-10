@@ -1,7 +1,6 @@
 # Public-beta release checklist
 
-**Status: 0.2.0 public beta released at reviewed commit `42fa357`.** The npm
-package remains `private: true`. No CI command publishes the package or changes
+**Status: 0.2.0 public beta released at reviewed commit `42fa357`.** The npm beta candidate is publishable. No CI command publishes the package or changes
 repository visibility.
 
 **Current verification policy, 4 November 2026:** run all checks locally.
@@ -107,7 +106,7 @@ that every future commit has passed. For the candidate, inspect the exact
 - [x] Finalized 0.2.0 as the first public beta, prepared the
   [changelog](../CHANGELOG.md), source-checkout installation and documented
   compatibility limits. Version 0.2.0 was released on 9 November 2026.
-- [x] Publish `v0.2.0` at the reviewed commit after approval; npm publication remains separate.
+- [x] Publish `v0.2.0` at the reviewed commit after approval; npm beta publication is separately authorized.
 - [x] Obtain explicit approval and change repository visibility to public.
 
 ## Explicit limits to retain in the first support claim

@@ -5,7 +5,7 @@ states what each check establishes; a local result from an older commit does not
 qualify the publication candidate. The exact-candidate full local release review
 remains required. Hosted checks are paused under the
 [local-only policy](development.md#github-actions); untested environments remain
-unverified. Repository visibility and npm publication require separate approval.
+unverified. The npm beta is distributed separately from GitHub releases.
 
 | Capability | Simulator evidence | Browser evidence and limits |
 | --- | --- | --- |

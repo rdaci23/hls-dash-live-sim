@@ -79,7 +79,7 @@ async function main() {
         await step('package-install', npm, ['run', 'test:package']);
         await step('pack', npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], checkout, path.join(directory, 'pack.json'));
         const [packed] = JSON.parse(await fs.readFile(path.join(directory, 'pack.json'), 'utf8'));
-        assert.equal(JSON.parse(await fs.readFile(path.join(checkout, 'package.json'), 'utf8')).private, true);
+        assert.equal(JSON.parse(await fs.readFile(path.join(checkout, 'package.json'), 'utf8')).private, false);
         const files = packed.files.map(f => f.path);
         assert.ok(!files.some(f => /(?:^|\/)(?:\.git(?:\/|$)|\.env(?:\.|$)|auth[^/]*\.json$|\.hls-dash-|node_modules\/|output\/|\.github\/)/.test(f)));
         const packageDirectory = path.join(directory, 'package-content');

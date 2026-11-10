@@ -1,6 +1,6 @@
 # Publication preparation
 
-The repository is public and the npm package remains private. These historical
+The repository is public and npm beta publication is separately authorized. These historical
 cutover preparations describe the first public beta. The reviewed candidate satisfies the
 [core roadmap](scenario-roadmap.md), [candidate review](release-review.md) and
 [release checklist](release-checklist.md). Historical green CI runs do not qualify
@@ -23,8 +23,7 @@ as beta limitations; preserve failed results and assess any new failure separate
    record the actual environment. Historical CI runs remain historical and
    untested platform-matrix targets stay unverified. All acceptance limits remain.
 3. Review the archive inventory, secret scans, media provenance, MIT license,
-   third-party notices, install instructions and configuration examples. Keep
-   npm `private: true`; npm distribution requires a separate decision.
+   third-party notices, install instructions and configuration examples. Review npm package metadata and the exact archive before publishing.
 4. Review the coverage matrix and retain player compatibility limits in release
    notes. A fault-delivery pass does not establish automatic player recovery.
 5. Obtain explicit approval for public visibility. No verification command,

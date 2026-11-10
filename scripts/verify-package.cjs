@@ -28,7 +28,7 @@ async function ready(url, child, logs) {
   const children = [];
   try {
     const [packed] = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], { cwd: root, encoding: 'utf8' }));
-    assert.equal(require('../package.json').private, true, 'npm publishing must stay disabled');
+    assert.equal(require('../package.json').private, false, 'npm beta candidate must be publishable');
     const version = require('../package.json').version;
     assert.equal(packed.version, version);
     assert.equal(require('../package-lock.json').version, version);

@@ -1,8 +1,7 @@
 # Setup and first stream
 
 This guide starts with generated local media, then explains how to configure a
-session. Version 0.2.0 beta installs from a source checkout; no npm release is
-published. See the [changelog](../CHANGELOG.md) for release scope and known limits.
+session. The npm beta is available as `hls-dash-live-sim@beta`. See the [changelog](../CHANGELOG.md) for release scope and known limits.
 
 ## Prerequisites
 
@@ -14,8 +13,23 @@ published. See the [changelog](../CHANGELOG.md) for release scope and known limi
 | Regenerate media fixtures | FFmpeg with libx264; existing samples work without it. |
 
 Routine CI uses Linux/Node 24. Manual full checks cover Node 22/24/26 on Linux and
-macOS. Windows and the declared legacy Node 20.3 floor are not verified. Use Node
-24 for the documented setup.
+macOS for earlier source candidates. The npm beta requires Node 24 or newer;
+Windows and other Node versions remain unverified.
+
+To try the npm beta, run the following in a terminal. Keep the generated token
+private; enter it under **Control access** in the UI to enable session controls.
+
+```sh
+export HLS_DASH_CONTROL_TOKEN="$(node -p 'require("node:crypto").randomBytes(24).toString("hex")')"
+printf 'Simulator control token: %s\n' "$HLS_DASH_CONTROL_TOKEN"
+npx hls-dash-live-sim@beta livesim --sim-type hls --scenario-start manual
+```
+
+In a second terminal, run `npx hls-dash-live-sim@beta fault-control` and open
+`http://127.0.0.1:19090`. Paste the printed playback URL and connect. For DASH,
+replace `hls` with `dash`; Docker must already be running. `npx
+hls-dash-live-sim@beta --help` lists CLI options. The commands below use a source
+checkout instead.
 
 ```sh
 git clone https://github.com/rdaci23/hls-dash-live-sim.git

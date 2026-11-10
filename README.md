@@ -3,7 +3,7 @@
 A standalone tool for player developers and QA: serve known HLS/DASH streams,
 inject faults, and inspect what the player requested and how it recovered.
 
-**0.2.0 beta.** Install from source; no npm release is published. Read the
+**Beta.** Install with `npx hls-dash-live-sim@beta --help` or from source. Read the
 [changelog](CHANGELOG.md) for features, verification and known limits. Maintainers
 track publication status in the [release checklist](docs/release-checklist.md).
 
@@ -18,7 +18,7 @@ the [MIT License](LICENSE). You may use, modify and redistribute them, including
 commercially, subject to its notice requirements. Dependencies and external tools
 retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
-The repository is public. npm publication remains a separate decision.
+The repository and npm beta are public.
 
 ## Quick start
 

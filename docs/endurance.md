@@ -2,7 +2,7 @@
 
 The endurance runner uses the owned local tracks source, one real Chrome viewer
 and two independent HTTP viewers **per protocol**, concurrently. It needs no
-Docker, external clocks or media. The npm package remains private.
+Docker, external clocks or media. The npm beta is public.
 
 The required candidate endurance gate is **ten minutes**. The four-hour run is an
 optional stress test for maintainers investigating longer sessions; public release

@@ -187,7 +187,7 @@ generated media fixtures. Required third-party attribution is retained.
 - Main branch protection requires pull requests and resolved conversations. Actions
   remains disabled, and no disabled status check is required.
 - Version 0.2.0 was published as a public beta at reviewed commit `42fa357`.
-  npm publication remains a separate decision.
+  npm beta publication is separately authorized.
 
 The simulator owns valid streams, delivered faults, restoration and diagnostics.
 Known dash.js HTTP fallback/multi-Period ABR behavior is documented as client
