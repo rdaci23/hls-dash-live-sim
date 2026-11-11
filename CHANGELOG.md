@@ -54,6 +54,11 @@ describe the simulator; recorded player results apply only to their tested scope
 - Nine presets for the above.
 - `--segment-format fmp4`: a generated HLS ladder (234p, 432p, 720p) in fMP4 with
   separate audio; init and audio can be targeted by scenarios.
+- LL-HLS Playlist Delta Updates: `_HLS_skip=YES|v2` with `CAN-SKIP-UNTIL`
+  (six target durations) on the generated low-latency stream.
+- Low-latency HLS origins work through the `--manifest-url` proxy: parts,
+  preload hints and rendition reports are rewritten, and blocking reload is
+  forwarded. Delta updates are not forwarded.
 - `--low-latency`: generated HLS with parts, preload hints and blocking playlist
   reload; DASH with chunked segments and early availability, relayed as they are
   produced. The `low-latency` template now works.
@@ -64,6 +69,14 @@ describe the simulator; recorded player results apply only to their tested scope
   runner uses it to reject an injected 404 that another client consumed.
 
 ### Changed
+
+- The command line now generates the fMP4 ladder for HLS by default. Pass
+  `--segment-format ts` for the MPEG-TS stream; `--ad-break-segments` and
+  templates that select one rendition still use MPEG-TS. The `startHlsim()`
+  library default is unchanged (MPEG-TS).
+- `fast-xml-parser` 5.12.0 fixes a low-severity quadratic-CPU advisory for
+  unterminated stop-node tags.
+- The Roku deploy script waits 30 seconds for the device instead of 15.
 
 - MP4 VoD mode now runs a digest-pinned image (`nytimes/nginx-vod-module`) with a
   bundled configuration. The previous default, `kaltura/nginx-vod-module:latest`,

@@ -129,7 +129,7 @@ packages; Chrome binaries are not bundled.
 | `fast-deep-equal@3.1.3` | development | `MIT` | [LICENSE.txt](third-party/licenses/fast-deep-equal-3.1.3-1dc28023/LICENSE.txt) |
 | `fast-glob@3.3.3` | development | `MIT` | [LICENSE.txt](third-party/licenses/fast-glob-3.3.3-9c8cd3db/LICENSE.txt) |
 | `fast-xml-builder@1.3.1` | runtime | `MIT` | [LICENSE.txt](third-party/licenses/fast-xml-builder-1.3.1-4f3a6997/LICENSE.txt) |
-| `fast-xml-parser@5.11.2` | runtime | `MIT` | [LICENSE.txt](third-party/licenses/fast-xml-parser-5.11.2-d74a2cd2/LICENSE.txt) |
+| `fast-xml-parser@5.12.0` | runtime | `MIT` | [LICENSE.txt](third-party/licenses/fast-xml-parser-5.12.0-d74a2cd2/LICENSE.txt) |
 | `fastq@1.20.3` | development | `ISC` | [LICENSE.txt](third-party/licenses/fastq-1.20.3-8c489daf/LICENSE.txt) |
 | `fill-range@7.1.1` | development | `MIT` | [LICENSE.txt](third-party/licenses/fill-range-7.1.1-6d6ac572/LICENSE.txt) |
 | `finalhandler@1.3.2` | runtime | `MIT` | [LICENSE.txt](third-party/licenses/finalhandler-1.3.2-7498f428/LICENSE.txt) |
@@ -161,7 +161,7 @@ packages; Chrome binaries are not bundled.
 | `is-fullwidth-code-point@3.0.0` | runtime | `MIT` | [license.txt](third-party/licenses/is-fullwidth-code-point-3.0.0-5a85b89b/license.txt) |
 | `is-glob@4.0.3` | development | `MIT` | [LICENSE.txt](third-party/licenses/is-glob-4.0.3-effcbb19/LICENSE.txt) |
 | `is-number@7.0.0` | development | `MIT` | [LICENSE.txt](third-party/licenses/is-number-7.0.0-cea938ad/LICENSE.txt) |
-| `is-unsafe@2.0.2` | runtime | `MIT` | [LICENSE.txt](third-party/licenses/is-unsafe-2.0.2-29bfa61f/LICENSE.txt) |
+| `is-unsafe@2.0.3` | runtime | `MIT` | [LICENSE.txt](third-party/licenses/is-unsafe-2.0.3-29bfa61f/LICENSE.txt) |
 | `isarray@1.0.0` | development | `MIT` | [README-license.txt](third-party/licenses/isarray-1.0.0-4f959bdf/README-license.txt) |
 | `jsonc-parser@2.3.1` | development | `MIT` | [LICENSE.md.txt](third-party/licenses/jsonc-parser-2.3.1-07fe9248/LICENSE.md.txt) |
 | `jsonfile@4.0.0` | development | `MIT` | [LICENSE.txt](third-party/licenses/jsonfile-4.0.0-a5a7392e/LICENSE.txt) |

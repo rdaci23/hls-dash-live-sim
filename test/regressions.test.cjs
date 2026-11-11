@@ -138,20 +138,24 @@ test("HLS registry retains retired resources, bounds memory and fails before emi
   assert.equal(registry.get(first), undefined);
 });
 
-test("unsupported HLS variables and low-latency features fail explicitly", async (t) => {
+test("unsupported HLS variables and origin delta updates fail explicitly; LL-HLS tags pass", async (t) => {
   const {
     validateSupportedHls,
   } = require("../dist/support-tools/hls-playlist.js");
   for (const tag of [
     '#EXT-X-DEFINE:NAME="path",VALUE="video"',
-    '#EXT-X-PART:DURATION=0.2,URI="part.m4s"',
-    "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES",
     "#EXT-X-SKIP:SKIPPED-SEGMENTS=2",
   ])
     assert.throws(
       () => validateSupportedHls("#EXTM3U\n" + tag),
       /not supported/,
     );
+  for (const tag of [
+    '#EXT-X-PART:DURATION=0.2,URI="part.m4s"',
+    "#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES",
+    '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="next.m4s"',
+  ])
+    validateSupportedHls("#EXTM3U\n" + tag);
   const origin = await serve(t, (_req, res) =>
     res.end('#EXTM3U\n#EXT-X-DEFINE:NAME="v",VALUE="video"\n'),
   );

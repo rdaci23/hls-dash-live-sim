@@ -13,7 +13,7 @@ async function main() {
   try {
     await rokuDeploy.publish({ host, username: 'rokudev', password, rootDir: path.resolve(__dirname, '../roku'),
       outDir: path.resolve(__dirname, '../output/roku'), outFile: 'hls-dash-stream-tester',
-      autoLaunch: false, failOnCompileError: true, timeout: 15000, logLevel: 'error' });
+      autoLaunch: false, failOnCompileError: true, timeout: 30000, logLevel: 'error' });
   } catch { throw Error('Roku installer rejected the native tester; check the developer password and device installer diagnostics.'); }
   const response = await fetch(`http://${host}:8060/query/apps`, { signal: AbortSignal.timeout(5000) });
   const apps = new XMLParser({ ignoreAttributes: false }).parse(await response.text()).apps.app;

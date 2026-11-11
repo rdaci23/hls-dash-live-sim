@@ -12,14 +12,11 @@ export function validateSupportedHls(text: string): void {
       422,
       "HLS variable substitution (EXT-X-DEFINE) is not supported yet",
     );
-  if (
-    /^#EXT-X-(PART|PART-INF|PRELOAD-HINT|RENDITION-REPORT|SKIP)(:|\s|$)|^#EXT-X-SERVER-CONTROL:.*(?:CAN-BLOCK-RELOAD=YES|CAN-SKIP-UNTIL=)/m.test(
-      text,
-    )
-  )
+  // The proxy never forwards _HLS_skip, so an origin delta update is unexpected.
+  if (/^#EXT-X-SKIP(:|\s|$)/m.test(text))
     throw new HttpError(
       422,
-      "Low-latency HLS parts, blocking reload and delta updates are not supported yet",
+      "HLS delta updates (EXT-X-SKIP) are not supported through the origin proxy",
     );
 }
 export function attributes(line: string): Record<string, string> {
@@ -82,13 +79,19 @@ export function rewritePlaylist(
         const tag = line.split(":")[0];
         const kind = ["#EXT-X-KEY", "#EXT-X-SESSION-KEY"].includes(tag)
           ? "key"
-          : tag === "#EXT-X-MAP" ? "init" : [
+          : tag === "#EXT-X-MAP" || tag === "#EXT-X-PRELOAD-HINT" && attributes(line).TYPE === "MAP" ? "init" : [
                 "#EXT-X-MEDIA",
                 "#EXT-X-I-FRAME-STREAM-INF",
                 "#EXT-X-RENDITION-REPORT",
               ].includes(tag)
             ? "playlist"
             : "segment";
+        // Clients must not ask for delta updates: the proxy serves whole
+        // playlists so freeze and rollback snapshots stay complete.
+        if (tag === "#EXT-X-SERVER-CONTROL") {
+          const control = line.replace(/,?\bCAN-SKIP-(?:UNTIL|DATERANGES)=[^,]*/g, "").replace(/:,/, ":");
+          return control.endsWith(":") ? "" : control;
+        }
         return line.replace(/\bURI="([^"]+)"/g, (_all, uri) => {
           // Data keys carry no HTTP request; preserve them without forwarding credentials.
           if (kind === "key" && uri.startsWith("data:")) return `URI="${uri}"`;

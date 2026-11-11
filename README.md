@@ -185,8 +185,8 @@ npm start -- livesim --manifest-url https://example.com/master.m3u8 --allow-orig
 # One DASH period each minute (option units: periods per hour)
 npm start -- livesim --sim-type dash --periods-per-hour 60
 
-# fMP4 ladder with separate audio, low latency, or HLS ad breaks
-npm start -- livesim --sim-type hls --segment-format fmp4
+# MPEG-TS instead of the default fMP4 ladder, low latency, or HLS ad breaks
+npm start -- livesim --sim-type hls --segment-format ts
 npm start -- livesim --sim-type hls --low-latency
 npm start -- livesim --sim-type dash --low-latency
 npm start -- livesim --sim-type hls --ad-break-segments 2

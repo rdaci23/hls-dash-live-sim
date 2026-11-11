@@ -221,10 +221,10 @@ function readOrigin(
 export async function fetchRemote(
   value: string,
   policy: OriginPolicy,
-  options: { range?: string; maxBytes?: number; signal?: AbortSignal; method?: "GET" | "HEAD"; manifestPreview?: boolean } = {},
+  options: { range?: string; maxBytes?: number; signal?: AbortSignal; method?: "GET" | "HEAD"; manifestPreview?: boolean; timeoutMs?: number } = {},
 ): Promise<RemoteResponse> {
   let url = value;
-  const deadline = new RequestDeadline(10000, options.signal);
+  const deadline = new RequestDeadline(options.timeoutMs ?? 10000, options.signal);
   try {
     for (let redirects = 0; redirects <= 5; redirects++) {
       policy.check(url);

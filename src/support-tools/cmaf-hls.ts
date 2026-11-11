@@ -109,6 +109,9 @@ export class CmafHlsSample {
     this.targetDuration = Math.round(Math.max(...durations));
     this.partTarget = Math.max(...this.tracks.flatMap(t => t.segments.flatMap(s => s.parts.map(p => p.duration / t.timescale))));
   }
+  /** Delta updates may skip segments older than this many seconds from the
+   * playlist end; the spec requires at least six target durations. */
+  get skipUntil(): number { return this.targetDuration * 6; }
   track(name: string): CmafTrack | undefined { return this.tracks.find(t => t.name === name); }
   timeline(name: string): LiveHlsTimeline | undefined { return this.timelines.get(name); }
   get videoTracks(): number { return this.tracks.filter(t => t.type === "video").length; }
@@ -170,7 +173,7 @@ export class CmafHlsSample {
     const seconds = (ticks: number) => (ticks / track.timescale).toFixed(5);
     const lines = ["#EXTM3U", `#EXT-X-VERSION:${this.lowLatency ? 9 : 7}`, "#EXT-X-INDEPENDENT-SEGMENTS", `#EXT-X-TARGETDURATION:${this.targetDuration}`];
     if (this.lowLatency)
-      lines.push(`#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=${(this.partTarget * 3).toFixed(3)}`, `#EXT-X-PART-INF:PART-TARGET=${this.partTarget.toFixed(3)}`);
+      lines.push(`#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=${this.skipUntil.toFixed(3)},PART-HOLD-BACK=${(this.partTarget * 3).toFixed(3)}`, `#EXT-X-PART-INF:PART-TARGET=${this.partTarget.toFixed(3)}`);
     lines.push(`#EXT-X-MEDIA-SEQUENCE:${first}`);
     if (this.mode !== "live") lines.push(`#EXT-X-PLAYLIST-TYPE:${this.mode.toUpperCase()}`);
     lines.push(`#EXT-X-MAP:URI="${base}/init.mp4"`);
@@ -201,4 +204,32 @@ export class CmafHlsSample {
     const open = this.openParts(track);
     return index < this.partCount(track, sequence) && (sequence < open.sequence || sequence === open.sequence && index < open.count);
   }
+}
+
+/** Playlist Delta Update (_HLS_skip): replaces the oldest complete segments
+ * that end at least `skipUntil` seconds before the last complete segment ends
+ * with EXT-X-SKIP. Works on the text so a delta always matches the full
+ * playlist it was cut from. Returns the input when nothing can be skipped. */
+export function deltaPlaylist(full: string, skipUntil: number): string {
+  const lines = full.trimEnd().split("\n");
+  const firstSegment = lines.findIndex(l => l.startsWith("#EXT-X-PROGRAM-DATE-TIME:") || l.startsWith("#EXT-X-PART:") || l.startsWith("#EXTINF:"));
+  if (firstSegment < 0) return full;
+  // Each complete segment: the line where its tags start and its duration.
+  const segments: Array<{ start: number; end: number; duration: number }> = [];
+  let start = firstSegment;
+  for (let i = firstSegment; i < lines.length; i++) {
+    if (!lines[i].startsWith("#EXTINF:")) continue;
+    if (i + 1 >= lines.length || lines[i + 1].startsWith("#")) return full;
+    segments.push({ start, end: i + 2, duration: Number(lines[i].slice(8).split(",")[0]) });
+    start = i + 2;
+  }
+  if (segments.some(s => !Number.isFinite(s.duration) || s.duration <= 0)) return full;
+  const total = segments.reduce((n, s) => n + s.duration, 0);
+  let skipped = 0, elapsed = 0;
+  // Never skip a segment that lists its parts: clients still need them.
+  while (skipped < segments.length && elapsed + segments[skipped].duration <= total - skipUntil + 1e-6 &&
+    !lines.slice(segments[skipped].start, segments[skipped].end).some(l => l.startsWith("#EXT-X-PART:")))
+    elapsed += segments[skipped++].duration;
+  if (!skipped) return full;
+  return [...lines.slice(0, firstSegment), `#EXT-X-SKIP:SKIPPED-SEGMENTS=${skipped}`, ...lines.slice(segments[skipped - 1].end)].join("\n") + "\n";
 }

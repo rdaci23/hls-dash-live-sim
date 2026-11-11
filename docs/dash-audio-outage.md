@@ -31,7 +31,8 @@ all observed audio tracks; the bundled sample has one, identified as `audio:0`.
 This preset uses the existing [bounded outage semantics](scenarios.md): no traffic,
 cancelled injections, early shutdown or exhausted application capacity cannot
 silently establish a passing run. HLS's generated MPEG-TS sample has muxed audio
-and video and does not provide this independent audio target.
+and video and does not provide this independent audio target; the generated
+[fMP4 ladder](generated-streams.md) does, as `audio:0`.
 
 ## Verify isolation and restoration
 

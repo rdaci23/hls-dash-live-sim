@@ -172,7 +172,7 @@ test('repeated HLS rewrites preserve resource identity, retention, policy enforc
   for(now=1000;now<=10000;now+=1000)assert.equal(registry.rewrite(playlist('a.m4s'),base,base,policy),original);
   assert.equal(registry.get(id).url,'http://fixture.test/live/a.m4s');
   assert.throws(()=>registry.rewrite(playlist('a.m4s'),base,base,new OriginPolicy('http://other.test')),/not allowed/);
-  assert.throws(()=>registry.rewrite(playlist('a.m4s')+'#EXT-X-PART:DURATION=1,URI="p.m4s"\n',base,base,policy),/Low-latency/);
+  assert.throws(()=>registry.rewrite(playlist('a.m4s')+'#EXT-X-SKIP:SKIPPED-SEGMENTS=1\n',base,base,policy),/delta updates/);
   now=11000;registry.rewrite(playlist('b.m4s'),base,base,policy);
   now=14999;assert.ok(registry.get(id),'last observation retains retired media for its complete grace period');
   now=16001;assert.equal(registry.get(id),undefined);

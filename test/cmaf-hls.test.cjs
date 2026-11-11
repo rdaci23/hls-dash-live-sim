@@ -4,7 +4,7 @@ const fs = require("node:fs/promises");
 const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
-const { CmafHlsSample, retimeSegment } = require("../dist/support-tools/cmaf-hls.js");
+const { CmafHlsSample, deltaPlaylist, retimeSegment } = require("../dist/support-tools/cmaf-hls.js");
 const { startHlsim } = require("../dist/support-tools/hls-sim-runner.js");
 const { buildLivesimPath } = require("../dist/support-tools/dash-sim-runner.js");
 const { fragment } = require("../scripts/dash-abr/fixture.cjs");
@@ -67,7 +67,7 @@ test("a low-latency playlist lists parts for the newest segments, the growing se
   now.ms = 1100; // 1.1 s into segment 6: two half-second parts are complete
   const text = cmaf.playlist(video), lines = text.split("\n");
   assert.match(text, /#EXT-X-VERSION:9/);
-  assert.match(text, /#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=1\.536/);
+  assert.match(text, /#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=12\.000,PART-HOLD-BACK=1\.536/);
   assert.match(text, /#EXT-X-PART-INF:PART-TARGET=0\.512/);
   assert.match(text, /#EXT-X-MAP:URI="\/live\/v0\/init\.mp4"/);
   assert.deepEqual(uris(text), [0, 1, 2, 3, 4, 5].map(n => `/live/v0/segment-${n}.m4s`));
@@ -160,6 +160,90 @@ test("a low-latency session serves init, segments, parts, a held preload hint an
     const completed = live.diagnostics.snapshot().events.filter(e => e.event === "request.resource");
     assert.ok(completed.some(e => e.resourceKind === "init") && completed.some(e => e.resourceKind === "segment"), "init and media are classified");
   } finally { await live.close(); }
+});
+
+test("delta updates skip only complete segments older than CAN-SKIP-UNTIL and keep part-bearing segments", () => {
+  const now = { ms: 120000 };
+  const cmaf = new CmafHlsSample("live", 20, () => now.ms, 0, Date.UTC(2026, 0, 1), true);
+  const track = cmaf.track("v0"), full = cmaf.playlist(track);
+  assert.equal(cmaf.skipUntil, 12, "six target durations");
+  assert.match(full, /#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,CAN-SKIP-UNTIL=12\.000,/);
+  const delta = deltaPlaylist(full, cmaf.skipUntil);
+  const skipped = Number(/#EXT-X-SKIP:SKIPPED-SEGMENTS=(\d+)/.exec(delta)[1]);
+  const segments = text => uris(text).filter(u => u.includes("/segment-"));
+  // Twenty two-second segments: everything ending at least 12 s before the end is skipped.
+  assert.equal(segments(full).length, 20);
+  assert.equal(skipped, 14);
+  assert.deepEqual(segments(delta), segments(full).slice(skipped), "the remaining segments are unchanged");
+  assert.equal(delta.match(/#EXT-X-PART:/g).length, full.match(/#EXT-X-PART:/g).length, "parts are never skipped");
+  assert.equal(delta.split("\n").filter(l => l.startsWith("#EXT-X-MAP")).length, 1);
+  assert.ok(delta.indexOf("#EXT-X-MEDIA-SEQUENCE:") < delta.indexOf("#EXT-X-SKIP"), "header tags precede the skip");
+  assert.ok(delta.includes("#EXT-X-PRELOAD-HINT") && delta.includes("#EXT-X-RENDITION-REPORT"));
+  // The default six-segment window is exactly CAN-SKIP-UNTIL long, so nothing can be skipped.
+  const six = new CmafHlsSample("live", 6, () => now.ms, 0, Date.UTC(2026, 0, 1), true), short = six.playlist(six.track("v0"));
+  assert.equal(deltaPlaylist(short, 12), short);
+  assert.equal(deltaPlaylist("#EXTM3U\n#EXT-X-ENDLIST\n", 12), "#EXTM3U\n#EXT-X-ENDLIST\n");
+});
+
+test("a low-latency session answers _HLS_skip with a delta update and rejects unknown values", async () => {
+  const live = await session({ lowLatency: true, windowSegments: 20 });
+  try {
+    const full = (await get(live.url, "/live/v1/stream.m3u8")).body.toString();
+    assert.match(full, /CAN-SKIP-UNTIL=12\.000/);
+    assert.ok(!full.includes("#EXT-X-SKIP"));
+    for (const value of ["YES", "v2"]) {
+      const delta = await get(live.url, `/live/v1/stream.m3u8?_HLS_skip=${value}`);
+      assert.equal(delta.status, 200);
+      const text = delta.body.toString(), first = Number(/#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(text)[1]);
+      const skipped = Number(/#EXT-X-SKIP:SKIPPED-SEGMENTS=(\d+)/.exec(text)?.[1] ?? 0);
+      const listed = Number(/segment-(\d+)\.m4s/.exec(text)[1]);
+      assert.ok(skipped > 0, "the twenty-segment window has segments to skip");
+      assert.equal(listed, first + skipped, "the first listed segment follows the skipped ones");
+    }
+    // Skip combines with blocking reload.
+    const msn = Number(/#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(full)[1]) + uris(full).filter(u => u.includes("/segment-")).length;
+    const both = await get(live.url, `/live/v1/stream.m3u8?_HLS_msn=${msn}&_HLS_skip=YES`);
+    assert.equal(both.status, 200); assert.match(both.body.toString(), /#EXT-X-SKIP:SKIPPED-SEGMENTS=\d+/);
+    assert.equal((await get(live.url, "/live/v1/stream.m3u8?_HLS_skip=NO")).status, 400);
+  } finally { await live.close(); }
+  const plain = await session({ segmentFormat: "fmp4", windowSegments: 20 });
+  try {
+    const text = (await get(plain.url, "/live/v1/stream.m3u8?_HLS_skip=YES")).body.toString();
+    assert.ok(!text.includes("#EXT-X-SKIP") && !text.includes("CAN-SKIP-UNTIL"), "without low latency the full playlist is served");
+  } finally { await plain.close(); }
+});
+
+test("the origin proxy relays LL-HLS: parts, preload hints, rendition reports and blocking reload", async () => {
+  const origin = await session({ lowLatency: true });
+  const proxy = await session({ manifestUrl: origin.url, dummyContent: false });
+  try {
+    const master = (await get(proxy.url, "/proxy.m3u8")).body.toString();
+    const child = uris(master)[0];
+    assert.match(child, /^\/r\/[a-f0-9]{32}\.m3u8$/);
+    const playlist = (await get(proxy.url, child)).body.toString();
+    assert.match(playlist, /#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=1\.536/, "CAN-SKIP-UNTIL is withheld");
+    const parts = [...playlist.matchAll(/#EXT-X-PART:[^\n]*URI="([^"]+)"/g)].map(m => m[1]);
+    const hint = /#EXT-X-PRELOAD-HINT:TYPE=PART,URI="([^"]+)"/.exec(playlist)[1];
+    const reports = [...playlist.matchAll(/#EXT-X-RENDITION-REPORT:URI="([^"]+)"/g)].map(m => m[1]);
+    assert.ok(parts.length >= 8 && reports.length === 3);
+    for (const uri of [...parts, hint, ...reports]) assert.match(uri, /^\/r\/[a-f0-9]{32}\./, "every LL URI is advertised by the proxy");
+    assert.ok(!playlist.includes("/live/"), "no origin paths leak");
+    const part = await get(proxy.url, parts.at(-1));
+    assert.equal(part.status, 200); assert.ok(moofs(part.body).length >= 1);
+    // The hinted part does not exist yet; the origin holds it and the proxy relays it.
+    const hinted = await get(proxy.url, hint);
+    assert.equal(hinted.status, 200); assert.ok(moofs(hinted.body).length >= 1);
+    const msn = Number(/#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(playlist)[1]) + uris(playlist).filter(u => u.endsWith(".bin")).length;
+    const began = Date.now(), blocked = await get(proxy.url, `${child}?_HLS_msn=${msn + 1}&_HLS_part=0`);
+    assert.equal(blocked.status, 200);
+    assert.ok(Date.now() - began >= 100, "the origin held the blocking reload");
+    const newest = Number(/#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec(blocked.body.toString())[1]) + uris(blocked.body.toString()).filter(u => u.endsWith(".bin")).length;
+    assert.ok(newest >= msn + 1, "the awaited segment has started");
+    assert.equal((await get(proxy.url, `${child}?_HLS_part=0`)).status, 400);
+    assert.equal((await get(proxy.url, `${child}?_HLS_msn=-1`)).status, 400);
+    const skip = (await get(proxy.url, `${child}?_HLS_skip=YES`)).body.toString();
+    assert.ok(!skip.includes("#EXT-X-SKIP"), "skip requests get the whole playlist");
+  } finally { await proxy.close(); await origin.close(); }
 });
 
 test("scenarios address fMP4 init, audio and individual parts", async () => {

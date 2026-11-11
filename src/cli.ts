@@ -151,6 +151,12 @@ const startOptions = (builder) =>
       default: false,
     });
 
+/** Generated HLS defaults to the fMP4 ladder. The MPEG-TS sample is kept for
+ * the options only it supports: rendition selection and ad breaks. */
+function generatedHlsFormat(explicit: "ts" | "fmp4" | undefined, adBreakSegments?: number, rendition?: string, lowLatency?: boolean): "ts" | "fmp4" {
+  return explicit ?? (!lowLatency && (adBreakSegments !== undefined || rendition && rendition !== "all") ? "ts" : "fmp4");
+}
+
 async function runTemplate(name: string, args) {
   const template = getTemplate(name);
   if (!template)
@@ -203,7 +209,7 @@ async function runTemplate(name: string, args) {
           mode: args.mode,
           windowSegments: template.windowSegments,
           rendition: template.rendition,
-          segmentFormat: template.segmentFormat,
+          segmentFormat: template.sourceUrl ? template.segmentFormat : generatedHlsFormat(template.segmentFormat, undefined, template.rendition, template.lowLatency),
           lowLatency: template.lowLatency,
           manifestUrl: template.sourceUrl,
           dummyContent: template.sourceUrl ? false : true,
@@ -287,7 +293,7 @@ const program = yargs(hideBin(process.argv))
         .option("fault-proxy", { type: "boolean", default: true })
         .option("redundant-streams", { type: "boolean", description: "Advertise a /backup copy of the stream (HLS redundant variants, DASH BaseURLs) for failover scenarios" })
         .option("low-latency", { type: "boolean", description: "Low-latency live: generated HLS serves fMP4 parts with preload hints and blocking playlist reload; DASH serves chunked segments with early availability" })
-        .option("segment-format", { choices: ["ts", "fmp4"], description: "Generated HLS container: MPEG-TS (default, two muxed renditions) or fMP4 (234p/432p/720p ladder with separate audio)" })
+        .option("segment-format", { choices: ["ts", "fmp4"], description: "Generated HLS container: fMP4 (default; 234p/432p/720p ladder with separate audio) or MPEG-TS (two muxed renditions; chosen automatically with --ad-break-segments)" })
         .option("ad-break-segments", { type: "number", description: "Generated HLS: insert an ad pod of this many segments after each content loop, marked with EXT-X-DATERANGE, CUE-OUT/IN and discontinuities" })
         .option("legacy-url-routes", { type: "boolean", description: "Serve HLS origin /pl|/seg|/key?u= routes; default only on loopback hosts" })
         .option("fault-config", { type: "string" })
@@ -400,7 +406,7 @@ const program = yargs(hideBin(process.argv))
               legacyUrlRoutes: args["legacy-url-routes"],
               dummyContent: args["dummy-content"],
               adBreakSegments: args["ad-break-segments"],
-              segmentFormat: args["segment-format"],
+              segmentFormat: (args["dummy-content"] ?? !args["manifest-url"]) ? generatedHlsFormat(args["segment-format"], args["ad-break-segments"], undefined, args["low-latency"]) : args["segment-format"],
               lowLatency: args["low-latency"],
             }),
       );

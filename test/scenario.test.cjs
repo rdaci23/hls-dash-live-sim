@@ -56,7 +56,8 @@ test("scenario startup rejects bad JSON and unsupported HLS origins without fetc
 
 test("CLI and template commands run the scenario preset and expose a verifiable HTTP report", async (t) => {
   const dir = await directory(t);
-  for (const command of [["livesim", "--sim-type", "hls"], ["mobile-stream"]]) {
+  // Generated HLS defaults to fMP4; the mobile template selects a rendition, which keeps MPEG-TS.
+  for (const [command, segment] of [[["livesim", "--sim-type", "hls"], "/live/v0/segment-0.m4s"], [["mobile-stream"], "/live/low/segment-0.ts"]]) {
     const listen = await port();
     const child = spawn(
       process.execPath,
@@ -90,8 +91,8 @@ test("CLI and template commands run the scenario preset and expose a verifiable 
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     assert.ok(ready, output);
-    assert.equal((await fetch(base + "/live/low/segment-0.ts")).status, 404);
-    assert.equal((await fetch(base + "/live/low/segment-0.ts")).status, 200);
+    assert.equal((await fetch(base + segment)).status, 404);
+    assert.equal((await fetch(base + segment)).status, 200);
     assert.equal(
       (await (await fetch(base + "/scenario")).json()).result,
       "passed",

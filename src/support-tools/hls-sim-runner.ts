@@ -34,7 +34,7 @@ import {
   validateSupportedHls,
 } from "./hls-playlist.js";
 import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
-import { CmafHlsSample } from "./cmaf-hls.js";
+import { CmafHlsSample, deltaPlaylist } from "./cmaf-hls.js";
 import { setTimeout as sleep } from "node:timers/promises";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
@@ -164,6 +164,22 @@ export async function analyzeHLS(
   };
 }
 
+/** Validated LL-HLS blocking-reload directives from a client playlist request. */
+function llHlsDirectives(url: URL): Record<string, string> | undefined {
+  const msn = url.searchParams.get("_HLS_msn"), part = url.searchParams.get("_HLS_part");
+  if (msn === null) {
+    if (part !== null) throw new HttpError(400, "_HLS_part requires _HLS_msn");
+    return undefined;
+  }
+  if (!/^\d{1,15}$/.test(msn) || part !== null && !/^\d{1,6}$/.test(part)) throw new HttpError(400, "_HLS_msn and _HLS_part must be non-negative integers");
+  return part === null ? { _HLS_msn: msn } : { _HLS_msn: msn, _HLS_part: part };
+}
+function withQuery(value: string, params: Record<string, string>): string {
+  const url = new URL(value);
+  for (const [key, param] of Object.entries(params)) url.searchParams.set(key, param);
+  return url.href;
+}
+
 export async function startHlsim(
   options: HLSStartOptions = {},
 ): Promise<HlsSession> {
@@ -203,7 +219,7 @@ export async function startHlsim(
   const redundant = !!options.redundantStreams;
   const fmp4 = options.segmentFormat === "fmp4" || !!options.lowLatency;
   if (options.segmentFormat !== undefined && !["ts", "fmp4"].includes(options.segmentFormat)) throw new Error("segment-format must be ts or fmp4");
-  if (fmp4 && !dummy) throw new Error("--segment-format fmp4 and --low-latency apply to the generated sample stream");
+  if (fmp4 && !dummy) throw new Error("--segment-format fmp4 and --low-latency apply to the generated sample stream; a low-latency origin is relayed through the proxy without them");
   if (options.lowLatency && options.segmentFormat === "ts") throw new Error("Low-latency HLS uses fMP4 parts; omit --segment-format ts");
   if (options.lowLatency && mode !== "live") throw new Error("Low-latency HLS requires --mode live");
   if (fmp4 && options.adBreakSegments !== undefined) throw new Error("--ad-break-segments applies to the MPEG-TS sample; omit --segment-format fmp4 and --low-latency");
@@ -509,6 +525,8 @@ export async function startHlsim(
             if (wait > 0) await sleep(wait + 5, undefined, { signal });
           } else if (url.searchParams.has("_HLS_part"))
             throw new HttpError(400, "_HLS_part requires _HLS_msn and a low-latency stream");
+          const skip = url.searchParams.get("_HLS_skip");
+          if (skip !== null && skip !== "YES" && skip !== "v2") throw new HttpError(400, "_HLS_skip must be YES or v2");
           const failure = scenario?.decide({ kind: "manifest", trackId, trackType, key: `hls:manifest:${backup ? "backup:" : ""}${match[1]}`, ...origin }, req.headers.range, trace, req.method, req.headers);
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
           if (scenario?.serveCache(res,trace)) return;
@@ -516,7 +534,10 @@ export async function startHlsim(
           const playlist = cmaf ? cmaf.playlist(cmafTrack, backup ? "/backup" : "", pdtOffsetMs()) : timeline.playlist(match[1], backup ? "/backup" : "", pdtOffsetMs());
           const choice = observing ? {value:playlist,action:undefined} : snapshots.observe(url.pathname, playlist);
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
-          await reply(200, choice.value, { "Content-Type": "application/vnd.apple.mpegurl" });
+          // Delta updates cut only the live playlist; a frozen or rolled-back
+          // copy is served whole, which the spec allows for any skip request.
+          const body = skip !== null && cmaf?.lowLatency && choice.value === playlist ? deltaPlaylist(playlist, cmaf.skipUntil) : choice.value;
+          await reply(200, body, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
         }
         if (match[2] === "init.mp4") {
@@ -654,7 +675,11 @@ export async function startHlsim(
         send(res, failure, "Injected response failure", {}, req.method);
         return;
       }
-      const remote = await fetchRemote(resource.url, policy, {
+      // LL-HLS blocking reload: forward _HLS_msn/_HLS_part to the origin and
+      // allow the origin to hold the request (up to three target durations).
+      const blocking = resource.kind === "playlist" ? llHlsDirectives(url) : undefined;
+      const remote = await fetchRemote(blocking ? withQuery(resource.url, blocking) : resource.url, policy, {
+        timeoutMs: blocking ? 30000 : undefined,
         method: req.method === "HEAD" && !scenario?.handlesHttp(trace) ? "HEAD" : "GET",
         range: scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range,
         manifestPreview: observing,
