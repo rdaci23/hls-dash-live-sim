@@ -21,6 +21,33 @@ testing is optional; add `--extended-soak` explicitly when it is useful. The
 128 MiB per-process and aggregate memory-growth limits remain unchanged. Local
 passes retain their actual environment; untested CI-matrix targets stay unverified.
 
+## 0.3.0 preparation candidate — 11 November 2026
+
+Candidate `ec05ef2f0bdb6b6ae4c5f7ce50fa526a5870445e` (macOS ARM64, Node
+v26.8.1, Chrome 157.0.8103.50, hls.js 1.7.3, dash.js 5.2.1) passed all 52 stages
+of a clean-clone local `release:review` in about 1 hour 57 minutes. No hosted
+checks ran.
+
+- History scan: 118 commits, zero secret findings (gitleaks 8.30.1).
+- Package scan: 799 files, zero secret findings; MIT license. Reviewed archive
+  SHA-256: `daf27bf931595af1a89f40f252357739c17d04e8908e124dd0e08352bd0ab775`.
+- Dependency audit: zero known vulnerabilities across all severities.
+- The six-case browser gate passed and was release-qualified for both protocols.
+- All 18 targeted scenario cases qualified. All four healthy/disabled caption
+  controls passed, including DASH healthy captions. That case failed on the
+  earlier `59b3eda` run, where two projected browser timestamps missed the
+  10 ms clock-projection bound by 5.4 ms and 1.6 ms. The bound is unchanged; this
+  pass does not explain or replace that earlier result.
+- The DVR release check passed, with the documented player limitations for HLS
+  and DASH join-during-outage and DASH long-manifest-freeze.
+- The ten-minute concurrent smoke passed for both protocols, with the unchanged
+  128 MiB memory-growth limits.
+
+`releaseReady` stays false only for the standing outstanding items: actual
+environment coverage, hosted Actions approval, required checks at cutover,
+private vulnerability reporting and publication approval. A later version or
+documentation commit for the tag needs its own review run.
+
 ## Accepted beta limitations — 7 November 2026
 
 On candidate `ac8c924` (macOS ARM64, Chrome 156.0.8078.80, dash.js 5.2.1),
