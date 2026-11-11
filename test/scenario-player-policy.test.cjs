@@ -198,3 +198,14 @@ test('incomplete native repair boundaries and disposal before continuation canno
  const edits=[x=>delete x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='before').fragment.end,x=>{const before=x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='before');before.fragment={...before.fragment,end:before.fragment.end+.1};},x=>x.metrics.events.find(e=>e.kind==='hls-gap-repair'&&e.phase==='after').returned=1,x=>{const marker=x.metrics.events.find(e=>e.kind==='causal-probe-disposed');marker.atMs=124790;x.metrics.causalCompletion.atMs=124790;Object.assign(x.metrics.causalCompletion.snapshotTiming,{requestedEpochMs:epoch+124789,completedEpochMs:epoch+124791});}];
  assert.deepEqual(edits.map(edit=>{const changed=structuredClone(value);edit(changed);return assessPlayer(changed).passed;}),[false,false,false,false]);
 });
+
+test('Chrome 157.0.8103.50 is reviewed for every profile; neighbouring builds and other players are not', () => {
+  const { reviewedIdentity } = require('../scripts/browser/reviewed-identity.cjs');
+  for (const profile of ['scenario', 'causality', 'dvr'])
+    for (const [protocol, playerVersion] of [['hls', '1.7.3'], ['dash', '5.2.1']]) {
+      assert.equal(reviewedIdentity(profile, { protocol, playerVersion, browserVersion: '157.0.8103.50' }), true, profile + ' ' + protocol);
+      for (const browserVersion of ['157.0.8103.49', '157.0.8103.51', '157.0.8104.50'])
+        assert.equal(reviewedIdentity(profile, { protocol, playerVersion, browserVersion }), false, browserVersion);
+      assert.equal(reviewedIdentity(profile, { protocol, playerVersion: 'unknown', browserVersion: '157.0.8103.50' }), false);
+    }
+});

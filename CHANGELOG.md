@@ -77,6 +77,8 @@ describe the simulator; recorded player results apply only to their tested scope
 - `fast-xml-parser` 5.12.0 fixes a low-severity quadratic-CPU advisory for
   unterminated stop-node tags.
 - The Roku deploy script waits 30 seconds for the device instead of 15.
+- Chrome 157.0.8103.50 is a reviewed browser build for scenario, causality and
+  DVR evidence; [review](docs/browser-qualification.md).
 
 - MP4 VoD mode now runs a digest-pinned image (`nytimes/nginx-vod-module`) with a
   bundled configuration. The previous default, `kaltura/nginx-vod-module:latest`,

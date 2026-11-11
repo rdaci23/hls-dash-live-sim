@@ -11,6 +11,15 @@ using the complete native evidence from candidate `b7230dc` in
 That run passed the six-case playback gate, all four healthy/disabled-caption
 controls and the ten-minute concurrent smoke. The player packages are unchanged.
 
+Chrome **157.0.8103.50** was reviewed on 11 November 2026 with the same players,
+using the complete native evidence from a local clean-clone run of commit
+`59b3eda`. Re-evaluating those unchanged files with this exact build recognized
+qualified all 18 targeted scenario cases, with the same named faults, restoration
+and native causes as the earlier reviewed builds. The DVR release check passed,
+with the same three documented player limitations (HLS and DASH
+join-during-outage, DASH long-manifest-freeze). Before the build was recognized,
+the same files failed only on the unreviewed identity.
+
 `scripts/browser/reviewed-identity.cjs` holds the scoped build lists used by
 scenario observations, native console/caption causes and DVR limitations. The
 previously reviewed Chrome 156 builds keep their existing scopes. This is not a

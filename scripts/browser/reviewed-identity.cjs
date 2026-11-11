@@ -2,9 +2,9 @@
 // identity permits evaluation; it never supplies missing fault/clock/AV proof.
 const PLAYERS=Object.freeze({hls:'1.7.3',dash:'5.2.1'});
 const BROWSERS=Object.freeze({
- scenario:Object.freeze(['156.0.8078.79','156.0.8078.80','157.0.8103.38']),
- causality:Object.freeze(['156.0.8078.80','157.0.8103.38']),
- dvr:Object.freeze(['156.0.8078.76','156.0.8078.79','156.0.8078.80','157.0.8103.38']),
+ scenario:Object.freeze(['156.0.8078.79','156.0.8078.80','157.0.8103.38','157.0.8103.50']),
+ causality:Object.freeze(['156.0.8078.80','157.0.8103.38','157.0.8103.50']),
+ dvr:Object.freeze(['156.0.8078.76','156.0.8078.79','156.0.8078.80','157.0.8103.38','157.0.8103.50']),
 });
 function reviewedIdentity(profile,input){
  return Object.hasOwn(BROWSERS,profile)&&Object.hasOwn(PLAYERS,input?.protocol)&&
