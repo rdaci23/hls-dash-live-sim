@@ -1,6 +1,6 @@
 {
   "name": "hls-dash-live-sim",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "description": "Standalone HLS and DASH live manifest simulation and fault injection",

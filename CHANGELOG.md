@@ -3,7 +3,13 @@
 User-visible changes and compatibility limits are recorded here. Version numbers
 describe the simulator; recorded player results apply only to their tested scope.
 
-## Unreleased
+## 0.3.0 — 2026-11-11
+
+Second public beta: fMP4 as the default generated HLS format, low-latency HLS
+and DASH, LL-HLS delta updates and proxied low-latency origins, ad breaks,
+connection, clock and license faults, and redundant streams. The `v0.3.0` release
+identifies the commit that passed its own clean-clone local review. Install from a
+[source checkout](docs/getting-started.md); no npm release is published.
 
 ### Fixed
 
@@ -79,7 +85,6 @@ describe the simulator; recorded player results apply only to their tested scope
 - The Roku deploy script waits 30 seconds for the device instead of 15.
 - Chrome 157.0.8103.50 is a reviewed browser build for scenario, causality and
   DVR evidence; [review](docs/browser-qualification.md).
-
 - MP4 VoD mode now runs a digest-pinned image (`nytimes/nginx-vod-module`) with a
   bundled configuration. The previous default, `kaltura/nginx-vod-module:latest`,
   does not exist on Docker Hub, so the mode could not start without `--image`.

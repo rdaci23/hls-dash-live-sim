@@ -227,7 +227,7 @@ const program = yargs(hideBin(process.argv))
   })
   .scriptName("hls-dash-live-sim")
   .usage("$0 <command> [options]")
-  .version("0.2.0")
+  .version("0.3.0")
   .parserConfiguration({ "populate--": true })
   .command(
     "fault-control",

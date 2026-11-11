@@ -1,6 +1,7 @@
 # Public-beta release checklist
 
-**Status: 0.2.0 public beta released at reviewed commit `42fa357`.** The npm
+**Status: 0.3.0 beta. The `v0.3.0` release identifies the commit that passed its
+own local review; 0.2.0 was released at reviewed commit `42fa357`.** The npm
 package remains `private: true`. No CI command publishes the package or changes
 repository visibility.
 
@@ -150,7 +151,8 @@ scope. Its later requirements supersede the older narrow-beta feature boundary.
 
 Preparation candidate `ec05ef2` passed every automated item above in its
 [11 November 2026 local review](release-review.md#030-preparation-candidate--11-november-2026).
-The boxes stay open until the final 0.3.0 commit passes its own review.
+The 0.3.0 release commit, which changes only version text and this status, is
+reviewed again before tagging. The boxes describe each future candidate and stay open.
 
 See [publication preparation](publication-preparation.md) for the cutover settings.
 Remaining release checks and publication decisions cannot be replaced by adding
