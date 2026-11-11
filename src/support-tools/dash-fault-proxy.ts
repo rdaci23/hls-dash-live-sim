@@ -2,10 +2,13 @@ import { manifestPreview, MANIFEST_PREVIEW } from "./manifest-preview.js";
 import type { ServiceHooks } from "./scenario-services.js";
 import type { LifecycleHooks } from "./scenario-lifecycle.js";
 import { conditionalHeaders, conditionalResponse, removeOriginValidators } from "./http-response-policy.js";
+import http from "node:http";
+import type { RequestTrace } from "./session-diagnostics.js";
 import {
   OriginPolicy,
   fetchRemote,
   send,
+  sendHeaders,
   preflight,
   listen,
   sessionServer,
@@ -37,6 +40,38 @@ export interface DashFaultProxyOptions {
   access?: PlayerAccess;
   /** Advertise two MPD BaseURLs: the stream itself and a /backup copy of it. */
   redundantStreams?: boolean;
+  /** Relay unfaulted media as the engine produces it (chunked low-latency segments). */
+  lowLatency?: boolean;
+}
+/** Forward a loopback engine response chunk by chunk instead of buffering it,
+ * so a segment still being produced reaches the player as it grows. */
+function relayChunked(url: string, res: http.ServerResponse, signal: AbortSignal, trace: RequestTrace): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = http.get(url, { signal }, upstream => {
+      const status = upstream.statusCode ?? 502, headers: Record<string, string> = {};
+      for (const name of ["content-type", "etag", "last-modified"]) {
+        const value = upstream.headers[name];
+        if (typeof value === "string") headers[name] = value;
+      }
+      const length = upstream.headers["content-length"];
+      sendHeaders(res, status, length === undefined ? undefined : Number(length), headers);
+      let bytes = 0;
+      upstream.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > 64 * 1024 * 1024) { upstream.destroy(new Error("Origin response exceeds the size limit")); return; }
+        trace.delivery({ bodyBytes: bytes });
+        if (!res.write(chunk)) { upstream.pause(); res.once("drain", () => upstream.resume()); }
+      });
+      upstream.once("error", reject);
+      upstream.once("end", () => {
+        if (!upstream.complete) { reject(new Error("Incomplete origin response")); return; }
+        trace.record("origin.completed", { status, bodyBytes: bytes });
+        res.end();
+        resolve();
+      });
+    });
+    request.once("error", reject);
+  });
 }
 /** Two alternative MPD-level BaseURLs. Players treat them as failover choices. */
 export function redundantBaseUrls(mpd: string, manifestPath: string): string {
@@ -244,6 +279,12 @@ export async function startDashFaultProxy(
           send(res,ordinary.status,ordinary.body,ordinary.headers,req.method);
         }
       };
+      // Low-latency media with no fault selected is relayed while the engine is
+      // still producing it. Any fault falls back to whole-segment delivery.
+      if (options.lowLatency && segment && req.method === "GET" && !scenario && !req.headers.range && !trace.hasFault() && faults.passthrough()) {
+        await relayChunked(upstreamBase + pathname + request.search, res, signal, trace);
+        return;
+      }
       const cached = manifest && !observing ? snapshots.held(manifestKey) : undefined;
       if (cached) {
         faults.frozen(trace, false, profile);

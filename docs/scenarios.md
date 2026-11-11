@@ -246,7 +246,9 @@ responses. Reports remain inspectable through `session.scenario.report()` after
 - HLS media/timeline scenarios use generated media. Origin proxying supports
   manifest/init HTTP rules, with advertised resource identity and bounded indexes.
   Origin media/timeline targeting and Docker MP4 VoD scenarios are rejected.
-  Generated MPEG-TS has no initialization resource. [Details](resource-scenarios.md).
+  Generated MPEG-TS has no initialization resource; the generated
+  [fMP4 ladder](generated-streams.md) has one per track, and in low-latency mode
+  each part is its own media resource. [Details](resource-scenarios.md).
 - DASH scenarios require the fault proxy and observed local MPDs with supported
   Number/Time SegmentTemplates and finite SegmentTimelines. Empty timelines at a
   period boundary are allowed. Media requests without an observed identity

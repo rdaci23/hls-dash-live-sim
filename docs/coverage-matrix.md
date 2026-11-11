@@ -43,6 +43,8 @@ claimed, and a changed candidate needs fresh required checks.
 
 See [targeted browser observations](browser-scenario-observations.md),
 [endurance](endurance.md) and [publication preparation](publication-preparation.md).
-Commercial DRM, ads, low-latency protocols, HTTP/2/3 simulation and virtual clocks
-are deferred. Apple, Android, additional Roku hardware and internet-isolated Roku
+[Low-latency HLS and DASH, an fMP4 ladder and HLS ad markers](generated-streams.md)
+are generated, with one Chrome/hls.js check each for the HLS shapes and no
+release gate. Commercial DRM, ad insertion logic, HTTP/2/3 simulation and virtual
+clocks are deferred. Apple, Android, additional Roku hardware and internet-isolated Roku
 playback are unverified; native recovery development is outside this repository.

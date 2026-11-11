@@ -96,8 +96,9 @@ assets.
 | Inspection | Generated HLS/DASH baseline previews in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
 | Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS/DASH bandwidth-adaptation and timed HLS/DASH media-outage checks. |
 
-**Limits:** no LL-HLS/LL-DASH, commercial DRM, ads or shared
-virtual clock. DASH source import analyzes supported metadata; it does not clone
+**Limits:** no commercial DRM, ad insertion or shared virtual clock.
+Low-latency HLS/DASH and HLS ad markers are [generated](docs/generated-streams.md)
+but have no release gate. DASH source import analyzes supported metadata; it does not clone
 arbitrary source media. HLS origin scenarios and broader ABR/fault recovery remain
 outside verified coverage. Automatic [HLS](docs/hls-abr.md) and [DASH](docs/dash-abr.md)
 bandwidth adaptation have separate two-rendition Chrome checks. Default dash.js
@@ -184,6 +185,12 @@ npm start -- livesim --manifest-url https://example.com/master.m3u8 --allow-orig
 # One DASH period each minute (option units: periods per hour)
 npm start -- livesim --sim-type dash --periods-per-hour 60
 
+# fMP4 ladder with separate audio, low latency, or HLS ad breaks
+npm start -- livesim --sim-type hls --segment-format fmp4
+npm start -- livesim --sim-type hls --low-latency
+npm start -- livesim --sim-type dash --low-latency
+npm start -- livesim --sim-type hls --ad-break-segments 2
+
 # Discover presets, imports and command options
 npm run templates
 npm start -- create-manifest-template --help
@@ -226,6 +233,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [DASH audio-only outage](docs/dash-audio-outage.md) | Independent audio failure, healthy video/init/MPD/UTC, and same-download restoration evidence. |
 | [Multi-attempt retries](docs/multi-attempt-retry.md) | Three failures, then same-resource/range HTTP success, with sequential completion evidence. |
 | [Bounded transport faults](docs/transport-scenarios.md) | Headers-only/body stalls, incomplete connection aborts, timing/byte evidence and cleanup bounds. |
+| [Generated stream shapes](docs/generated-streams.md) | fMP4 ladder, low-latency HLS and DASH, HLS ad breaks, DASH periods. |
 | [Manifest/init targeting](docs/resource-scenarios.md) | Resource selectors, local fMP4 HLS origin, HTTP isolation and retry evidence. |
 | [Inert manifest previews](docs/manifest-preview.md) | Inspection semantics, source failures and isolated verification. |
 | [Manifest freeze/resume](docs/manifest-freeze.md) | Simulator snapshot stability, live media availability, local clock and current-timeline resume. |

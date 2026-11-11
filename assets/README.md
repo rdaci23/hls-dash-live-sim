@@ -27,6 +27,18 @@ command was not retained; current regeneration is explicit in the scripts.
   engine version. It does not rewrite source encodings to pretend to have different
   bitrates, resolutions or codecs.
 
+- Optional HLS fMP4 ladder: `scripts/generate-hls-cmaf.cjs` creates
+  `assets/hls-cmaf-sample` (about 3.5 MiB): 234p, 432p and 720p H.264 at roughly
+  300, 900 and 2,270 kbit/s plus separate 96 kbit/s stereo AAC, from the same
+  procedural pattern and tone with a white-corner / amplitude pulse. It is an
+  exact eight-second loop of two-second segments; every segment holds four
+  half-second fragments so the same bytes serve whole segments and low-latency
+  parts. The generator folds FFmpeg's short trailing audio segment into the last
+  full one, removes the AAC priming edit and records every part's byte range in
+  `index.json`, which the simulator validates at startup. Run
+  `npm run fixtures:hls-cmaf` to regenerate only this ladder. Initial generation
+  used FFmpeg 7.1.1/libx264. [How it is served](../docs/generated-streams.md).
+
 Run `npm run fixtures` with FFmpeg installed to regenerate. Encoded output and
 bandwidth measurements may vary with FFmpeg/libx264 versions; the generated master
 playlist records its actual measured ladder. Rebuild after regeneration. Stop live

@@ -52,11 +52,22 @@ describe the simulator; recorded player results apply only to their tested scope
 - A local `/license` endpoint on the DASH tracks fixture with
   `license-unavailable` and `license-denied`. It does not decrypt anything.
 - Nine presets for the above.
+- `--segment-format fmp4`: a generated HLS ladder (234p, 432p, 720p) in fMP4 with
+  separate audio; init and audio can be targeted by scenarios.
+- `--low-latency`: generated HLS with parts, preload hints and blocking playlist
+  reload; DASH with chunked segments and early availability, relayed as they are
+  produced. The `low-latency` template now works.
+- `--ad-break-segments`: an ad pod after each HLS content loop, marked with
+  `EXT-X-DATERANGE`, `CUE-OUT`/`CUE-IN` and discontinuities.
+- [Generated stream shapes](docs/generated-streams.md) describes all of these.
 - Request diagnostics carry `clientId`, a per-session pseudonym, and the Roku
   runner uses it to reject an injected 404 that another client consumed.
 
 ### Changed
 
+- MP4 VoD mode now runs a digest-pinned image (`nytimes/nginx-vod-module`) with a
+  bundled configuration. The previous default, `kaltura/nginx-vod-module:latest`,
+  does not exist on Docker Hub, so the mode could not start without `--image`.
 - The package now requires Node 22 or later (was 20.3, which was never verified).
 
 ## 0.2.0 — 2026-11-09

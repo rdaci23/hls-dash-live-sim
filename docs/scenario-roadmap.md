@@ -41,7 +41,7 @@ later commits.
 Each milestone needs presets, setup examples, isolated verification, negative
 acceptance tests and retained verification evidence, currently collected locally. Extend scenario version 1 additively;
 preserve legacy fingerprints, automatic startup and published defaults. Native
-Roku recovery, new hardware support, commercial DRM, ads, LL streaming, HTTP/2/3
+Roku recovery, new hardware support, commercial DRM, ad insertion, HTTP/2/3
 fault simulation and a shared virtual clock remain outside this core program.
 
 ## Evidence ledger

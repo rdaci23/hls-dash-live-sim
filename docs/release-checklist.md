@@ -128,8 +128,11 @@ that every future commit has passed. For the candidate, inspect the exact
   covers one timed 503 profile with explicit retries. Native recovery observations
   describe the tested client; they do not determine support for the simulator's
   outage-injection feature.
-- LL-HLS/LL-DASH, commercial DRM, ads, 4K fixtures and a shared virtual clock are
+- Commercial DRM, ad insertion, 4K fixtures and a shared virtual clock are
   deferred capabilities. They must not appear as supported preset promises.
+  Low-latency HLS/DASH, the fMP4 ladder and HLS ad markers are
+  [generated](generated-streams.md) with single manual browser checks and no
+  release gate; presets must not claim more than that.
 
 The [expanded core roadmap](scenario-roadmap.md) is now part of the pre-publication
 scope. Its later requirements supersede the older narrow-beta feature boundary.

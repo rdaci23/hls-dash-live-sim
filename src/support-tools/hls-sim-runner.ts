@@ -34,6 +34,8 @@ import {
   validateSupportedHls,
 } from "./hls-playlist.js";
 import { LiveHlsTimeline, StreamMode } from "./live-hls.js";
+import { CmafHlsSample } from "./cmaf-hls.js";
+import { setTimeout as sleep } from "node:timers/promises";
 import { FaultRuntime } from "./fault-runtime.js";
 import { SessionDiagnostics } from "./session-diagnostics.js";
 import { ManifestSnapshots } from "./manifest-snapshots.js";
@@ -85,6 +87,12 @@ export interface HLSStartOptions {
   legacyUrlRoutes?: boolean;
   /** Advertise a /backup copy: generated HLS variants, or DASH MPD BaseURLs. */
   redundantStreams?: boolean;
+  /** Generated HLS: insert an ad pod of this many segments after every content loop. */
+  adBreakSegments?: number;
+  /** Generated HLS container: MPEG-TS (default) or the fMP4 ladder with separate audio. */
+  segmentFormat?: "ts" | "fmp4";
+  /** Generated fMP4 HLS with parts, preload hints and blocking playlist reload. */
+  lowLatency?: boolean;
 }
 export interface HLSStopOptions {
   name?: string;
@@ -193,6 +201,14 @@ export async function startHlsim(
   if (definition?.cache?.kind === "manifest-rollback" && definition.cache.target.track === "root") throw new Error("HLS rollback requires a media-playlist track rather than the master");
   const dummy = options.dummyContent ?? !options.manifestUrl;
   const redundant = !!options.redundantStreams;
+  const fmp4 = options.segmentFormat === "fmp4" || !!options.lowLatency;
+  if (options.segmentFormat !== undefined && !["ts", "fmp4"].includes(options.segmentFormat)) throw new Error("segment-format must be ts or fmp4");
+  if (fmp4 && !dummy) throw new Error("--segment-format fmp4 and --low-latency apply to the generated sample stream");
+  if (options.lowLatency && options.segmentFormat === "ts") throw new Error("Low-latency HLS uses fMP4 parts; omit --segment-format ts");
+  if (options.lowLatency && mode !== "live") throw new Error("Low-latency HLS requires --mode live");
+  if (fmp4 && options.adBreakSegments !== undefined) throw new Error("--ad-break-segments applies to the MPEG-TS sample; omit --segment-format fmp4 and --low-latency");
+  if (fmp4 && options.rendition && options.rendition !== "all") throw new Error("Rendition selection applies to the MPEG-TS sample");
+  if (options.adBreakSegments !== undefined && !dummy) throw new Error("--ad-break-segments requires the generated sample stream");
   if (redundant && !dummy) throw new Error("HLS --redundant-streams requires the generated sample stream");
   if (definition?.rules.some(rule => rule.target.origin) && !redundant)
     throw new Error("Origin targets require a session started with --redundant-streams");
@@ -215,7 +231,7 @@ export async function startHlsim(
     throw new Error(
       "HLS media/timeline scenarios require generated sample media; origin scenarios support only manifest and init targets",
     );
-  if (definition && dummy && ((definition.http?.target.resource === "init" || definition.cache?.target.resource === "init") || definition.rules.some(rule => rule.target.resource === "init")))
+  if (definition && dummy && !fmp4 && ((definition.http?.target.resource === "init" || definition.cache?.target.resource === "init") || definition.rules.some(rule => rule.target.resource === "init")))
     throw new Error("Generated HLS MPEG-TS has no initialization resource; use a proxied fMP4 HLS origin with EXT-X-MAP for init scenarios");
   if (!dummy && !options.manifestUrl)
     throw new Error("Remote proxy mode requires --manifest-url");
@@ -256,9 +272,16 @@ export async function startHlsim(
           v.uri,
         ]),
     ].join("\n");
-  const variants = dummy ? variantEntries(master) : [];
+  const variants = dummy && !fmp4 ? variantEntries(master) : [];
   const startedAt = performance.now();
   const wallStartedAt = Date.now();
+  const cmaf = fmp4 ? new CmafHlsSample(mode, options.windowSegments, () => performance.now(), startedAt, wallStartedAt, !!options.lowLatency) : undefined;
+  // The generated stream's renditions: URL directory name and scenario identity.
+  const sampleTracks: Array<{ name: string; trackId: string; trackType: "video" | "audio" }> = cmaf
+    ? cmaf.tracks.map(t => ({ name: t.name, trackId: t.id, trackType: t.type }))
+    : variants.map((v, index) => ({ name: v.uri.split("/")[0], trackId: `video:${index}`, trackType: "video" as const }));
+  const trackOf = (name: string) => sampleTracks.find(t => t.name === name);
+  const videoTrackCount = sampleTracks.filter(t => t.trackType === "video").length;
   const timelines = new Map(
     variants.map((v) => [
       v.uri.split("/")[0],
@@ -269,6 +292,8 @@ export async function startHlsim(
         () => performance.now(),
         startedAt,
         wallStartedAt,
+        undefined,
+        options.adBreakSegments ?? 0,
       ),
     ]),
   );
@@ -317,15 +342,14 @@ export async function startHlsim(
   if (definition?.publication && dummy && mode === "vod") { scenario?.close();faults.close();diagnostics.close();configSource.close();throw new Error("Publication actors require a live/event sample"); }
   const snapshots = new ManifestSnapshots<string>(128, !scenario, configSource);
   let unsubscribeTimeline = scenario?.timeline?.subscribe(profile => snapshots.setFrozen(profile.manifestFreeze));
-  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks,redundant, generated: dummy, initialization: !dummy, ownedTracks: options.ownedFixture, videoTracks: dummy ? variants.length : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
+  const runs = (() => { try { return interactive && !(definition&&!manual) ? new ScenarioRuns(diagnostics, { protocol: "hls",aesOnly:options.ownedAes,lifecycleHooks:options.lifecycleHooks,serviceHooks,redundant, generated: dummy, initialization: !dummy || fmp4, ownedTracks: options.ownedFixture, videoTracks: dummy ? videoTrackCount : options.ownedFixture ? options.ownedVideoTracks ?? 2 : undefined,
     publicationAvailable: (kind,track,count) => dummy ? mode !== "vod" && (kind !== "rendition-lag" || (options.windowSegments ?? 6) > (count ?? 1)) : scenarioIndex?.publicationAvailable(kind,track,count) ?? false,
     advancingManifest: track => dummy ? mode !== "vod" : scenarioIndex?.advancing(track) ?? false,
     resourceAvailable: (kind, track) => {
       if (kind === "manifest" && ["root", "any"].includes(track)) return true;
       if (!dummy) return scenarioIndex?.available(kind, track) ?? false;
-      if (kind === "init") return false;
-      const alias = /^video:(\d+)$/.exec(track);
-      return ["video", "any"].includes(track) || !!alias && Number(alias[1]) < variants.length;
+      if (kind === "init" && !fmp4) return false;
+      return track === "any" || sampleTracks.some(t => t.trackId === track || t.trackType === track);
     } }, async (next, previousRunId) => {
     scenario?.close(); snapshots.setFrozen(false); unsubscribeTimeline?.();
     if (previousRunId) await transport.cancelRun(previousRunId);
@@ -352,7 +376,7 @@ export async function startHlsim(
       const requestUrl = new URL(req.url ?? "/", "http://localhost");
       const rootPreview = requestUrl.pathname === "/proxy.m3u8";
       const childPreview = dummy
-        ? variants.some(v => primaryPath(requestUrl.pathname) === "/live/" + v.uri)
+        ? sampleTracks.some(t => primaryPath(requestUrl.pathname) === `/live/${t.name}/stream.m3u8`)
         : /^\/r\/[a-f0-9]{32}\.m3u8$/.test(requestUrl.pathname) && lookupResource(requestUrl)?.kind === "playlist";
       const observing = manifestPreview(req, res, rootPreview || childPreview, trace);
       if (observing) scenario = undefined;
@@ -409,9 +433,9 @@ export async function startHlsim(
           url.pathname,
           url.pathname.endsWith(".m3u8")
             ? "manifest"
-            : url.pathname.endsWith(".ts")
+            : /\.(ts|m4s)$/.test(url.pathname)
               ? "segment"
-              : "other",
+              : fmp4 && url.pathname.endsWith("/init.mp4") ? "init" : "other",
           "sample",
         );
       else {
@@ -426,16 +450,17 @@ export async function startHlsim(
       if (runs) runs.assertHealthy();
       if (scenario) scenario.assertCompatible();
       if (!observing && (!scenario || scenario.timeline)) {
-        const requestVariant = primaryPath(url.pathname).match(/^\/live\/(low|main)\/segment-\d+\.ts$/)?.[1];
+        const requestVariant = trackOf(primaryPath(url.pathname).match(/^\/live\/([a-z0-9]+)\/(?:segment-\d+\.(?:ts|m4s)|part-\d+-\d+\.m4s)$/)?.[1] ?? "");
         const sourceLogical=options.ownedFixture?scenarioIndex?.resolve(lookupResource(url)?.url??options.manifestUrl):undefined;
-        const lane = sourceLogical?.kind === "media" ? "media:"+sourceLogical.trackId : requestVariant
-          ? `media:video:${variants.findIndex(variant => variant.uri.startsWith(requestVariant + "/"))}`
-          : (dummy ? url.pathname === "/proxy.m3u8" || variants.some(variant => primaryPath(url.pathname) === "/live/" + variant.uri) : !!lookupResource(url))
+        const requestInit = fmp4 ? trackOf(primaryPath(url.pathname).match(/^\/live\/([a-z0-9]+)\/init\.mp4$/)?.[1] ?? "") : undefined;
+        const lane = sourceLogical?.kind === "media" ? "media:"+sourceLogical.trackId : requestInit ? `init:${requestInit.trackId}` : requestVariant
+          ? `media:${requestVariant.trackId}`
+          : (dummy ? url.pathname === "/proxy.m3u8" || sampleTracks.some(t => primaryPath(url.pathname) === `/live/${t.name}/stream.m3u8`) : !!lookupResource(url))
             ? `manifest:${url.pathname}`
             // Unknown paths must not allocate one seeded jitter lane each.
             : "manifest:unknown";
         await faults.delay(signal, trace, req.method,
-          dummy ? /\.(m3u8|ts)$/.test(url.pathname)
+          dummy ? /\.(m3u8|ts|m4s|mp4)$/.test(url.pathname)
             : ["playlist", "segment", "init"].includes(lookupResource(url)?.kind),
           lane);
       }
@@ -450,6 +475,7 @@ export async function startHlsim(
           const failure = scenario?.decide({ kind: "manifest", trackId: "root", trackType: "root", key: "hls:manifest:root" }, req.headers.range, trace, req.method, req.headers);
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
           if (scenario?.serveCache(res,trace)) return;
+          if (cmaf) { await reply(200, cmaf.master(redundant), { "Content-Type": "application/vnd.apple.mpegurl" }); return; }
           const rewritten = master.replace(
             /^(low|main)\/stream.m3u8$/gm,
             (_line, name) => `/live/${name}/stream.m3u8`,
@@ -463,36 +489,66 @@ export async function startHlsim(
         const backup = primaryPath(url.pathname) !== url.pathname;
         const origin = backup ? { origin: "backup" as const } : {};
         const match = primaryPath(url.pathname).match(
-          /^\/live\/(low|main)\/(stream\.m3u8|segment-(\d+)\.ts)$/,
+          /^\/live\/([a-z0-9]+)\/(stream\.m3u8|segment-(\d+)\.(ts|m4s)|part-(\d+)-(\d+)\.m4s|init\.mp4)$/,
         );
-        if (!match) throw new HttpError(404, "Unknown stream resource");
-        const timeline = timelines.get(match[1]);
+        const sampleTrack = match ? trackOf(match[1]) : undefined;
+        // MPEG-TS has only .ts segments; the fMP4 sample has .m4s segments, parts and an init.
+        if (!match || !sampleTrack || (cmaf ? match[4] === "ts" : match[2] !== "stream.m3u8" && match[4] !== "ts"))
+          throw new HttpError(404, "Unknown stream resource");
+        const cmafTrack = cmaf?.track(match[1]);
+        const timeline = cmaf ? cmaf.timeline(match[1]) : timelines.get(match[1]);
         if (!timeline) throw new HttpError(404, "Unknown rendition");
+        const { trackId, trackType } = sampleTrack;
+        const mediaType = cmaf ? `${trackType}/mp4` : "video/mp2t";
         if (match[2] === "stream.m3u8") {
-          const trackId = `video:${variants.findIndex(variant => variant.uri.startsWith(match[1] + "/"))}`;
-          const failure = scenario?.decide({ kind: "manifest", trackId, trackType: "video", key: `hls:manifest:${backup ? "backup:" : ""}${match[1]}`, ...origin }, req.headers.range, trace, req.method, req.headers);
+          if (cmaf?.lowLatency && !observing && url.searchParams.has("_HLS_msn")) {
+            // Blocking reload: hold the response until the requested segment or part exists.
+            const part = url.searchParams.get("_HLS_part");
+            const wait = cmaf.reloadWaitMs(cmafTrack, Number(url.searchParams.get("_HLS_msn")), part === null ? undefined : Number(part));
+            if (wait === undefined) throw new HttpError(400, "Blocking reload requested a segment too far ahead");
+            if (wait > 0) await sleep(wait + 5, undefined, { signal });
+          } else if (url.searchParams.has("_HLS_part"))
+            throw new HttpError(400, "_HLS_part requires _HLS_msn and a low-latency stream");
+          const failure = scenario?.decide({ kind: "manifest", trackId, trackType, key: `hls:manifest:${backup ? "backup:" : ""}${match[1]}`, ...origin }, req.headers.range, trace, req.method, req.headers);
           if (failure) { send(res, failure, "Injected HLS manifest failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
           if (scenario?.serveCache(res,trace)) return;
           const profile = scenario?.timeline?.profile();
-          const playlist = timeline.playlist(match[1], backup ? "/backup" : "", pdtOffsetMs());
+          const playlist = cmaf ? cmaf.playlist(cmafTrack, backup ? "/backup" : "", pdtOffsetMs()) : timeline.playlist(match[1], backup ? "/backup" : "", pdtOffsetMs());
           const choice = observing ? {value:playlist,action:undefined} : snapshots.observe(url.pathname, playlist);
           if (choice.action) faults.frozen(trace, choice.action === "capture", profile);
           await reply(200, choice.value, { "Content-Type": "application/vnd.apple.mpegurl" });
           return;
         }
-        const sequence = Number(match[3]);
+        if (match[2] === "init.mp4") {
+          const failure = scenario?.decide({ kind: "init", trackId, trackType, key: `hls:init:${backup ? "backup:" : ""}${match[1]}`, ...origin }, req.headers.range, trace, req.method, req.headers);
+          if (failure) { send(res, failure, "Injected HLS initialization failure", (scenario?.failureHeaders(trace) ?? {}), req.method); return; }
+          if (scenario?.serveCache(res,trace)) return;
+          await sendMedia(res, 200, cmaf.init(cmafTrack), { "Content-Type": mediaType }, req.method, signal, trace, !scenario || !!scenario.timeline);
+          return;
+        }
+        const partIndex = match[5] !== undefined ? Number(match[6]) : undefined;
+        const sequence = Number(match[3] ?? match[5]);
+        if (partIndex !== undefined && (!cmaf.lowLatency || !Number.isSafeInteger(sequence) || partIndex >= cmaf.partCount(cmafTrack, sequence)))
+          throw new HttpError(404, "Unknown part");
+        if (partIndex !== undefined && !cmaf.partAvailable(cmafTrack, sequence, partIndex)) {
+          // A preload-hinted part is requested before it exists; answer when it does.
+          const wait = cmaf.partWaitMs(cmafTrack, sequence, partIndex);
+          if (wait > cmaf.partTarget * 2000) throw new HttpError(404, "Part is not available yet");
+          await sleep(wait + 5, undefined, { signal });
+        }
         const { first, end } = timeline.bounds();
         if (sequence < first && !timeline.retained(sequence))
           throw new HttpError(410, "Segment retention period has expired");
-        if (sequence >= end || !Number.isSafeInteger(sequence))
+        if ((partIndex === undefined ? sequence >= end : sequence > end) || !Number.isSafeInteger(sequence))
           throw new HttpError(404, "Segment is not available yet");
         const status = scenario
           ? scenario.decide(
               {
                 kind: "media",
-                trackType: "video",
-                trackId: `video:${variants.findIndex((variant) => variant.uri.startsWith(match[1] + "/"))}`,
-                key: `hls:${backup ? "backup:" : ""}${match[1]}:number:${sequence}`,
+                trackType,
+                trackId,
+                // In low-latency mode a part is its own resource with its own attempts.
+                key: `hls:${backup ? "backup:" : ""}${match[1]}:number:${sequence}${partIndex === undefined ? "" : ":part:" + partIndex}`,
                 ...origin,
                 availableAtMs: timeline.availableAtMs(sequence),
                 locator: { kind: "number", value: String(sequence) },
@@ -511,7 +567,9 @@ export async function startHlsim(
         }
         if (scenario?.serveCache(res,trace)) return;
         const segment = timeline.segments[sequence % timeline.segments.length];
-        let body = fs.readFileSync(path.join(root, match[1], segment.uri));
+        let body = cmaf
+          ? partIndex === undefined ? cmaf.segment(cmafTrack, sequence) : cmaf.part(cmafTrack, sequence, partIndex)
+          : fs.readFileSync(path.join(root, match[1], segment.uri));
         const range = scenario?.handlesHttp(trace) || req.method === "HEAD" || req.headers["if-range"] !== undefined ? undefined : req.headers.range;
         if (range) {
           const parsed = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -538,7 +596,7 @@ export async function startHlsim(
                   trace,
                 ),
             {
-              "Content-Type": "video/mp2t",
+              "Content-Type": mediaType,
               "Content-Range": `bytes ${start}-${finish}/${body.length}`,
               "Accept-Ranges": "bytes",
             },
@@ -552,7 +610,7 @@ export async function startHlsim(
           res,
           200,
           body,
-          { "Content-Type": "video/mp2t", "Accept-Ranges": "bytes" },
+          { "Content-Type": mediaType, "Accept-Ranges": "bytes" },
           req.method, signal, trace, !scenario || !!scenario.timeline,
         );
         return;
@@ -726,6 +784,9 @@ export async function startHlsim(
   };
 }
 
+/** A public AMD64 build of nginx-vod-module from 2020, pinned by digest. */
+export const DEFAULT_VOD_IMAGE =
+  "nytimes/nginx-vod-module:latest@sha256:6dfe1ddf4b1af1f0ca615f9426781e4a1ccc8cb4246c855fcf0fad4ee7cc7dae";
 async function startVod(
   options: HLSStartOptions,
   host: string,
@@ -738,12 +799,13 @@ async function startVod(
   const source = path.resolve(root, options.source);
   if (!source.startsWith(root + path.sep) || !fs.existsSync(source))
     throw new Error("source must be an existing file within vodroot");
-  const image = options.image ?? "kaltura/nginx-vod-module:latest";
-  if (!options.image)
-    console.warn("MP4 VoD mode uses the unpinned third-party image kaltura/nginx-vod-module:latest; pass --image name@sha256:<digest> to pin a reviewed build.");
+  // The pinned image runs with the bundled configuration, which serves only
+  // /vod/<file>/index.m3u8. A custom --image keeps its own configuration.
+  const image = options.image ?? DEFAULT_VOD_IMAGE;
+  const bundled = options.image ? [] : ["--platform", "linux/amd64", "-v", `${path.resolve(__dirname, "assets/vod/nginx.conf")}:/usr/local/nginx/conf/nginx.conf:ro`];
   execFileSync("docker", ["info"], { stdio: "pipe" });
   if (options.forcePull)
-    execFileSync("docker", ["pull", image], { stdio: "inherit" });
+    execFileSync("docker", ["pull", ...(options.image ? [] : ["--platform", "linux/amd64"]), image], { stdio: "inherit" });
   execFileSync(
     "docker",
     [
@@ -757,6 +819,7 @@ async function startVod(
       `${host}:${port}:80`,
       "-v",
       `${root}:/vod:ro`,
+      ...bundled,
       ...(options.noPull ? ["--pull=never"] : []),
       image,
     ],

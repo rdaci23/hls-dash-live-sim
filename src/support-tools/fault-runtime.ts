@@ -281,6 +281,11 @@ export class FaultRuntime {
     }
   }
   /** Transport owns framing/buffers; grants share this session's media limiter. */
+  /** True while no manual setting would alter or shape a media body, so it may be relayed as it arrives. */
+  passthrough(): boolean {
+    const malformed = this.config.segment?.malformed;
+    return this.closed || (!this.timeline && (!malformed || malformed === "off") && !this.config.network?.bandwidthKbps);
+  }
   transportGrant(trace?: RequestTrace): (maximum: number, signal: AbortSignal) => Promise<number> {
     if (this.closed) return async (maximum, signal) => { signal.throwIfAborted(); return maximum; };
     if (!this.timeline) throw new HttpError(422, "Combined transport requires a scenario network timeline");

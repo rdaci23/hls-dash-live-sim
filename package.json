@@ -28,6 +28,7 @@
     "test:docker": "npm run build && node scripts/run-docker-tests.cjs",
     "fixtures": "node scripts/generate-fixtures.cjs && node scripts/generate-dash-abr.cjs",
     "fixtures:dash-abr": "node scripts/generate-dash-abr.cjs",
+    "fixtures:hls-cmaf": "node scripts/generate-hls-cmaf.cjs",
     "scenario:verify": "npm run build && node scripts/verify-scenarios.cjs",
     "browser:verify": "npm run build && node scripts/verify-browser.cjs",
     "roku:build": "bsc --project roku/bsconfig.json",

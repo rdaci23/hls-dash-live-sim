@@ -70,7 +70,11 @@ export interface LivesimStartOptions {
   allowedPlayerOrigins?: string[];
   /** Advertise the stream and a /backup copy as alternative MPD BaseURLs. */
   redundantStreams?: boolean;
+  /** Chunked low-latency DASH: half-second chunks, early segment availability. */
+  lowLatency?: boolean;
 }
+/** Chunk duration used for low-latency DASH, in seconds. */
+export const LOW_LATENCY_CHUNK_SECONDS = 0.5;
 export interface LivesimStopOptions {
   name?: string;
 }
@@ -116,6 +120,8 @@ export function buildLivesimPath(
   info?: MPDInfo,
   periodsPerHour?: number,
   utc: "local" | "external" = "local",
+  /** Source segment duration in seconds; enables chunked low-latency delivery. */
+  lowLatencySegmentSeconds?: number,
 ): string {
   if (utc !== "local" && utc !== "external")
     throw new Error("utc must be local or external");
@@ -152,6 +158,14 @@ export function buildLivesimPath(
     )
       throw new Error("periods-per-hour must be an integer from 1 to 60");
     parts.push(`periods_${periodsPerHour}`, "continuous_1");
+  }
+  if (lowLatencySegmentSeconds !== undefined) {
+    // availabilityTimeOffset lets a player request a segment once its first
+    // chunk exists: one chunk after the segment starts.
+    const offset = Math.round((lowLatencySegmentSeconds - LOW_LATENCY_CHUNK_SECONDS) * 1000) / 1000;
+    if (!Number.isFinite(offset) || offset <= 0)
+      throw new Error(`Low-latency DASH needs source segments longer than its ${LOW_LATENCY_CHUNK_SECONDS}-second chunks`);
+    parts.push(`chunkdur_${LOW_LATENCY_CHUNK_SECONDS}`, `ato_${offset}`);
   }
   return "/" + [...parts, asset, "manifest.mpd"].join("/");
 }
@@ -260,7 +274,6 @@ export async function startLivesim2(
         )
       : undefined);
   const asset = options.asset ?? "sample";
-  const manifestPath = buildLivesimPath(asset, info, periods, options.utc);
   const bundled = asset === "abr" ? "dash-abr-sample" : "dash-sample";
   const sourceFixture = path.resolve(__dirname, "../../assets", bundled);
   const vodroot = options.vodroot
@@ -275,9 +288,15 @@ export async function startLivesim2(
     );
   if (!fs.existsSync(path.join(assetRoot, "manifest.mpd")))
     throw new Error("DASH asset must contain manifest.mpd");
-  validateDashAsset(
-    fs.readFileSync(path.join(assetRoot, "manifest.mpd"), "utf8"),
-  );
+  const assetManifest = fs.readFileSync(path.join(assetRoot, "manifest.mpd"), "utf8");
+  validateDashAsset(assetManifest);
+  let lowLatencySegmentSeconds: number | undefined;
+  if (options.lowLatency) {
+    const duration = parseMPD(assetManifest, "fixture://manifest.mpd").segmentDurationMs;
+    if (!duration) throw new Error("Low-latency DASH needs an asset whose SegmentTemplate states one segment duration");
+    lowLatencySegmentSeconds = duration / 1000;
+  }
+  const manifestPath = buildLivesimPath(asset, info, periods, options.utc, lowLatencySegmentSeconds);
   setFaultConfigPath(
     options.faultConfigPath ??
       process.env.DASH_FAULT_CONFIG ??
@@ -444,6 +463,7 @@ export async function startLivesim2(
         videoTracks: asset === "abr" ? 2 : asset === "sample" ? 1 : undefined,
         access,
         redundantStreams: options.redundantStreams,
+        lowLatency: options.lowLatency,
       });
     signal?.throwIfAborted();
     const displayHost =

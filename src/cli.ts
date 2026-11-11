@@ -180,6 +180,7 @@ async function runTemplate(name: string, args) {
           host: args.host,
           allowedHosts: args["allow-host"], allowedPlayerOrigins: args["allow-player-origin"], redundantStreams: args["redundant-streams"],
           asset: template.isDynamic ? undefined : template.asset,
+          lowLatency: template.lowLatency,
           manifestUrl: template.sourceUrl,
           ...auth(args),
         }),
@@ -202,6 +203,8 @@ async function runTemplate(name: string, args) {
           mode: args.mode,
           windowSegments: template.windowSegments,
           rendition: template.rendition,
+          segmentFormat: template.segmentFormat,
+          lowLatency: template.lowLatency,
           manifestUrl: template.sourceUrl,
           dummyContent: template.sourceUrl ? false : true,
           ...auth(args),
@@ -283,6 +286,9 @@ const program = yargs(hideBin(process.argv))
         })
         .option("fault-proxy", { type: "boolean", default: true })
         .option("redundant-streams", { type: "boolean", description: "Advertise a /backup copy of the stream (HLS redundant variants, DASH BaseURLs) for failover scenarios" })
+        .option("low-latency", { type: "boolean", description: "Low-latency live: generated HLS serves fMP4 parts with preload hints and blocking playlist reload; DASH serves chunked segments with early availability" })
+        .option("segment-format", { choices: ["ts", "fmp4"], description: "Generated HLS container: MPEG-TS (default, two muxed renditions) or fMP4 (234p/432p/720p ladder with separate audio)" })
+        .option("ad-break-segments", { type: "number", description: "Generated HLS: insert an ad pod of this many segments after each content loop, marked with EXT-X-DATERANGE, CUE-OUT/IN and discontinuities" })
         .option("legacy-url-routes", { type: "boolean", description: "Serve HLS origin /pl|/seg|/key?u= routes; default only on loopback hosts" })
         .option("fault-config", { type: "string" })
         .option("fault-profile", { type: "string" })
@@ -367,6 +373,9 @@ const program = yargs(hideBin(process.argv))
       };
       if (args.fixture && (args.asset || args.image || args.name || args["force-pull"] || args["periods-per-hour"] || args.periods || args["period-durations"] || args.utc === "external" || args["fault-proxy"] === false)) throw new Error("Owned tracks cannot combine with engine assets, image/Period options, external UTC or disabled fault proxy");
       if(args["hls-aes"]&&(!args.fixture||type!=="hls"))throw new Error("hls-aes requires HLS --fixture tracks");
+      if (args["ad-break-segments"] !== undefined && (type !== "hls" || args.fixture || args.proxy === false)) throw new Error("--ad-break-segments applies to the generated HLS sample stream; DASH uses --periods-per-hour for period transitions");
+      if ((args["low-latency"] || args["segment-format"]) && (args.fixture || args.proxy === false)) throw new Error("--low-latency and --segment-format apply to the generated HLS sample or the DASH engine, not to --fixture tracks or MP4 VoD");
+      if (args["segment-format"] && type !== "hls") throw new Error("--segment-format applies to generated HLS; DASH media is always fMP4");
       if (args["video-renditions"] && !args.fixture) throw new Error("video-renditions requires --fixture tracks");
       const session = await starting(async (signal) =>
         args.fixture ? await startTrackFixture({ ...common, signal, protocol: type, mode: args.mode, windowSegments: args["window-segments"], videoRenditions: args["video-renditions"],hlsAes:args["hls-aes"], proxy: args.proxy }) : type === "dash"
@@ -379,6 +388,7 @@ const program = yargs(hideBin(process.argv))
               periodDurations: args["period-durations"]?.split(",").map(Number),
               periodsPerHour: args["periods-per-hour"],
               utc: args.utc,
+              lowLatency: args["low-latency"],
               extraArgs: args["--"]?.map(String),
             })
           : await startHlsim({
@@ -389,6 +399,9 @@ const program = yargs(hideBin(process.argv))
               proxy: args.proxy,
               legacyUrlRoutes: args["legacy-url-routes"],
               dummyContent: args["dummy-content"],
+              adBreakSegments: args["ad-break-segments"],
+              segmentFormat: args["segment-format"],
+              lowLatency: args["low-latency"],
             }),
       );
       await supervise(session, args.showManifest);
@@ -432,7 +445,7 @@ const program = yargs(hideBin(process.argv))
         .option("detach", { type: "boolean" }),
     (args: any) => runTemplate(args.template, args),
   );
-for (const name of ["sports", "news", "ott", "mobile", "low-latency"])
+for (const name of ["sports", "news", "ott", "mobile", "low-latency", "ladder"])
   program.command(
     `${name}-stream`,
     "Start the named template",

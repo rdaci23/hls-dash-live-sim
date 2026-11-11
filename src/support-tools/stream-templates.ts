@@ -19,6 +19,8 @@ export interface StreamTemplate {
   supported?: boolean;
   windowSegments?: number;
   rendition?: "all" | "low" | "main";
+  segmentFormat?: "ts" | "fmp4";
+  lowLatency?: boolean;
 }
 export interface TemplateGenerationOptions {
   url: string;
@@ -74,9 +76,18 @@ export const PREDEFINED_TEMPLATES: Record<string, StreamTemplate> = {
     ...base,
     name: "Low latency",
     description:
-      "Unavailable: partial-segment transport and low-latency media are not implemented",
-    bitrateLadder: [],
-    supported: false,
+      "Low-latency live: fMP4 parts, preload hints and blocking reload (HLS) or chunked segments (DASH with --sim-type dash)",
+    bitrateLadder: [402349, 1004447, 2366949],
+    windowSegments: 6,
+    lowLatency: true,
+  },
+  ladder: {
+    ...base,
+    name: "fMP4 ladder",
+    description: "234p, 432p and 720p H.264 in fMP4 with separate AAC audio; 12-second live window",
+    bitrateLadder: [402349, 1004447, 2366949],
+    windowSegments: 6,
+    segmentFormat: "fmp4",
   },
 };
 export async function createTemplateFromUrl(

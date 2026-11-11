@@ -26,6 +26,11 @@ Go dependencies, or upstream sample media. The [upstream engine license](third-p
 is preserved for attribution. Redistribution of the image or an appliance needs
 a separate inventory of its contents and notices.
 
+HLS MP4 VoD mode starts `nytimes/nginx-vod-module`, a public build of Kaltura's
+AGPL-3.0 nginx-vod-module, pinned by digest in the HLS runner. This project's
+archive holds only its own nginx configuration for that image; the image is not
+embedded or redistributed.
+
 FFmpeg/libx264 are optional external fixture-generation tools; neither binaries
 nor libraries are bundled. The current media uses procedural patterns and a
 synthesized tone; [provenance and historical limits](assets/README.md). Browser

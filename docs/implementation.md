@@ -44,8 +44,9 @@ retired references for a grace period. Limits are 100,000 resources, 128 observe
 playlists and 4 MiB per remote playlist. Capacity failure returns HTTP 503 instead
 of silently evicting active references. Full-response buffering remains a limit.
 
-Variable substitution (`EXT-X-DEFINE`), LL-HLS parts, blocking reload and delta
-updates fail explicitly with HTTP 422. Media/timeline scenario targeting uses generated samples; HLS origins support
+From a proxied origin, variable substitution (`EXT-X-DEFINE`), LL-HLS parts,
+blocking reload and delta updates fail explicitly with HTTP 422; the simulator's
+own [low-latency stream](generated-streams.md) is separate. Media/timeline scenario targeting uses generated samples; HLS origins support
 manifest/init HTTP targeting through advertised playlists and EXT-X-MAP. The
 MPEG-TS sample has no init resource and its muxed audio cannot be targeted
 independently of video. [Resource targeting](resource-scenarios.md).
