@@ -1,8 +1,8 @@
 # Setup and first stream
 
 This guide starts with generated local media, then explains how to configure a
-session. The beta installs from a source checkout; no npm release is
-published. See the [changelog](../CHANGELOG.md) for release scope and known limits.
+session. Install the beta from npm (`npm install -g hls-dash-live-sim`) or from a
+source checkout. See the [changelog](../CHANGELOG.md) for release scope and known limits.
 
 ## Prerequisites
 
@@ -18,6 +18,11 @@ and a manually dispatched matrix for Node 22/24/26 on Linux and macOS. Hosted
 Actions is currently disabled, so neither runs automatically; checks are run
 locally ([policy](development.md#github-actions)). Windows is not verified. The package
 requires Node 22 or later; use Node 24 for the documented setup.
+
+The steps below use a checkout. With the npm package, replace `npm run hls --` with
+`hls-dash-live-sim livesim --sim-type hls` and `npm run fault-control` with
+`hls-dash-live-sim fault-control`; checkout-only scripts such as browser checks
+and fixture regeneration need the source tree.
 
 ```sh
 git clone https://github.com/rdaci23/hls-dash-live-sim.git

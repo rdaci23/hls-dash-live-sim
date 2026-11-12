@@ -28,7 +28,9 @@ async function ready(url, child, logs) {
   const children = [];
   try {
     const [packed] = JSON.parse(execFileSync(npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], { cwd: root, encoding: 'utf8' }));
-    assert.equal(require('../package.json').private, true, 'npm publishing must stay disabled');
+    // The maintainer publishes this exact reviewed archive; nothing here publishes it.
+    assert.equal(require('../package.json').private, undefined, 'the reviewed archive must be publishable to npm');
+    assert.equal(packed.name, 'hls-dash-live-sim');
     const version = require('../package.json').version;
     assert.equal(packed.version, version);
     assert.equal(require('../package-lock.json').version, version);

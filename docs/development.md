@@ -73,8 +73,8 @@ use your existing Chrome installation.
 
 Regular tests and package smoke use isolated temporary fault files. Do not run tests
 against personal templates, origin credentials or the ignored default configuration.
-`test:package` does not install globally, replace your checkout dependencies, or
-change npm `private: true`. Source-checkout npm scripts require the source tree;
+`test:package` does not install globally, replace your checkout dependencies or
+publish anything. Source-checkout npm scripts require the source tree;
 they are not promised as commands inside an installed production package.
 
 For development against a locally installed archive, use the executable commands
@@ -232,9 +232,12 @@ fails when `src/` changed since the last `v*` tag and that section has no entrie
    failed or partial review, a review of another commit, a modified tree, an
    existing tag or a `main` that cannot fast-forward. It writes
    `release-notes.md` into the review directory from the changelog summary and
-   the review's results, then prints the push, tag and `gh release create`
-   commands. It runs them only with `--yes`; `--title` sets the release name.
-   Version 0.x releases are marked as pre-releases. npm publication is separate.
+   the review's results, then prints the push, tag, `gh release create` and
+   `npm publish` commands. It runs them only with `--yes`; `--title` sets the
+   release name and `--no-npm` leaves npm out. Version 0.x GitHub releases are
+   marked as pre-releases. npm receives the exact archive the review built and
+   retained, after its SHA-256 matches the report; it refuses a version already
+   on npm. `npm publish` asks for your one-time password.
 
 The fast-forward keeps the reviewed commit as the tagged commit; a pull-request
 merge would create a different one. Record the review in

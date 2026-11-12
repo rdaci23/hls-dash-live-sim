@@ -153,5 +153,5 @@ Coverage is this fixture, controlled cap and tested Chrome/dash.js versions.
 Multi-Period ABR, native-device ABR, HTTP fallback in other players, jitter adaptation, perceived
 audio quality, internet-isolated Roku, Apple, Android and additional Roku models
 remain unverified. The existing [playback gates](playback-gates.md) cover different
-cases. The repository is public and the package is not published to npm; consult the
+cases. The repository and npm package are public; consult the
 [release checklist](release-checklist.md) before changing the support claim.

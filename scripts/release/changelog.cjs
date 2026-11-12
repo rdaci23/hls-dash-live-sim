@@ -118,7 +118,7 @@ function forRelease(markdown, blob) {
     return lines.join('\n').replace(/\]\((?![a-z][a-z0-9+.-]*:|#)([^)\s]+)\)/gi, (_, target) => `](${blob(target.replace(/^\.\//, ''))})`);
 }
 
-function releaseNotes({ repository, commit, version, section, report, browserVersions }) {
+function releaseNotes({ repository, commit, version, section, report, browserVersions, npmPackage }) {
     const blob = file => `https://github.com/${repository}/blob/${commit}/${file}`;
     const env = report.verificationExecution ?? {};
     const scenarios = report.scenarioIntegrity?.cases?.length;
@@ -135,7 +135,7 @@ function releaseNotes({ repository, commit, version, section, report, browserVer
     if (section.limits)
         parts.push('### Known limits\n\n' + forRelease(section.limits, blob));
     parts.push(`See the [${version} changelog](${blob('CHANGELOG.md')}) for every change.`);
-    parts.push('Licensed under MIT; third-party components retain their respective terms. Install from source; npm publication is not part of this release.');
+    parts.push('Licensed under MIT; third-party components retain their respective terms. ' + (npmPackage ? `Install with \`npm install -g ${npmPackage}\` or from source.` : 'Install from source; npm publication is not part of this release.'));
     return parts.join('\n\n') + '\n';
 }
 

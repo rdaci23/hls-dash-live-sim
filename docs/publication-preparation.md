@@ -1,7 +1,7 @@
 # Publication preparation
 
-The GitHub repository is public (beta) and the package is not
-published to npm (`private: true` in `package.json`). The steps below were written
+The GitHub repository is public (beta) and the package is published to npm
+from each reviewed release archive. The steps below were written
 before the cutover and keep their original wording, including references to
 private preparation and pending visibility approval. These historical
 cutover preparations describe the first public beta. The reviewed candidate satisfies the

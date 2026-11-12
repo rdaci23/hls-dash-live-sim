@@ -2,8 +2,8 @@
 
 **Status: public beta. Each `vX.Y.Z` release identifies the commit that passed its
 own local review; the [changelog](../CHANGELOG.md) lists the versions.** The npm
-package remains `private: true`. No CI command publishes the package or changes
-repository visibility.
+package is the reviewed release archive, published by the maintainer. No CI
+command publishes the package or changes repository visibility.
 
 **Current verification policy, 4 November 2026:** run all checks locally.
 Repository Actions is disabled to preserve the included runner allowance. Do not

@@ -23,7 +23,7 @@ async function main() {
     const checkout = path.join(directory, 'checkout'), commit = capture('git', ['rev-parse', 'HEAD']);
     const report = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit, sourceTreeClean: true, scannerVersion, steps: [], candidateChecksPassed: false, releaseReady: false, projectLicense: require('../package.json').license,
         verificationExecution: { mode: 'local-only', hostedActions: 'paused', hostedChecksExecuted: false, platform: process.platform, arch: process.arch, nodeVersion: process.version },
-        outstanding: ['Review actual local environment coverage; untested matrix targets remain unverified', 'Hosted Actions requires explicit approval before re-enablement or dispatch', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit public visibility approval; npm is a separate decision'],
+        outstanding: ['Review actual local environment coverage; untested matrix targets remain unverified', 'Hosted Actions requires explicit approval before re-enablement or dispatch', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit publication approval; the maintainer publishes the reviewed archive to npm'],
         endurancePolicy:{requiredMode:'smoke',requiredDurationMs:600000,maximumGrowthBytes:128*1024*1024,extendedSoakRequested:options.extendedSoak,extendedSoakRequired:false} };
     const active = createProcessOwner();
     let interrupted = false, soakWork, soakFailure;
@@ -79,7 +79,7 @@ async function main() {
         await step('package-install', npm, ['run', 'test:package']);
         await step('pack', npm, ['pack', '--json', '--ignore-scripts', '--pack-destination', directory], checkout, path.join(directory, 'pack.json'));
         const [packed] = JSON.parse(await fs.readFile(path.join(directory, 'pack.json'), 'utf8'));
-        assert.equal(JSON.parse(await fs.readFile(path.join(checkout, 'package.json'), 'utf8')).private, true);
+        assert.equal(JSON.parse(await fs.readFile(path.join(checkout, 'package.json'), 'utf8')).private, undefined, 'the reviewed archive must be publishable to npm');
         const files = packed.files.map(f => f.path);
         assert.ok(!files.some(f => /(?:^|\/)(?:\.git(?:\/|$)|\.env(?:\.|$)|auth[^/]*\.json$|\.hls-dash-|node_modules\/|output\/|\.github\/)/.test(f)));
         const packageDirectory = path.join(directory, 'package-content');

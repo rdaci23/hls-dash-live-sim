@@ -3,7 +3,7 @@
 A standalone tool for player developers and QA: serve known HLS/DASH streams,
 inject faults, and inspect what the player requested and how it recovered.
 
-**Public beta.** Install from source; no npm release is published. Read the
+**Public beta.** Install from npm (`npm install -g hls-dash-live-sim`) or from source. Read the
 [changelog](CHANGELOG.md) for features, verification and known limits. Maintainers
 track publication status in the [release checklist](docs/release-checklist.md).
 
@@ -18,14 +18,15 @@ the [MIT License](LICENSE). You may use, modify and redistribute them, including
 commercially, subject to its notice requirements. Dependencies and external tools
 retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
-The repository is public. npm publication remains a separate decision.
+The package is published to npm as `hls-dash-live-sim`.
 
 ## Quick start
 
 Use Node.js 24 LTS. Verification is currently local-only; GitHub Actions is disabled to preserve the runner allowance.
 See the [verification policy](docs/development.md#github-actions).
 HLS needs only Node. DASH additionally needs a running Docker daemon.
-These commands are for a repository checkout:
+From npm, `npm install -g hls-dash-live-sim`, then run `hls-dash-live-sim livesim --sim-type hls`
+and `hls-dash-live-sim fault-control`. These commands are for a repository checkout:
 
 ```sh
 git clone https://github.com/rdaci23/hls-dash-live-sim.git

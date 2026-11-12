@@ -106,5 +106,7 @@ test('release notes combine the changelog summary with the review results', () =
     assert.match(notes, /limitations: hls-join-during-outage\./);
     assert.match(notes, /https:\/\/github\.com\/owner\/repo\/blob\/e9896e4[0-9a-f]+\/CHANGELOG\.md/);
     assert.doesNotMatch(notes, /Known limits/);
+    assert.match(notes, /npm publication is not part of this release\.\n$/);
+    assert.match(releaseNotes({ repository: 'owner/repo', commit, version: '0.3.0', section, report: report(), browserVersions: [], npmPackage: 'pkg' }), /Install with `npm install -g pkg` or from source\.\n$/);
     assert.match(releaseNotes({ repository: 'owner/repo', commit, version: '0.2.0', section: releaseSection(changelog, '0.2.0'), report: report(), browserVersions: [] }), /### Known limits\n\n- Old limit\./);
 });

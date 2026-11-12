@@ -5,8 +5,14 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+Patch beta: the simulator is published to npm, and maintainers have local
+release scripts. Streaming behavior is unchanged from 0.3.0.
+
 ### Added
 
+- The package is published to npm: `npm install -g hls-dash-live-sim`, then
+  `hls-dash-live-sim livesim --sim-type hls`. npm receives the exact archive each
+  release review built and checked.
 - Maintainer release scripts: `release:prepare`, `release:publish` and
   `changelog:check`; see the [release process](docs/development.md#release-process).
 
