@@ -3,6 +3,17 @@
 User-visible changes and compatibility limits are recorded here. Version numbers
 describe the simulator; recorded player results apply only to their tested scope.
 
+## Unreleased
+
+### Added
+
+- Maintainer release scripts: `release:prepare`, `release:publish` and
+  `changelog:check`; see the [release process](docs/development.md#release-process).
+
+### Changed
+
+- `--version` reads the package version instead of a separate copy in the CLI.
+
 ## 0.3.0 — 2026-11-11
 
 Second public beta: fMP4 as the default generated HLS format, low-latency HLS

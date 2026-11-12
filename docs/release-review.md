@@ -21,6 +21,17 @@ testing is optional; add `--extended-soak` explicitly when it is useful. The
 128 MiB per-process and aggregate memory-growth limits remain unchanged. Local
 passes retain their actual environment; untested CI-matrix targets stay unverified.
 
+## 0.3.0 release — 11 November 2026
+
+Release commit `e9896e423e48aac827458b2a79663d7f1169e5ed`, tagged `v0.3.0`,
+passed all 52 stages of its own clean-clone local review on the same environment
+as the preparation candidate below (Chrome 157.0.8103.50). History scan: 120
+commits, zero findings. Package scan: 799 files, zero findings; archive SHA-256
+`68934d69f9027b2beb2af95d8b272418f3d6567eda5d2851656386bca0607d53`. Zero known
+vulnerabilities. All 18 targeted scenario cases and all four caption controls
+passed; the DVR release check passed with the same three documented player
+limitations.
+
 ## 0.3.0 preparation candidate — 11 November 2026
 
 Candidate `ec05ef2f0bdb6b6ae4c5f7ce50fa526a5870445e` (macOS ARM64, Node
