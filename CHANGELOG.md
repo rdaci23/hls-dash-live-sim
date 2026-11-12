@@ -5,6 +5,8 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+## 0.3.1 — 2026-11-12
+
 Patch beta: the simulator is published to npm, and maintainers have local
 release scripts. Streaming behavior is unchanged from 0.3.0.
 
