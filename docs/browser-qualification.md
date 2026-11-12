@@ -20,6 +20,14 @@ with the same three documented player limitations (HLS and DASH
 join-during-outage, DASH long-manifest-freeze). Before the build was recognized,
 the same files failed only on the unreviewed identity.
 
+Chrome **157.0.8103.51** was reviewed on 12 November 2026 with the same players,
+after Chrome updated itself during release preparation. The full local review of
+0.3.1 candidate `d9f1d2f` passed every stage before the targeted scenario suite,
+which failed only because this build was unrecognized. Re-evaluating that run's
+unchanged files with the build recognized qualified all 18 scenario cases. A
+separate DVR release check on the same commit passed with the same three
+documented player limitations. Without recognition, it failed only on identity.
+
 `scripts/browser/reviewed-identity.cjs` holds the scoped build lists used by
 scenario observations, native console/caption causes and DVR limitations. The
 previously reviewed Chrome 156 builds keep their existing scopes. This is not a

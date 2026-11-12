@@ -21,6 +21,8 @@ release scripts. Streaming behavior is unchanged from 0.3.0.
 ### Changed
 
 - `--version` reads the package version instead of a separate copy in the CLI.
+- Chrome 157.0.8103.51 is a reviewed browser build for scenario, causality and
+  DVR evidence; [review](docs/browser-qualification.md).
 
 ## 0.3.0 — 2026-11-11
 
