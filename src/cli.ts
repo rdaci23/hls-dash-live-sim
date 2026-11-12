@@ -2,6 +2,8 @@
 import { startTrackFixture } from "./support-tools/track-fixture-session.js";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { portNumber, bindHost } from "./support-tools/safe-http.js";
 import {
   startHlsim,
@@ -19,6 +21,10 @@ import {
   createTemplateFromUrl,
   saveTemplate,
 } from "./support-tools/stream-templates.js";
+
+function packageVersion(): string {
+  return JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8")).version;
+}
 
 async function starting<T extends { close(): Promise<void> }>(
   start: (signal: AbortSignal) => Promise<T>,
@@ -227,7 +233,7 @@ const program = yargs(hideBin(process.argv))
   })
   .scriptName("hls-dash-live-sim")
   .usage("$0 <command> [options]")
-  .version("0.3.0")
+  .version(packageVersion())
   .parserConfiguration({ "populate--": true })
   .command(
     "fault-control",

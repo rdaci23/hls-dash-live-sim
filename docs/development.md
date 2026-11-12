@@ -213,3 +213,29 @@ against generated HLS and the pinned DASH engine.
 `npm run tracks:verify` checks independent-track HTTP behavior;
 `npm run browser:tracks` checks decoded tones and scheduled captions.
 [Fixture development and limits](track-fixtures.md).
+
+## Release process
+
+Releases run locally; hosted Actions stays paused. Write user-visible changes
+under `## Unreleased` in the [changelog](../CHANGELOG.md) as they land, with a
+one-paragraph summary above the first `###` heading. `npm run changelog:check`
+fails when `src/` changed since the last `v*` tag and that section has no entries.
+
+1. `npm run release:prepare -- 0.4.0` needs a clean tree. It creates
+   `release/0.4.0`, sets the package version, renames `## Unreleased` to
+   `## 0.4.0 — <today>` (`--date` overrides), opens a new empty Unreleased section
+   and commits `Prepare 0.4.0`. It pushes nothing. The CLI reads `--version` from
+   `package.json`.
+2. `npm run release:review -- --output output/release-review-<commit>` reviews
+   that exact commit. Any later commit needs its own review.
+3. `npm run release:publish -- --report output/release-review-<commit>` refuses a
+   failed or partial review, a review of another commit, a modified tree, an
+   existing tag or a `main` that cannot fast-forward. It writes
+   `release-notes.md` into the review directory from the changelog summary and
+   the review's results, then prints the push, tag and `gh release create`
+   commands. It runs them only with `--yes`; `--title` sets the release name.
+   Version 0.x releases are marked as pre-releases. npm publication is separate.
+
+The fast-forward keeps the reviewed commit as the tagged commit; a pull-request
+merge would create a different one. Record the review in
+[release-review.md](release-review.md) afterwards.

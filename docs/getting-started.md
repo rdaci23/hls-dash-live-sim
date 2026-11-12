@@ -1,7 +1,7 @@
 # Setup and first stream
 
 This guide starts with generated local media, then explains how to configure a
-session. Version 0.3.0 beta installs from a source checkout; no npm release is
+session. The beta installs from a source checkout; no npm release is
 published. See the [changelog](../CHANGELOG.md) for release scope and known limits.
 
 ## Prerequisites

@@ -3,7 +3,7 @@
 A standalone tool for player developers and QA: serve known HLS/DASH streams,
 inject faults, and inspect what the player requested and how it recovered.
 
-**0.3.0 beta.** Install from source; no npm release is published. Read the
+**Public beta.** Install from source; no npm release is published. Read the
 [changelog](CHANGELOG.md) for features, verification and known limits. Maintainers
 track publication status in the [release checklist](docs/release-checklist.md).
 
@@ -220,7 +220,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Demo](docs/demo.md) | A short real-UI walkthrough with a one-shot HTTP retry. |
 | [Configuration](docs/configuration.md) | Manual files, scenario files, sample settings and protected access. |
 | [Scenario recipes](docs/scenario-recipes.md) | One 404/retry, sustained outage and scheduled network/freeze cycle. |
-| [Changelog](CHANGELOG.md) | Version 0.3.0 beta features, verification scope and known limits. |
+| [Changelog](CHANGELOG.md) | Features, verification scope and known limits for each version. |
 | [Release review](docs/release-review.md) | History/package audit, clean-clone browser checks and publication decisions. |
 | [Dependency notices](THIRD_PARTY_NOTICES.md) | Locked runtime/development inventory and preserved upstream license texts. |
 | [Security policy](SECURITY.md) | Private-reporting procedure and current enablement status. |

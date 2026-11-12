@@ -1,6 +1,6 @@
 # Current implementation and supported limits
 
-This is the supported behavior of the 0.3.0 beta. See the [changelog](../CHANGELOG.md)
+This is the supported behavior of the current beta. See the [changelog](../CHANGELOG.md)
 for release notes. Older reports
 are listed in [verification history](verification-history.md); their test counts,
 engine versions and limitations must not be read as the current state.
