@@ -22,8 +22,9 @@ HLS used the generated fMP4 ladder, the command line's default (234p, 432p,
 AVPlayer do not play DASH natively. Each run lasted 60 to 170 seconds. Player
 position was sampled every second: through the tester's debug-console telemetry
 on Roku, the page on Safari and the test app on tvOS. Request diagnostics
-confirmed that each fault reached the player. Scenario files are in
-[`examples/scenarios`](../examples/scenarios). "Any rendition" and "top
+confirmed that each fault reached the player. The scenario files are the
+bundled ones in `examples/scenarios`, described in [Scenarios](scenarios.md).
+"Any rendition" and "top
 rendition" rows use copies retargeted to the rendition the players actually
 requested, because the bundled files target the lowest rendition.
 
