@@ -21,6 +21,12 @@ release scripts. Streaming behavior is unchanged from 0.3.0.
 ### Changed
 
 - `--version` reads the package version instead of a separate copy in the CLI.
+- The [device fault matrix](docs/device-fault-matrix.md) records how a Roku
+  Express 4K, Safari (iOS simulator) and AVPlayer (tvOS simulator) handled 15 HLS
+  and 10 DASH fault scenarios.
+- Apple's player in the iOS and tvOS simulators played every generated HLS shape;
+  low latency falls back to normal latency there because it needs HTTP/2
+  ([checks](docs/generated-streams.md#what-was-checked)).
 - Chrome 157.0.8103.51 is a reviewed browser build for scenario, causality and
   DVR evidence; [review](docs/browser-qualification.md).
 

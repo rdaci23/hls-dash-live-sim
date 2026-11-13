@@ -143,8 +143,24 @@ assets do. It combines with `--periods-per-hour` and `--redundant-streams`.
 - The real DASH engine served a low-latency segment through the proxy in
   several chunks while it was still being produced.
 
-These were single manual runs of 15 to 30 seconds, not release gates. No Apple
-player, Android player or Roku device has played these shapes.
+- Apple's native player, through Safari 26.4 in the iOS 26.4 Simulator and an
+  AVPlayer test app in the tvOS 26.4 Simulator, played the fMP4 ladder (720p),
+  the MPEG-TS stream (360p), the low-latency stream (720p) and the ad-break stream
+  across its discontinuities. Each ran 45 seconds with no player errors, stalls or
+  dropped frames.
+- On the low-latency stream Safari used blocking reloads with delta updates
+  (42 of 46 playlist requests carried `_HLS_msn` and `_HLS_skip`, each held about
+  one segment) and loaded some parts, yet played about 7.4 seconds behind live,
+  against 13.7 seconds for the plain ladder. The tvOS player logged
+  `-15410 Low Latency: Server must support http2 ECN and SACK` and played about
+  7.1 seconds behind live. Apple's players need HTTP/2 for full low-latency
+  playback; the simulator serves HTTP/1.1, so they fall back to normal latency.
+
+These were single manual runs of 15 to 45 seconds, not release gates. The Apple
+simulators use the Mac's decoders and network, so they are not device evidence.
+No Apple device or Android player has played these shapes, and the Roku Express
+4K played only the fMP4 ladder. The [device fault matrix](device-fault-matrix.md)
+covers that Roku and the Apple simulators under faults.
 
 ## MP4 VoD (Docker)
 

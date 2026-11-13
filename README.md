@@ -235,6 +235,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Multi-attempt retries](docs/multi-attempt-retry.md) | Three failures, then same-resource/range HTTP success, with sequential completion evidence. |
 | [Bounded transport faults](docs/transport-scenarios.md) | Headers-only/body stalls, incomplete connection aborts, timing/byte evidence and cleanup bounds. |
 | [Generated stream shapes](docs/generated-streams.md) | fMP4 ladder, low-latency HLS and DASH, HLS ad breaks, DASH periods. |
+| [Device fault matrix](docs/device-fault-matrix.md) | How Roku, Safari and AVPlayer handled 15 HLS and 10 DASH faults. |
 | [Manifest/init targeting](docs/resource-scenarios.md) | Resource selectors, local fMP4 HLS origin, HTTP isolation and retry evidence. |
 | [Inert manifest previews](docs/manifest-preview.md) | Inspection semantics, source failures and isolated verification. |
 | [Manifest freeze/resume](docs/manifest-freeze.md) | Simulator snapshot stability, live media availability, local clock and current-timeline resume. |
