@@ -1,5 +1,7 @@
 import http from "node:http";
 import https from "node:https";
+import http2 from "node:http2";
+import tls from "node:tls";
 import zlib from "node:zlib";
 import type { Readable } from "node:stream";
 import { RequestDeadline } from "./request-deadline.js";
@@ -255,8 +257,95 @@ export async function fetchRemote(
   } finally { deadline.close(); }
 }
 
+/** PEM certificate chain and private key for opt-in HTTP/2 over TLS. */
+export interface Http2Tls {
+  cert: string | Buffer;
+  key: string | Buffer;
+}
+/** A player-facing server: plain HTTP/1.1, or HTTP/2 over TLS with HTTP/1.1 still offered through ALPN. */
+export type SimServer = http.Server | http2.Http2SecureServer;
+
+/** Read and check a certificate and key before any port is bound. */
+export function loadHttp2Tls(certFile?: string, keyFile?: string): Http2Tls {
+  if (!certFile || !keyFile) throw new Error("--http2 requires --tls-cert and --tls-key");
+  const read = (file: string, label: string) => {
+    try { return fs.readFileSync(file); }
+    catch { throw new Error(`${label} ${file} could not be read`); }
+  };
+  return checkHttp2Tls({ cert: read(certFile, "TLS certificate"), key: read(keyFile, "TLS key") });
+}
+export function checkHttp2Tls(value: Http2Tls): Http2Tls {
+  if (!value?.cert || !value?.key) throw new Error("HTTP/2 needs a PEM certificate and key");
+  try { tls.createSecureContext({ cert: value.cert, key: value.key }); }
+  catch (error) { throw new Error(`TLS certificate and key could not be used: ${(error as Error).message}`); }
+  return value;
+}
+export function serverScheme(value?: Http2Tls): "http" | "https" { return value ? "https" : "http"; }
+
+const H2 = http2.constants;
+type Http2Response = http.ServerResponse & { stream: http2.ServerHttp2Stream };
+function h2Stream(res: http.ServerResponse): http2.ServerHttp2Stream | undefined {
+  const stream = (res as Partial<Http2Response>).stream;
+  return stream && typeof stream.close === "function" && "session" in stream ? stream : undefined;
+}
+/** True when this response travels on an HTTP/2 stream rather than its own HTTP/1.1 connection. */
+export function isHttp2(res: http.ServerResponse): boolean { return !!h2Stream(res); }
+/**
+ * End a response abnormally. HTTP/1.1 closes the connection. HTTP/2 resets
+ * only this stream with an error code: a bare destroy() there resets with
+ * NO_ERROR, which a client reads as a complete (truncated) body, and closing
+ * the TCP connection would also end every other request multiplexed on it.
+ */
+export function abortResponse(res: http.ServerResponse, kind: "abort" | "protocol" = "abort"): void {
+  const stream = h2Stream(res);
+  if (!stream) { res.destroy(); return; }
+  if (!stream.destroyed && !stream.closed) stream.close(kind === "protocol" ? H2.NGHTTP2_PROTOCOL_ERROR : H2.NGHTTP2_INTERNAL_ERROR);
+}
+/**
+ * Reset before any response: TCP RST on plain HTTP/1.1, RST_STREAM on HTTP/2.
+ * Node cannot send a TCP RST through a TLS socket, so HTTP/1.1 over TLS closes
+ * the connection without a response instead; the client sees it reset.
+ */
+export function resetResponse(res: http.ServerResponse): void {
+  if (isHttp2(res)) { abortResponse(res); return; }
+  const socket = res.socket as (typeof res.socket & { resetAndDestroy?: () => void }) | null;
+  if (socket && !(socket instanceof tls.TLSSocket) && socket.resetAndDestroy) socket.resetAndDestroy(); else res.destroy();
+}
+/** Resolve once an HTTP/2 response's HEADERS frame has left, so a reset cannot overtake it. */
+export function headersFlushed(res: http.ServerResponse): Promise<void> {
+  const stream = h2Stream(res);
+  return stream ? new Promise(resolve => stream.write(Buffer.alloc(0), () => resolve())) : Promise.resolve();
+}
+/**
+ * Give an HTTP/2 compatibility request the HTTP/1.1 surface the handlers use:
+ * a Host header from :authority, `res.destroyed`, and a destroy() that resets
+ * the stream with an error rather than ending it cleanly.
+ */
+function adaptHttp2(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const stream = h2Stream(res);
+  if (!stream) return;
+  // RFC 9113 8.3.1: :authority identifies the target; a Host header may not override it.
+  const authority = req.headers[":authority"];
+  if (typeof authority === "string") req.headers.host = authority;
+  Object.defineProperty(res, "destroyed", { configurable: true, get: () => stream.destroyed || stream.closed });
+  res.destroy = (() => { abortResponse(res); return res; }) as typeof res.destroy;
+}
+const tlsSockets = new WeakMap<object, Set<net.Socket>>();
+function secureServer(options: Http2Tls, onRequest: (req: http.IncomingMessage, res: http.ServerResponse) => void): http2.Http2SecureServer {
+  const server = http2.createSecureServer({
+    cert: options.cert, key: options.key, allowHTTP1: true,
+    // Matches the transport-fault buffer cap, so held and shaped bodies on one session are not refused.
+    maxSessionMemory: 64,
+  }, onRequest as unknown as (req: http2.Http2ServerRequest, res: http2.Http2ServerResponse) => void);
+  const sockets = new Set<net.Socket>();
+  tlsSockets.set(server, sockets);
+  server.on("secureConnection", socket => { sockets.add(socket); socket.once("close", () => sockets.delete(socket)); });
+  server.on("sessionError", () => {}); // a peer's broken session must not reach the process
+  return server;
+}
+
 export async function listen(
-  server: http.Server,
+  server: SimServer,
   port: number,
   host = "127.0.0.1",
 ): Promise<void> {
@@ -289,8 +378,10 @@ export async function assertPortAvailable(
   await closeServer(server);
 }
 
-export function closeServer(server: http.Server): Promise<void> {
-  server.closeAllConnections();
+export function closeServer(server: SimServer): Promise<void> {
+  const sockets = tlsSockets.get(server);
+  if (sockets) for (const socket of sockets) socket.destroy();
+  else (server as http.Server).closeAllConnections();
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
@@ -303,12 +394,14 @@ export function sessionServer(
     trace?: RequestTrace,
   ) => Promise<void>,
   diagnostics?: SessionDiagnostics,
-): { server: http.Server; close(): Promise<void>; cancelRun(runId: string): Promise<void>;cancelManual():Promise<void>;ownership():{activeRequests:number;pendingWork:number} } {
+  http2Tls?: Http2Tls,
+): { server: SimServer; close(): Promise<void>; cancelRun(runId: string): Promise<void>;cancelManual():Promise<void>;ownership():{activeRequests:number;pendingWork:number} } {
   const controllers = new Set<AbortController>();
   const records = new Map<AbortController, { res: http.ServerResponse; trace?: RequestTrace; work?: Promise<void> }>();
   const pending = new Set<Promise<void>>();
   let closing: Promise<void> | undefined;
-  const server = http.createServer((req, res) => {
+  const onRequest = (req: http.IncomingMessage, res: http.ServerResponse) => {
+    adaptHttp2(req, res);
     const controller = new AbortController();
     controllers.add(controller);
     const trace = diagnostics?.request(req, res);
@@ -353,7 +446,8 @@ export function sessionServer(
       });
     record.work = work;
     pending.add(work);
-  });
+  };
+  const server = http2Tls ? secureServer(http2Tls, onRequest) : http.createServer(onRequest);
   return {
     server,
     ownership:()=>({activeRequests:records.size,pendingWork:pending.size}),
@@ -374,8 +468,18 @@ export function sessionServer(
         closing = (async () => {
           for (const controller of controllers)
             controller.abort("session_shutdown");
+          // HTTP/2 streams emit 'close' a tick after their session's socket is
+          // destroyed; wait for them (bounded) so ownership drains as on HTTP/1.1.
+          const streams = http2Tls ? [...records.values()].map(({ res }) => new Promise<void>(resolve => {
+            res.once("close", () => resolve()); // records holds only responses that have not closed
+          })) : [];
           await closeServer(server);
           await Promise.allSettled([...pending]);
+          if (streams.length) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            await Promise.race([Promise.all(streams), new Promise<void>(resolve => { timer = setTimeout(resolve, 1000); timer.unref(); })]);
+            clearTimeout(timer);
+          }
         })();
       return closing;
     },

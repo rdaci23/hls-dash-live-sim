@@ -1,10 +1,11 @@
 import type { ServerResponse } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
-import { HttpError, sendHeaders } from "./safe-http.js";
+import { HttpError, abortResponse, headersFlushed, isHttp2, resetResponse, sendHeaders } from "./safe-http.js";
 import type { RequestTrace } from "./session-diagnostics.js";
 
 export interface TransportFault {
-  /** reset closes the connection before any response; no-response holds it silent first. */
+  /** reset closes the connection before any response; no-response holds it silent first.
+   * On HTTP/2 these, abort and framing reset only the request's own stream (RST_STREAM). */
   kind: "stall" | "abort" | "header-delay" | "drip" | "framing" | "reset" | "no-response";
   network?: true;
   chunkBytes?: number;
@@ -84,22 +85,26 @@ export class TransportDelivery {
         if (fault.kind === "no-response") { trace.record("transport.stalled"); await delay(fault.durationMs!, undefined, { signal: bounded }); }
         bounded.throwIfAborted();
         trace.record("transport.aborted"); trace.abortResponse();
-        const socket = res.socket as (typeof res.socket & { resetAndDestroy?: () => void }) | null;
-        if (socket?.resetAndDestroy) socket.resetAndDestroy(); else res.destroy();
+        resetResponse(res);
         return;
       }
       if (fault.kind === "header-delay") await delay(fault.durationMs!, undefined, { signal: bounded });
       bounded.throwIfAborted();
+      // HTTP/2 has no connection-level headers or chunked coding; its framing
+      // fault is the same headers followed by a PROTOCOL_ERROR stream reset.
+      const h2 = isHttp2(res);
       if (fault.kind === "framing" && fault.framing === "chunked") {
         const output = { ...headers };
         for (const key of Object.keys(output)) if (/^(content-length|transfer-encoding)$/i.test(key)) delete output[key];
-        res.writeHead(status, { "Access-Control-Allow-Origin": "*", ...output, "Transfer-Encoding": "chunked", Connection: "close" });
-      } else sendHeaders(res, status, buffer.length + (fault.kind === "framing" ? 16 : 0), ["abort", "framing"].includes(fault.kind) ? { ...headers, Connection: "close" } : headers);
+        if (h2) sendHeaders(res, status, undefined, output);
+        else res.writeHead(status, { "Access-Control-Allow-Origin": "*", ...output, "Transfer-Encoding": "chunked", Connection: "close" });
+      } else sendHeaders(res, status, buffer.length + (fault.kind === "framing" ? 16 : 0), ["abort", "framing"].includes(fault.kind) && !h2 ? { ...headers, Connection: "close" } : headers);
       res.flushHeaders();
       trace.delivery({ headersMs: elapsed(), expectedBytes: expectedLength, bodyBytes: 0 });
       trace.record("transport.headers");
       if (fault.kind === "framing") {
         if (fault.framing === "content-length") await write(buffer);
+        else if (h2) await headersFlushed(res);
         else {
           // An invalid chunk-size token is an HTTP/1.1 framing fault. Write it
           // directly after Node's valid headers; never send this on healthy paths.
@@ -109,7 +114,7 @@ export class TransportDelivery {
             res.socket!.write("Z\r\ninvalid\r\n0\r\n\r\n", error => { bounded.removeEventListener("abort", abort); error ? reject(error) : resolve(); });
           });
         }
-        progress(); trace.record("transport.aborted"); ready(); trace.abortResponse(); res.destroy(); return;
+        progress(); trace.record("transport.aborted"); ready(); trace.abortResponse(); abortResponse(res, "protocol"); return;
       }
       if (fault.kind === "drip") {
         for (let offset = 0; offset < buffer.length; offset += fault.chunkBytes!) {

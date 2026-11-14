@@ -7,7 +7,7 @@ and combines with the usual faults and [scenarios](scenarios.md).
 | --- | --- | --- |
 | fMP4 ladder (default) | `npm run hls` | 234p, 432p and 720p H.264 with separate AAC audio, an `EXT-X-MAP` init segment and two-second `.m4s` segments. |
 | MPEG-TS | `npm run hls -- --segment-format ts` | Two muxed H.264/AAC renditions (180p, 360p) in two-second `.ts` segments. |
-| Low-latency HLS | `npm run hls -- --low-latency` | The fMP4 ladder with half-second parts, a preload hint and blocking playlist reload. |
+| Low-latency HLS | `npm run hls -- --low-latency` | The fMP4 ladder with half-second parts, a preload hint and blocking playlist reload. Add [`--http2`](configuration.md#http2-over-tls) for Apple's players. |
 | HLS ad breaks | `npm run hls -- --ad-break-segments 2` | The MPEG-TS stream with an ad pod after every content loop. |
 | DASH periods | `npm run dash -- --periods-per-hour 60` | One new Period each minute from the DASH engine. |
 | Low-latency DASH | `npm run dash -- --low-latency` | Chunked segments that can be requested 1.5 seconds before they are complete. |
@@ -53,6 +53,17 @@ A playlist request with `_HLS_msn` (and optionally `_HLS_part`) is held until
 that segment or part is listed. A request more than two segments ahead gets
 HTTP 400. Parts are byte-exact slices of their segment: the four parts of a
 segment concatenate to the `.m4s` segment.
+
+Apple's players use these low-latency features only over HTTP/2 with TLS. Start
+the stream with [`--http2`](configuration.md#http2-over-tls) and a certificate
+they trust for Safari and AVPlayer to play at low latency; hls.js plays it at low
+latency over either protocol.
+
+```sh
+npm run certs:local
+npm run hls -- --low-latency --http2 --tls-cert .certs/server.pem --tls-key .certs/server.key
+xcrun simctl keychain booted add-root-cert .certs/ca.pem   # once per simulator
+```
 
 A part is its own resource for scenario rules. A rule on `segment: "each"`
 applies to parts and whole segments alike; a rule that counts attempts counts
@@ -148,15 +159,36 @@ assets do. It combines with `--periods-per-hour` and `--redundant-streams`.
   the MPEG-TS stream (360p), the low-latency stream (720p) and the ad-break stream
   across its discontinuities. Each ran 45 seconds with no player errors, stalls or
   dropped frames.
-- On the low-latency stream Safari used blocking reloads with delta updates
-  (42 of 46 playlist requests carried `_HLS_msn` and `_HLS_skip`, each held about
-  one segment) and loaded some parts, yet played about 7.4 seconds behind live,
-  against 13.7 seconds for the plain ladder. The tvOS player logged
+- Over HTTP/1.1, Apple's players fall back to normal latency on the low-latency
+  stream. Safari used blocking reloads with delta updates (42 of 46 playlist
+  requests carried `_HLS_msn` and `_HLS_skip`, each held about one segment) and
+  loaded some parts, yet played about 7.4 seconds behind live, against 13.7
+  seconds for the plain ladder; a rerun on 14 November played 13.75 seconds
+  behind. The tvOS player logged
   `-15410 Low Latency: Server must support http2 ECN and SACK` and played about
-  7.1 seconds behind live. Apple's players need HTTP/2 for full low-latency
-  playback; the simulator serves HTTP/1.1, so they fall back to normal latency.
+  7.1 seconds behind live (6.91 seconds in the rerun).
+- Over [HTTP/2 with TLS](configuration.md#http2-over-tls) (`--http2`, a local CA
+  trusted with `xcrun simctl keychain … add-root-cert`), both play at low
+  latency. On 14 November, in the same 75-second runs on the same Mac:
+  - Safari 26.4 (iOS 26.4 Simulator) played 720p a steady 2.10 seconds behind
+    live with no errors. All 553 of its requests used HTTP/2 over three
+    connections: 269 blocking reloads (`_HLS_msn`, 267 with `_HLS_skip`) and
+    276 parts.
+  - The AVPlayer test app (tvOS 26.4 Simulator) logged no `-15410` or any other
+    error and played 720p a steady 2.05 seconds behind live, with no stalls or
+    dropped frames. It made 611 HTTP/2 requests on one connection: 299 blocking
+    reloads and 307 parts.
+  - hls.js 1.7.3 in low-latency mode in Chrome 157.0.8103.51 played the same
+    HTTP/2 stream 2.37 seconds behind live (720p, no errors; 505 requests on one
+    HTTP/2 connection) and the HTTP/1.1 stream 1.94 seconds behind.
+  - The plain fMP4 ladder over HTTP/2 played in both Apple players with no
+    errors, at normal latency (Safari 7.3 seconds, tvOS 6.5 seconds).
 
-These were single manual runs of 15 to 45 seconds, not release gates. The Apple
+  With the default six-segment window the `_HLS_skip` requests received whole
+  playlists, since there was nothing to skip; delta updates over HTTP/2 are
+  covered by `test/http2.test.cjs`.
+
+These were single manual runs of 15 to 75 seconds, not release gates. The Apple
 simulators use the Mac's decoders and network, so they are not device evidence.
 No Apple device or Android player has played these shapes, and the Roku Express
 4K played only the fMP4 ladder. The [device fault matrix](device-fault-matrix.md)

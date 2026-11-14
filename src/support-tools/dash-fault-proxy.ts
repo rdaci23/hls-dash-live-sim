@@ -14,6 +14,8 @@ import {
   sessionServer,
   HttpError,
   type PlayerAccess,
+  checkHttp2Tls,
+  type Http2Tls,
 } from "./safe-http.js";
 import { SessionFaultConfigSource } from "./live-stream-fault-config.js";
 import { FaultRuntime } from "./fault-runtime.js";
@@ -42,6 +44,8 @@ export interface DashFaultProxyOptions {
   redundantStreams?: boolean;
   /** Relay unfaulted media as the engine produces it (chunked low-latency segments). */
   lowLatency?: boolean;
+  /** Serve players over HTTP/2 with TLS; HTTP/1.1 stays available on the same port. */
+  http2?: Http2Tls;
 }
 /** Forward a loopback engine response chunk by chunk instead of buffering it,
  * so a segment still being produced reaches the player as it grows. */
@@ -97,6 +101,7 @@ export async function startDashFaultProxy(
   options: DashFaultProxyOptions,
 ): Promise<DashFaultProxy> {
   validateScenarioStart(options.scenarioStart, options.controlToken);
+  if (options.http2) checkHttp2Tls(options.http2);
   const manual = options.scenarioStart === "manual";
   const controlToken=options.controlToken??process.env.HLS_DASH_CONTROL_TOKEN??"";
   const definition = options.scenario ? parseScenario(options.scenario) : undefined;
@@ -369,7 +374,7 @@ export async function startDashFaultProxy(
           req.method,
         );
     }
-  }, diagnostics);
+  }, diagnostics, options.http2);
   const server = transport.server;
   try {
     await listen(server, options.listenPort, options.host);

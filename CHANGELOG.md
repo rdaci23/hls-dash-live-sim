@@ -5,6 +5,29 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+### Added
+
+- Opt-in HTTP/2 over TLS for players: `--http2 --tls-cert <file> --tls-key <file>`
+  on `livesim start`, `dummy-stream` and the named templates, and an `http2`
+  option on `startHlsim()`, `startLivesim2()` and `startDashFaultProxy()`. It is
+  off by default, and HTTP/1.1 stays available on the same port. Over HTTP/2,
+  Safari and AVPlayer in the iOS and tvOS 26.4 simulators played low-latency HLS
+  about 2.1 seconds behind live instead of 7 to 14 seconds, and tvOS no longer
+  logged `-15410` ([checks](docs/generated-streams.md#what-was-checked)).
+- `hls-dash-live-sim certs` (`npm run certs:local` in a checkout) creates a local CA and a server certificate for
+  localhost, 127.0.0.1, ::1 and this computer's LAN addresses in `.certs/`, which
+  Git ignores. [Trusting the CA](docs/configuration.md#trusting-the-ca) covers
+  simulators and devices.
+
+### Changed
+
+- On HTTP/2, transport faults that close an HTTP/1.1 connection (`abort`,
+  `reset`, `no-response`, `framing`) reset only the request's own stream, with
+  `INTERNAL_ERROR` or `PROTOCOL_ERROR`; other requests on the connection continue
+  ([faults on HTTP/2](docs/configuration.md#faults-on-http2)). HTTP/1.1 delivery
+  is unchanged. Over TLS, an HTTP/1.1 `reset` closes the connection without a
+  response, because Node cannot send a TCP reset through TLS.
+
 ## 0.3.1 — 2026-11-12
 
 Patch beta: the simulator is published to npm, and maintainers have local
