@@ -65,6 +65,7 @@ use your existing Chrome installation.
 | `npm run test:package` | Builds, packs locally, installs with production dependencies into a fresh temporary directory, invokes the executable, serves HLS media and control assets. | npm registry access for production dependencies; never publishes. |
 | `npm run roku:suite -- --device ROKU_LAN_IP --server-host COMPUTER_LAN_IP --case outage` | Sequential native HLS/DASH sustained media-outage evidence. | Dedicated physical Roku with tester 1.1.0 installed; Docker and pinned image; about six minutes. |
 | `npm run roku:build` | Compiles/packages the standalone SceneGraph tester. | Development dependencies; no device contacted. |
+| `cd android && ./gradlew assembleDebug` | Builds the Media3 ExoPlayer [Android probe](../android/README.md) for phones and Android TV. | JDK 17 and an Android SDK with platform 36; no device contacted. Not part of the npm package. |
 | `npm run browser:abr` | Automatic HLS 1,500 → 450 → 1,500 kbps adaptation with rendered high/low/high evidence. | Chrome; no Docker; several minutes. |
 | `npm run browser:dash-abr` | Automatic DASH 1,500 → 450 → 1,500 kbps adaptation with served/rendered high/low/high evidence and default UTC. | Chrome, Docker and pinned image; several minutes. |
 | `npm run browser:dash-fallback` | Optional high-rendition 503 compatibility probe; currently fails default dash.js client fallback and retains that evidence. | Chrome, Docker and pinned image; up to 165 seconds. |

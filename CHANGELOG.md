@@ -5,6 +5,21 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+### Added
+
+- An Android playback probe in `android/`: a minimal Media3 ExoPlayer app for
+  phones and Android TV, built with the Gradle wrapper. It plays a stream muted
+  and reports its state as JSON once a second; see its
+  [README](android/README.md). It is not part of the npm package.
+
+### Changed
+
+- Media3 ExoPlayer 1.11.1 in an Android phone emulator and an Android TV emulator
+  played every generated stream shape, and the
+  [device fault matrix](docs/device-fault-matrix.md#android-emulators) records
+  how it handled the 15 HLS and 10 DASH fault scenarios. These are emulator
+  results, not device evidence.
+
 ## 0.3.1 — 2026-11-12
 
 Patch beta: the simulator is published to npm, and maintainers have local

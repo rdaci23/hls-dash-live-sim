@@ -45,9 +45,14 @@ See [targeted browser observations](browser-scenario-observations.md),
 [endurance](endurance.md) and [publication preparation](publication-preparation.md).
 [Low-latency HLS and DASH, an fMP4 ladder and HLS ad markers](generated-streams.md)
 are generated, with one Chrome/hls.js check each for the HLS shapes, one check
-of Apple's player in the iOS and tvOS simulators and no release gate. Apple's
-players play low-latency HLS at normal latency because the simulator serves HTTP/1.1.
+of Apple's player in the iOS and tvOS simulators, one check of Media3 ExoPlayer in
+Android phone and TV emulators for every HLS and DASH shape, and no release gate.
+Apple's players play low-latency HLS at normal latency because the simulator serves
+HTTP/1.1; ExoPlayer used its parts and blocking reloads.
 The [device fault matrix](device-fault-matrix.md) records how a Roku Express 4K,
-Safari and AVPlayer handled the same fault scenarios; it is exploratory evidence. Commercial DRM, ad insertion logic, HTTP/2/3 simulation and virtual
-clocks are deferred. Apple, Android, additional Roku hardware and internet-isolated Roku
-playback are unverified; native recovery development is outside this repository.
+Safari, AVPlayer and ExoPlayer (Android emulators) handled the same fault
+scenarios; it is exploratory evidence, and simulator and emulator results are not
+device evidence. Commercial DRM, ad insertion logic, HTTP/2/3 simulation and virtual
+clocks are deferred. Apple and Android devices, additional Roku hardware and
+internet-isolated Roku playback are unverified; native recovery development is
+outside this repository.

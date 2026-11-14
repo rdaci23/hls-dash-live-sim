@@ -1,0 +1,39 @@
+plugins {
+    id "com.android.application"
+}
+
+def media3Version = "1.11.1"
+
+android {
+    namespace "dev.hlsdashlivesim.probe"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "dev.hlsdashlivesim.probe"
+        minSdk 23
+        targetSdk 36
+        versionCode 1
+        versionName "0.1.0"
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation "androidx.media3:media3-exoplayer:$media3Version"
+    implementation "androidx.media3:media3-exoplayer-hls:$media3Version"
+    implementation "androidx.media3:media3-exoplayer-dash:$media3Version"
+}
