@@ -21,6 +21,12 @@ On 14 November 2026 the same rows were played on Media3 ExoPlayer in two Android
 emulators, using `dc5c526` (0.3.1 plus documentation); see
 [Android (emulators)](#android-emulators).
 
+On 15 November 2026 the HLS and DASH rows were repeated on two more Roku models,
+a Streaming Stick 4K (3820EU) and a Roku Ultra (4850X), both on Roku OS 16.0.4
+build 853, using `1899679` (0.4.0 plus documentation). Every outcome matched the
+Express 4K, so the Roku columns below hold for all three models; see
+[Roku models](#roku-models).
+
 ## Method
 
 HLS used the generated fMP4 ladder, the command line's default (234p, 432p,
@@ -168,6 +174,30 @@ during an outage.
 | 15 s manifest rollback | Played through |
 | 50 kbps for 20 s | Played through |
 
+## Roku models
+
+| Model | Build | Missing DASH segment requested |
+| --- | --- | --- |
+| Express 4K (3940EU) | Roku OS 16.0.4 build 853 | 519 times |
+| Streaming Stick 4K (3820EU) | Roku OS 16.0.4 build 853 | 497 times |
+| Ultra (4850X) | Roku OS 16.0.4 build 853 | 766 times |
+
+The Streaming Stick 4K and the Ultra ran the same 15 HLS and 10 DASH rows as the
+Express 4K, through the same tester over the LAN, with the two devices running in
+parallel. Each fault reached the player, and every cell in the tables above
+matched on all three models, including the wrong-track row that the simulator
+answered with HTTP 422. The models differed only in how often they retried, for
+example in the number of requests for a permanently missing DASH segment. All
+three run one Roku OS build, so these results do not show how other OS versions
+behave.
+
+The tester installed on these two devices also reported Roku's
+`AppLaunchComplete` launch signal; its playback code was unchanged. On both
+devices, Roku OS returned to the home screen about 181 seconds after each launch,
+with no player error, so the 195-second healthy check could not finish there.
+Every matrix run was shorter and ended before that point. The cause was not
+identified.
+
 ## Android (emulators)
 
 | Player | Build | How it played |
@@ -253,8 +283,8 @@ was usually behind the live window by the time the manifest resumed.
 ## What this shows
 
 - Roku's native player gives up on any outage that empties its buffer, for both
-  protocols, and does not use an advertised backup origin. A Roku app needs its
-  own retry or relaunch.
+  protocols, and does not use an advertised backup origin, on all three models
+  tested. A Roku app needs its own retry or relaunch.
 - Apple's players wait out outages and recover, but they abandon a live HLS
   playlist that stops updating and do not resume when it updates again. The app
   must restart playback.
