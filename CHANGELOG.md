@@ -5,6 +5,14 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-15
+
+Third public beta: opt-in HTTP/2 over TLS, which brought low-latency HLS in
+Apple's simulated players to about two seconds behind live, a `certs` command
+for local certificates, and an Android Media3 probe app with emulator
+fault-matrix results. Without `--http2`, streaming is unchanged from 0.3.1. The
+release scripts now check Chrome and `main` before a review starts.
+
 ### Added
 
 - Opt-in HTTP/2 over TLS for players: `--http2 --tls-cert <file> --tls-key <file>`
