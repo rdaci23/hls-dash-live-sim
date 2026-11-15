@@ -7,6 +7,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { parseVersion, releaseSection, reviewFailures, releaseNotes } = require('./release/changelog.cjs');
+const { readMain } = require('./release/preflight.cjs');
 
 const root = path.resolve(__dirname, '..');
 const run = (command, args) => execFileSync(command, args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -74,13 +75,11 @@ function main() {
         failures.push(`tag ${tag} already exists locally`);
     if (run('git', ['ls-remote', '--tags', REMOTE, 'refs/tags/' + tag]))
         failures.push(`tag ${tag} already exists on ${REMOTE}`);
-    run('git', ['fetch', '-q', REMOTE, BRANCH]);
-    try {
-        run('git', ['merge-base', '--is-ancestor', `${REMOTE}/${BRANCH}`, commit]);
-    }
-    catch {
-        failures.push(`${REMOTE}/${BRANCH} cannot fast-forward to HEAD; rebase and review again`);
-    }
+    const main = readMain(run, commit);
+    if (!main.known || !main.fetched)
+        failures.push(`could not fetch ${REMOTE}/${BRANCH}`);
+    else if (main.state === 'diverged')
+        failures.push(`${REMOTE}/${BRANCH} has changes HEAD lacks; merge or rebase onto it and review again`);
     const directory = path.resolve(opts.report);
     const report = JSON.parse(fs.readFileSync(path.join(directory, 'report.json'), 'utf8'));
     failures.push(...reviewFailures(report, commit));
@@ -100,14 +99,20 @@ function main() {
     const notesFile = path.join(directory, 'release-notes.md');
     fs.writeFileSync(notesFile, releaseNotes({ repository: repository(), commit, version, section, report, browserVersions: browserVersions(directory), npmPackage: pkg.private ? undefined : pkg.name }));
     const title = opts.title ?? tag;
+    // main gained a merge with no file changes (a pull-request merge of work
+    // already here): merge it, push the merge, and still tag the reviewed commit.
+    const mergeMain = main.state === 'merge';
     const commands = [
-        ['git', 'push', REMOTE, `${commit}:refs/heads/${BRANCH}`],
+        ...(mergeMain ? [['git', 'merge', '--no-ff', '-q', '-m', `Merge ${BRANCH} into the ${version} release\n\nThe files are unchanged from the reviewed commit ${commit.slice(0, 7)}.`, `${REMOTE}/${BRANCH}`]] : []),
+        ['git', 'push', REMOTE, `${mergeMain ? 'HEAD' : commit}:refs/heads/${BRANCH}`],
         ['git', 'tag', '-a', tag, '-m', title, commit],
         ['git', 'push', REMOTE, 'refs/tags/' + tag],
         ['gh', 'release', 'create', tag, '--verify-tag', '--title', title, '--notes-file', notesFile, ...(parseVersion(version)[0] === 0 ? ['--prerelease'] : [])],
         ...(publishNpm ? [['npm', 'publish', tarball, '--tag', 'latest']] : []),
     ];
     console.log(`${tag} at ${commit.slice(0, 7)} passed its review. Release notes: ${notesFile}`);
+    if (mergeMain)
+        console.log(`${REMOTE}/${BRANCH} has a merge this commit lacks, with the same files. The release merges it, pushes the merge to ${BRANCH} and tags ${commit.slice(0, 7)}.`);
     if (!opts.yes) {
         console.log('Dry run. These commands run with --yes:');
         for (const command of commands)

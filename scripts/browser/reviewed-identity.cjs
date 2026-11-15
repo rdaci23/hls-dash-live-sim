@@ -11,4 +11,4 @@ function reviewedIdentity(profile,input){
   input.playerVersion===PLAYERS[input.protocol]&&BROWSERS[profile].includes(input.browserVersion);
 }
 const DVR_IDENTITIES=Object.freeze(Object.fromEntries(Object.entries(PLAYERS).map(([protocol,player])=>[protocol,Object.freeze({player,browsers:BROWSERS.dvr})])));
-module.exports={reviewedIdentity,DVR_IDENTITIES};
+module.exports={reviewedIdentity,DVR_IDENTITIES,REVIEWED_BROWSERS:BROWSERS};

@@ -8,14 +8,45 @@ const assert = require('node:assert/strict');
 const { bound, endurance } = require('./release/acceptance.cjs');
 const {reviewOptions}=require('./release/options.cjs');
 const {createProcessOwner}=require('./release/process-owner.cjs');
+const os = require('node:os');
+const {reviewPreflight,readMain}=require('./release/preflight.cjs');
 const corePolicy=require('./browser/core-policy.cjs'),scenarioPolicy=require('./browser/scenario-integrity.cjs'),dvrPolicy=require('./browser/dvr-acceptance.cjs');
 const root = path.resolve(__dirname, '..'), args = process.argv.slice(2);
 const capture = (command, params, cwd = root) => execFileSync(command, params, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+// Checks the Chrome build, the branch and the tag before anything slow starts.
+async function reviewPreflightFor(commit) {
+    let chromeVersion;
+    try {
+        const { chromium } = require('playwright');
+        const browser = await chromium.launch({ channel: 'chrome', headless: true, chromiumSandbox: true, timeout: 15000 });
+        try { chromeVersion = browser.version(); } finally { await browser.close(); }
+    }
+    catch {
+        // Reported as a failure below.
+    }
+    const version = require('../package.json').version, tag = 'v' + version;
+    let tagExists = Boolean(capture('git', ['tag', '--list', tag]));
+    try {
+        tagExists ||= Boolean(capture('git', ['ls-remote', '--tags', 'origin', 'refs/tags/' + tag]));
+    }
+    catch {
+        // Offline: the local tag list stands.
+    }
+    const main = readMain((command, params) => capture(command, params), commit);
+    const { failures, warnings } = reviewPreflight({ version, chromeVersion, tagExists, main, load: os.loadavg()[0], cpus: os.cpus().length });
+    for (const warning of warnings)
+        console.warn('Review warning: ' + warning);
+    if (failures.length)
+        throw Error('Review not started:\n- ' + failures.join('\n- '));
+    console.log(`Review preflight: Chrome ${chromeVersion}, origin/main ${main.known ? main.state : 'unknown'}`);
+    return { chromeVersion, mainState: main.known ? main.state : 'unknown', tagExists, warnings };
+}
 async function main() {
     const options=reviewOptions(args);
     if (capture('git', ['status', '--porcelain']))
         throw Error('Candidate review requires a clean committed source tree');
+    const preflight = await reviewPreflightFor(capture('git', ['rev-parse', 'HEAD']));
     const scanner = process.env.GITLEAKS_BIN ? path.resolve(root, process.env.GITLEAKS_BIN) : 'gitleaks', scannerVersion = capture(scanner, ['version']);
     const directory = path.resolve(options.output);
     await fs.mkdir(path.dirname(directory), { recursive: true });
@@ -24,7 +55,7 @@ async function main() {
     const report = { schemaVersion: 1, recordedAt: new Date().toISOString(), commit, sourceTreeClean: true, scannerVersion, steps: [], candidateChecksPassed: false, releaseReady: false, projectLicense: require('../package.json').license,
         verificationExecution: { mode: 'local-only', hostedActions: 'paused', hostedChecksExecuted: false, platform: process.platform, arch: process.arch, nodeVersion: process.version },
         outstanding: ['Review actual local environment coverage; untested matrix targets remain unverified', 'Hosted Actions requires explicit approval before re-enablement or dispatch', 'Required checks/branch protection at cutover', 'GitHub private vulnerability reporting activation at cutover', 'Explicit publication approval; the maintainer publishes the reviewed archive to npm'],
-        endurancePolicy:{requiredMode:'smoke',requiredDurationMs:600000,maximumGrowthBytes:128*1024*1024,extendedSoakRequested:options.extendedSoak,extendedSoakRequired:false} };
+        endurancePolicy:{requiredMode:'smoke',requiredDurationMs:600000,maximumGrowthBytes:128*1024*1024,extendedSoakRequested:options.extendedSoak,extendedSoakRequired:false}, preflight };
     const active = createProcessOwner();
     let interrupted = false, soakWork, soakFailure;
     const stop = () => { interrupted = true; active.stop(); };

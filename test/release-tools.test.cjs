@@ -110,3 +110,75 @@ test('release notes combine the changelog summary with the review results', () =
     assert.match(releaseNotes({ repository: 'owner/repo', commit, version: '0.3.0', section, report: report(), browserVersions: [], npmPackage: 'pkg' }), /Install with `npm install -g pkg` or from source\.\n$/);
     assert.match(releaseNotes({ repository: 'owner/repo', commit, version: '0.2.0', section: releaseSection(changelog, '0.2.0'), report: report(), browserVersions: [] }), /### Known limits\n\n- Old limit\./);
 });
+
+const os = require('node:os');
+const { execFileSync } = require('node:child_process');
+const { chromeFailure, loadWarning, mainPath, reviewPreflight, readMain } = require('../scripts/release/preflight.cjs');
+
+test('preflight accepts only Chrome builds reviewed for every evidence profile', () => {
+    const browsers = { scenario: ['1.0.0.1', '1.0.0.2'], dvr: ['1.0.0.1'] };
+    assert.equal(chromeFailure('1.0.0.1', browsers), undefined);
+    assert.match(chromeFailure('1.0.0.2', browsers), /not a reviewed build for the dvr evidence/);
+    assert.match(chromeFailure('1.0.0.3', browsers), /scenario, dvr/);
+    assert.match(chromeFailure(undefined, browsers), /could not be started/);
+});
+
+test('preflight warns about load only above one runnable task per CPU', () => {
+    assert.equal(loadWarning(8, 8), undefined);
+    assert.match(loadWarning(12.6, 8), /12\.6 on 8 CPUs/);
+});
+
+test('main reaches the reviewed commit by fast-forward, an identical-tree merge, or not at all', () => {
+    assert.equal(mainPath({ mainIsAncestor: true }), 'fast-forward');
+    assert.equal(mainPath({ mainIsAncestor: false, mergeTree: 't1', headTree: 't1' }), 'merge');
+    assert.equal(mainPath({ mainIsAncestor: false, mergeTree: 't2', headTree: 't1' }), 'diverged');
+    assert.equal(mainPath({ mainIsAncestor: false, mergeTree: undefined, headTree: 't1' }), 'diverged');
+});
+
+test('a release candidate review stops early when main diverged; other reviews only warn', () => {
+    const base = { version: '0.4.0', chromeVersion: '157.0.8103.51', tagExists: false, main: { known: true, fetched: true, state: 'fast-forward' }, load: 1, cpus: 8 };
+    assert.deepEqual(reviewPreflight(base), { failures: [], warnings: [] });
+    const diverged = { ...base, main: { ...base.main, state: 'diverged' } };
+    assert.match(reviewPreflight(diverged).failures.join(), /Merge or rebase onto origin\/main/);
+    const later = reviewPreflight({ ...diverged, tagExists: true });
+    assert.deepEqual(later.failures, []);
+    assert.match(later.warnings.join(), /v0\.4\.0 already exists/);
+    assert.match(reviewPreflight({ ...base, main: { ...base.main, state: 'merge' } }).warnings.join(), /release:publish merges it/);
+    assert.match(reviewPreflight({ ...base, chromeVersion: '1.2.3.4' }).failures.join(), /Chrome 1\.2\.3\.4 is not a reviewed build/);
+    assert.match(reviewPreflight({ ...base, main: { known: false } }).warnings.join(), /could not be read/);
+});
+
+test('readMain classifies a real origin/main against the release commit', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-main-'));
+    const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const commit = (cwd, file, text, message) => { fs.writeFileSync(path.join(cwd, file), text); git(cwd, 'add', file); git(cwd, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', message); };
+    try {
+        const origin = path.join(dir, 'origin.git'), work = path.join(dir, 'work'), other = path.join(dir, 'other');
+        git(dir, 'init', '-q', '--bare', '-b', 'main', origin);
+        git(dir, 'clone', '-q', origin, work);
+        git(work, 'switch', '-q', '-c', 'main');
+        commit(work, 'a.txt', 'a', 'base');
+        git(work, 'push', '-q', 'origin', 'main');
+        git(work, 'switch', '-q', '-c', 'feature');
+        commit(work, 'b.txt', 'b', 'feature');
+        git(work, 'push', '-q', 'origin', 'feature');
+        git(work, 'switch', '-q', '-c', 'release');
+        commit(work, 'c.txt', 'c', 'release');
+        const run = (command, args) => execFileSync(command, args, { cwd: work, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        assert.deepEqual(readMain(run, 'HEAD'), { known: true, fetched: true, state: 'fast-forward' });
+
+        // A pull-request merge of the feature on main: no new files for the release.
+        git(dir, 'clone', '-q', origin, other);
+        git(other, 'fetch', '-q', 'origin', 'feature');
+        git(other, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'merge', '-q', '--no-ff', '-m', 'Merge feature', 'origin/feature');
+        git(other, 'push', '-q', 'origin', 'main');
+        assert.equal(readMain(run, 'HEAD').state, 'merge');
+
+        commit(other, 'd.txt', 'd', 'new work on main');
+        git(other, 'push', '-q', 'origin', 'main');
+        assert.equal(readMain(run, 'HEAD').state, 'diverged');
+    }
+    finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
