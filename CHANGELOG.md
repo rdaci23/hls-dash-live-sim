@@ -18,6 +18,10 @@ describe the simulator; recorded player results apply only to their tested scope
   localhost, 127.0.0.1, ::1 and this computer's LAN addresses in `.certs/`, which
   Git ignores. [Trusting the CA](docs/configuration.md#trusting-the-ca) covers
   simulators and devices.
+- An Android playback probe in `android/`: a minimal Media3 ExoPlayer app for
+  phones and Android TV, built with the Gradle wrapper. It plays a stream muted
+  and reports its state as JSON once a second; see its
+  [README](android/README.md). It is not part of the npm package.
 
 ### Changed
 
@@ -27,6 +31,11 @@ describe the simulator; recorded player results apply only to their tested scope
   ([faults on HTTP/2](docs/configuration.md#faults-on-http2)). HTTP/1.1 delivery
   is unchanged. Over TLS, an HTTP/1.1 `reset` closes the connection without a
   response, because Node cannot send a TCP reset through TLS.
+- Media3 ExoPlayer 1.11.1 in an Android phone emulator and an Android TV emulator
+  played every generated stream shape, and the
+  [device fault matrix](docs/device-fault-matrix.md#android-emulators) records
+  how it handled the 15 HLS and 10 DASH fault scenarios. These are emulator
+  results, not device evidence.
 
 ## 0.3.1 — 2026-11-12
 

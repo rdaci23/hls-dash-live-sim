@@ -187,12 +187,29 @@ assets do. It combines with `--periods-per-hour` and `--redundant-streams`.
   With the default six-segment window the `_HLS_skip` requests received whole
   playlists, since there was nothing to skip; delta updates over HTTP/2 are
   covered by `test/http2.test.cjs`.
+- Media3 ExoPlayer 1.11.1, through the [Android probe](../android/README.md) in an
+  Android 15 phone emulator and an Android 16 TV emulator, played every shape:
+  the fMP4 ladder (432p, then 720p), the MPEG-TS stream (360p), low-latency HLS,
+  the ad-break stream across its discontinuities, DASH, low-latency DASH and DASH
+  Periods across two Period boundaries, requesting each new Period's
+  initialization segments 60 seconds apart. Each
+  ran 45 seconds (60 for ad breaks, 150 for Periods) with no player errors or
+  stalls. The only dropped frames were 7 to 9 on low-latency HLS and one on DASH
+  Periods.
+- On the low-latency stream over HTTP/1.1, ExoPlayer used blocking playlist
+  reloads and loaded half-second parts, each held about 0.5 seconds by the
+  server, and played 3.5 seconds (phone, 720p) and 2.0 seconds (TV, 432p) behind
+  live, against about 7 seconds for the plain ladder. Low-latency DASH played 4.5 to 5.6 seconds
+  behind live. Plain DASH played about 30 seconds behind live: its MPD states no
+  latency target, so ExoPlayer uses its 30-second default.
 
-These were single manual runs of 15 to 75 seconds, not release gates. The Apple
-simulators use the Mac's decoders and network, so they are not device evidence.
-No Apple device or Android player has played these shapes, and the Roku Express
-4K played only the fMP4 ladder. The [device fault matrix](device-fault-matrix.md)
-covers that Roku and the Apple simulators under faults.
+These were single manual runs of 15 to 150 seconds, not release gates. The Apple
+simulators use the Mac's decoders and network, and the Android emulators run on
+the Mac and use its network, so neither is device evidence. The Android runs used
+HTTP/1.1. No Apple or Android device has played these shapes, and the Roku
+Express 4K played only the fMP4 ladder. The
+[device fault matrix](device-fault-matrix.md) covers that Roku, the Apple
+simulators and the Android emulators under faults.
 
 ## MP4 VoD (Docker)
 
