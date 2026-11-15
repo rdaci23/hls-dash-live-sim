@@ -135,6 +135,116 @@ for an explicitly permitted CDN. Keep auth files, private media and signed URLs
 outside committed examples. Never use production credentials for demonstrations.
 [Diagnostics redaction](diagnostics.md) and [security reporting](../SECURITY.md).
 
+## HTTP/2 over TLS
+
+Streams use plain HTTP/1.1 unless you opt in. Apple's players (Safari and
+AVPlayer) play [low-latency HLS](generated-streams.md#low-latency-hls) at low
+latency only over HTTP/2, and they use HTTP/2 only over TLS; on HTTP/1.1 they
+fall back to normal latency. `--http2` serves players over HTTP/2 with TLS.
+HTTP/1.1 stays available on the same port: each client picks its protocol while
+connecting (ALPN).
+
+```sh
+npm run certs:local
+npm start -- livesim --sim-type hls --low-latency --http2 \
+  --tls-cert .certs/server.pem --tls-key .certs/server.key
+# HLS live ready: https://127.0.0.1:8899/proxy.m3u8 (HTTP/2 over TLS; HTTP/1.1 also offered)
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--http2` | Serve players over HTTP/2 with TLS. Off by default. Needs both files below. |
+| `--tls-cert <file>` | PEM server certificate (with any intermediate certificates). Used only with `--http2`. |
+| `--tls-key <file>` | PEM private key for that certificate. Used only with `--http2`. |
+
+The options apply to `livesim start` (HLS, DASH and `--fixture tracks`), to
+`dummy-stream` and to the named `*-stream` templates. They are checked before a
+port is bound. HLS MP4 VoD (`--no-proxy`) and DASH with `--no-fault-proxy` bypass
+the Node server and reject `--http2`. The `fault-control` page stays on HTTP/1.1;
+players never fetch it. The library takes the PEM contents:
+`startHlsim({ lowLatency: true, http2: { cert, key } })`, and the same `http2`
+option on `startLivesim2()` and `startDashFaultProxy()`.
+
+### Local certificates
+
+`npm run certs:local` in a checkout, or `hls-dash-live-sim certs` from the npm
+package, creates a local certificate authority (CA) and a server certificate
+signed by it in `.certs/` (in the working directory):
+
+| File | Use |
+| --- | --- |
+| `ca.pem` | The CA certificate. Trust this on each simulator or device. |
+| `server.pem`, `server.key` | Pass to `--tls-cert` and `--tls-key`. |
+| `ca.key` | Signs new server certificates. Keep it private. |
+
+The server certificate covers `localhost`, `127.0.0.1`, `::1` and this
+computer's LAN IPv4 addresses at the time it is created. Add names with
+`--extra-host`, for example
+`npm run certs:local -- --extra-host my-mac.local --extra-host 10.0.2.2`.
+`--no-lan` leaves out the LAN addresses, and `--dir` writes elsewhere. A rerun
+issues a new server certificate and reuses the CA, so anything that already
+trusts the CA keeps working; rerun after this computer's LAN address changes.
+The server certificate is valid for 397 days and the CA for 825 days.
+
+Keys are written with mode 0600. `.certs/` is ignored by Git, and the script also
+writes a `.gitignore` into its directory, so another `--dir` inside a checkout is
+ignored too. Do not copy `ca.key` to a device: a device only needs `ca.pem`. The
+script needs `openssl` on `PATH`.
+
+### Trusting the CA
+
+Trust `ca.pem`, never the server certificate:
+
+- **iOS and tvOS simulators**: `xcrun simctl keychain <udid> add-root-cert .certs/ca.pem`
+  (`booted` works in place of a UDID). It takes effect without a restart.
+  `xcrun simctl keychain <udid> reset` removes it along with everything else
+  added to that simulator's keychain.
+- **iPhone and iPad**: send `ca.pem` to the device (AirDrop, Mail, or a page that
+  serves it) and open it, then install the downloaded profile in
+  **Settings → General → VPN & Device Management**. Finally turn on full trust
+  for it in **Settings → General → About → Certificate Trust Settings**. iOS does
+  not trust an installed root for TLS until that switch is on.
+- **Apple TV**: install `ca.pem` as a configuration profile with Apple
+  Configurator or device management, then enable it in
+  **Settings → General → About → Certificate Trust Settings**. This was not tried
+  on a device here.
+- **macOS (Safari, Chrome)**: add it to the login keychain and mark it trusted
+  for SSL in Keychain Access, or run
+  `security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db .certs/ca.pem`
+  (it asks for your password). Remove it from Keychain Access when you are done.
+- **Android**: **Settings → Security → Encryption & credentials → Install a
+  certificate → CA certificate**. Android apps trust user-installed CAs only when
+  their network security configuration allows `<certificates src="user"/>`;
+  Chrome on Android does.
+
+For LAN players, start with `--host 0.0.0.0` and use the LAN address that the
+certificate covers, for example `https://192.168.1.20:8899/proxy.m3u8`.
+`--allow-host` is still needed for names this computer does not own, such as
+`10.0.2.2`, and the certificate must list that name too.
+
+To proxy an HTTPS origin that uses this CA (for example another simulator
+started with `--http2`), start the proxy with `NODE_EXTRA_CA_CERTS=.certs/ca.pem`.
+The proxy always fetches from origins over HTTP/1.1.
+
+### Faults on HTTP/2
+
+Statuses, payload faults, delays, stalls, slow bodies, bandwidth limits,
+scenarios, session controls and diagnostics behave as on HTTP/1.1. HTTP/2 carries
+many requests on one connection, so faults that end a connection on HTTP/1.1
+end only the request's own stream (RST_STREAM) and leave the other requests,
+such as a held playlist reload, running:
+
+| Transport action | HTTP/1.1 | HTTP/2 |
+| --- | --- | --- |
+| `abort` | Closes the connection after the prefix. | Resets the stream with `INTERNAL_ERROR` after the prefix. |
+| `reset` | TCP reset before any response. Over TLS, Node cannot send a TCP reset, so the connection is closed without a response. | Resets the stream with `INTERNAL_ERROR` before any response. |
+| `no-response` | Holds the connection silent, then resets it. | Holds the stream silent, then resets it with `INTERNAL_ERROR`. |
+| `framing`, `content-length` | Declares 16 more bytes than it sends, then closes. | Same headers and body, then resets the stream with `PROTOCOL_ERROR`. |
+| `framing`, `chunked` | Sends an invalid chunk-size token. | HTTP/2 has no chunked coding: headers without a length, then `PROTOCOL_ERROR`. |
+
+Ending a session or cancelling a scenario run also resets the affected streams
+rather than closing their connections. HTTP/3 is not offered.
+
 ## Save evidence
 
 Create a new diagnostics file for each session:

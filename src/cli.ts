@@ -4,7 +4,8 @@ import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { portNumber, bindHost } from "./support-tools/safe-http.js";
+import { portNumber, bindHost, loadHttp2Tls } from "./support-tools/safe-http.js";
+import { createLocalCerts, describeLocalCerts } from "./support-tools/local-certs.js";
 import {
   startHlsim,
   stopHlsim,
@@ -120,8 +121,20 @@ const auth = (args) => ({
   authFile: args["auth-file"],
   allowedOrigins: args["allow-origin"],
 });
+/** Opt-in HTTP/2 over TLS for player requests. Apple players use low-latency
+ * HLS only over HTTP/2, and only over TLS; HTTP/1.1 remains on the same port. */
+const http2Option = (args) => {
+  if (!args.http2) {
+    if (args["tls-cert"] || args["tls-key"]) throw new Error("--tls-cert and --tls-key are used with --http2");
+    return undefined;
+  }
+  return loadHttp2Tls(args["tls-cert"], args["tls-key"]);
+};
 const startOptions = (builder) =>
   authOptions(builder)
+    .option("http2", { type: "boolean", description: "Serve players over HTTP/2 with TLS (off by default); HTTP/1.1 stays available on the same port. Needed for Safari and AVPlayer low-latency HLS" })
+    .option("tls-cert", { type: "string", description: "PEM certificate chain for --http2, e.g. from npm run certs:local" })
+    .option("tls-key", { type: "string", description: "PEM private key for --tls-cert" })
     .option("port", {
       type: "number",
       description: "Listen port (HLS 8899, DASH 8888)",
@@ -194,6 +207,7 @@ async function runTemplate(name: string, args) {
           asset: template.isDynamic ? undefined : template.asset,
           lowLatency: template.lowLatency,
           manifestUrl: template.sourceUrl,
+          http2: http2Option(args),
           ...auth(args),
         }),
       ),
@@ -219,6 +233,7 @@ async function runTemplate(name: string, args) {
           lowLatency: template.lowLatency,
           manifestUrl: template.sourceUrl,
           dummyContent: template.sourceUrl ? false : true,
+          http2: http2Option(args),
           ...auth(args),
         }),
       ),
@@ -381,6 +396,7 @@ const program = yargs(hideBin(process.argv))
         scenarioStart: args["scenario-start"],
         controlToken: args["control-token"],
         verbose: args.verbose,
+        http2: http2Option(args),
         ...auth(args),
       };
       if (args.fixture && (args.asset || args.image || args.name || args["force-pull"] || args["periods-per-hour"] || args.periods || args["period-durations"] || args.utc === "external" || args["fault-proxy"] === false)) throw new Error("Owned tracks cannot combine with engine assets, image/Period options, external UTC or disabled fault proxy");
@@ -428,6 +444,18 @@ const program = yargs(hideBin(process.argv))
         console.info(
           `${name}${template.supported === false ? " [unsupported]" : ""}: ${template.description}\n  ${template.segmentDuration} ms; ${template.bitrateLadder.join(", ")} bps${template.sourceUrl ? "; imported source" : ""}`,
         );
+    },
+  )
+  .command(
+    "certs",
+    "Create a local CA and a server certificate for --http2 (needs openssl)",
+    (builder) =>
+      builder
+        .option("dir", { type: "string", default: ".certs", description: "Output directory; it ignores itself in Git" })
+        .option("extra-host", { type: "array", string: true, description: "Extra host name or IP address to cover, e.g. my-mac.local or 10.0.2.2" })
+        .option("lan", { type: "boolean", default: true, description: "Cover this computer's LAN IPv4 addresses; --no-lan leaves them out" }),
+    (args: any) => {
+      console.info(describeLocalCerts(createLocalCerts({ dir: args.dir, hosts: args["extra-host"], lan: args.lan })));
     },
   )
   .command(

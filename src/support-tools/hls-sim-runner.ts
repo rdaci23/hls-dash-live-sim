@@ -16,6 +16,9 @@ import {
   HttpError,
   listen,
   sessionServer,
+  checkHttp2Tls,
+  serverScheme,
+  type Http2Tls,
   bindHost,
   portNumber,
   loopback,
@@ -93,6 +96,8 @@ export interface HLSStartOptions {
   segmentFormat?: "ts" | "fmp4";
   /** Generated fMP4 HLS with parts, preload hints and blocking playlist reload. */
   lowLatency?: boolean;
+  /** Serve players over HTTP/2 with TLS; HTTP/1.1 stays available on the same port. Off by default. */
+  http2?: Http2Tls;
 }
 export interface HLSStopOptions {
   name?: string;
@@ -213,6 +218,8 @@ export async function startHlsim(
     applyConfigOverride({ logging: { verbose: options.verbose } });
   const manualNotice = activeManualFaultNotice();
   if (manualNotice) console.warn(manualNotice);
+  if (options.http2) checkHttp2Tls(options.http2);
+  if (options.http2 && options.proxy === false) throw new Error("--http2 is served by the HLS Node proxy; MP4 VoD bypasses it");
   if (options.proxy === false) return startVod(options, host, port);
   if (definition?.cache?.kind === "manifest-rollback" && definition.cache.target.track === "root") throw new Error("HLS rollback requires a media-playlist track rather than the master");
   const dummy = options.dummyContent ?? !options.manifestUrl;
@@ -756,7 +763,7 @@ export async function startHlsim(
           req.method,
         );
     }
-  }, diagnostics);
+  }, diagnostics, options.http2);
   const server = transport.server;
   try {
     await listen(server, port, host);
@@ -770,8 +777,8 @@ export async function startHlsim(
     diagnostics.close(); configSource.close();
     throw error;
   }
-  const url = `http://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
-  console.info(`HLS ${dummy ? mode : "origin proxy"} ready: ${url}`);
+  const url = `${serverScheme(options.http2)}://${host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host.includes(":") ? "[" + host + "]" : host}:${port}/proxy.m3u8`;
+  console.info(`HLS ${dummy ? mode : "origin proxy"} ready: ${url}${options.http2 ? " (HTTP/2 over TLS; HTTP/1.1 also offered)" : ""}`);
   if (scenario)
     console.info(
       `Scenario ${scenario.scenarioId}; report: ${new URL("/scenario", url).href}`,

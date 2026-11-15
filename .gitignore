@@ -10,4 +10,5 @@ dist/
 .hls-dash-manifest-templates.json
 auth*.json
 .playwright-cli/
+.certs/
 output/

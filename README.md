@@ -190,6 +190,10 @@ npm start -- livesim --sim-type dash --periods-per-hour 60
 npm start -- livesim --sim-type hls --segment-format ts
 npm start -- livesim --sim-type hls --low-latency
 npm start -- livesim --sim-type dash --low-latency
+
+# Low-latency HLS for Safari and AVPlayer: HTTP/2 over TLS with a local CA
+npm run certs:local
+npm start -- livesim --sim-type hls --low-latency --http2 --tls-cert .certs/server.pem --tls-key .certs/server.key
 npm start -- livesim --sim-type hls --ad-break-segments 2
 
 # Discover presets, imports and command options

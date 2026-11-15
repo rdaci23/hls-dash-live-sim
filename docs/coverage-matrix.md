@@ -16,9 +16,10 @@ npm.
 | Starvation/oscillation/shaping | Nonzero below-minimum cap, four cycles, shared pacing, bytes, cancellation, active rate changes. | Fault-associated buffering and adaptation retained separately. A successful HTTP rate check is not an ABR pass. |
 | Session-scoped controls | Separate authenticated manual/scenario modes, session/revision/run checks, private settings, scoped cancellation, immutable definitions and retained results. Legacy shared-file behavior remains separate. | Real HLS/DASH UI checks cover Prepare/Start/Stop, inert discovery, stable manifest exports, draft conflicts, reconnect boundaries and narrow keyboard workflows. Player recovery remains a separate check. |
 | Invalid payloads | Malformed HLS/MPD, damaged media, wrong-track init and genuinely stale init/fresh-media pairs. | Targeted malformed/media/wrong-init observations are separate; stale-init automatic recovery remains unverified. |
-| Bounded transport | Header delay, body stall, abort, slow progress, explicit HTTP/1.1 framing, bytes and cleanup. | Targeted framing observation; browser recovery for every transport/network composition is unverified. |
+| Bounded transport | Header delay, body stall, abort, slow progress, explicit HTTP/1.1 framing, bytes and cleanup. With `--http2`, each action on its own HTTP/2 stream (RST_STREAM with an error code) while sibling streams on the connection continue. | Targeted framing observation; browser recovery for every transport/network composition is unverified. |
 | CDN/cache/publication | Recorded fresh/newer/stale identity, real negative cache, origin/edge isolation, rendition lag and delayed complete availability. | Targeted rollback/lag/late-caption observations; no general CDN compatibility claim. |
 | HTTP policy | Safe failure statuses/headers, Retry-After, validators/304, ranges/416, If-Range and resumed bytes. | Independent wire/HTTP evidence. Player-specific handling of every status/header is unverified. |
+| HTTP/2 over TLS (opt-in) | ALPN h2 with HTTP/1.1 on the same port; parts, held preload hints, blocking reloads and delta updates on multiplexed streams; statuses, payload faults, stalls, drip, bandwidth limits, session controls and diagnostics; per-stream resets for abort/reset/no-response/framing; `:authority` host checks; prompt shutdown. | One 75-second simulator run each: Safari 26.4 and tvOS AVPlayer about 2.1 s behind live, hls.js in Chrome 2.4 s. No Apple device, LAN or fault-recovery observation over HTTP/2. |
 | Independent tracks | Owned fMP4 HLS with separate audio, DASH tracks, two authored tones, timed WebVTT/wvtt, third rung, asymmetric shaping. | Healthy checks require decoded tone, language switching and correctly timed active/empty cues; fault observations separately cover audio/text outage and late captions. |
 | Valid restart/event ending | Aligned HLS discontinuity/new MAP and DASH Period/PTO, compatible coded times and retained finite media. | Both protocols have rendered restart and native `ended` checks. |
 | Invalid lifecycle/DVR | Unannounced timestamp reset, sequence rollback, incompatible URL reuse; bounded retention, seek/join/freeze HTTP restoration. | User pause/seek is separate from automatic recovery. Startup outage and long-freeze client limits remain in the roadmap. |
@@ -47,12 +48,16 @@ See [targeted browser observations](browser-scenario-observations.md),
 are generated, with one Chrome/hls.js check each for the HLS shapes, one check
 of Apple's player in the iOS and tvOS simulators, one check of Media3 ExoPlayer in
 Android phone and TV emulators for every HLS and DASH shape, and no release gate.
-Apple's players play low-latency HLS at normal latency because the simulator serves
-HTTP/1.1; ExoPlayer used its parts and blocking reloads.
+Over HTTP/1.1, Apple's players play low-latency HLS at normal latency; with the opt-in
+[HTTP/2 over TLS](configuration.md#http2-over-tls) they played it about 2.1
+seconds behind live in one simulator run each. ExoPlayer used parts and blocking
+reloads over HTTP/1.1. HTTP/2 delivery, held requests,
+delta updates, faults, session controls and shutdown have simulator tests in
+`test/http2.test.cjs`.
 The [device fault matrix](device-fault-matrix.md) records how a Roku Express 4K,
 Safari, AVPlayer and ExoPlayer (Android emulators) handled the same fault
 scenarios; it is exploratory evidence, and simulator and emulator results are not
-device evidence. Commercial DRM, ad insertion logic, HTTP/2/3 simulation and virtual
+device evidence. Commercial DRM, ad insertion logic, HTTP/3 and virtual
 clocks are deferred. Apple and Android devices, additional Roku hardware and
 internet-isolated Roku playback are unverified; native recovery development is
 outside this repository.
