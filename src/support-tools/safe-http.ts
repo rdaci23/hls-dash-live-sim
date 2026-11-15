@@ -290,6 +290,11 @@ function h2Stream(res: http.ServerResponse): http2.ServerHttp2Stream | undefined
 }
 /** True when this response travels on an HTTP/2 stream rather than its own HTTP/1.1 connection. */
 export function isHttp2(res: http.ServerResponse): boolean { return !!h2Stream(res); }
+/** An HTTP/2 stream that closed before its response ended, or with an error code. */
+function resetHttp2(res: http.ServerResponse): boolean {
+  const stream = h2Stream(res);
+  return !!stream && (!res.writableEnded || (stream.rstCode ?? H2.NGHTTP2_NO_ERROR) !== H2.NGHTTP2_NO_ERROR);
+}
 /**
  * End a response abnormally. HTTP/1.1 closes the connection. HTTP/2 resets
  * only this stream with an error code: a bare destroy() there resets with
@@ -422,6 +427,11 @@ export function sessionServer(
       records.delete(controller);
     };
     const finish = () => {
+      // HTTP/2's compatibility layer emits 'finish' whenever the stream closes,
+      // including after a reset by either side. Only a stream that the handler
+      // ended and that closed without an error code has finished; anything else
+      // is a disconnect, so the handler's signal aborts as it does on HTTP/1.1.
+      if (resetHttp2(res)) { controller.abort("client_disconnect"); cleanup(); return; }
       trace?.finish();
       cleanup();
     };

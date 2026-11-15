@@ -22,6 +22,11 @@ describe the simulator; recorded player results apply only to their tested scope
   phones and Android TV, built with the Gradle wrapper. It plays a stream muted
   and reports its state as JSON once a second; see its
   [README](android/README.md). It is not part of the npm package.
+- The [device fault matrix](docs/device-fault-matrix.md#low-latency-hls-over-http2-apple-simulators)
+  records Safari and AVPlayer in the iOS and tvOS 26.4 simulators on low-latency
+  HLS over HTTP/2. They played through every transport fault at low latency (2.2
+  to 4.2 seconds behind live), keeping their connections, and fell back to normal
+  latency after faults that emptied the buffer.
 
 ### Changed
 

@@ -13,7 +13,9 @@ not exercised.
 | AVPlayer | tvOS 26.4 Simulator | A minimal AVPlayer test app (not part of this repository) |
 
 The Apple results come from simulators. They use the Mac's decoders and network,
-so they are not device evidence.
+so they are not device evidence. These runs used HTTP/1.1.
+[Low-latency HLS over HTTP/2](#low-latency-hls-over-http2-apple-simulators)
+repeats the HLS scenarios on the Apple simulators.
 
 On 14 November 2026 the same rows were played on Media3 ExoPlayer in two Android
 emulators, using `dc5c526` (0.3.1 plus documentation); see
@@ -71,6 +73,85 @@ active. Safari, for example, started on 432p and moved to 720p.
 On the MPEG-TS stream (`--segment-format ts`, two muxed renditions), Safari and
 AVPlayer behaved the same way, with one exception: both recovered from the
 50 kbps starvation, which left them stuck on the fMP4 ladder.
+
+## Low-latency HLS over HTTP/2 (Apple simulators)
+
+On 14 November 2026 the same HLS scenarios were replayed on the two Apple
+simulators against [low-latency HLS](generated-streams.md#low-latency-hls) over
+[HTTP/2 over TLS](configuration.md#http2-over-tls), using `feat/http2-tls`
+commit `6ea5128`. The table above was recorded on HTTP/1.1, where Apple's
+players do not use low-latency features. Five transport faults that the HTTP/1.1
+table does not cover were added, because HTTP/2 delivers them differently: they
+reset only the request's own stream
+([faults on HTTP/2](configuration.md#faults-on-http2)).
+
+Method, where it differs from the HTTP/1.1 runs:
+
+- Each session was the library equivalent of `--low-latency --http2 --tls-cert
+  .certs/server.pem --tls-key .certs/server.key` (`startHlsim()` with
+  `lowLatency` and `http2`), with certificates from `npm run certs:local`. Each
+  simulator trusted the CA through `xcrun simctl keychain <udid> add-root-cert`.
+  Every request in every run used HTTP/2.
+- The player joined 12 seconds after the session started, so the playlist held
+  its full window. Every `afterMs`/`beforeMs` in the scenario copies moved by the
+  same 12 seconds, so each fault reached the player at the same point after it
+  joined as in the HTTP/1.1 runs. Safari was relaunched for each run. A page
+  that navigated itself to the next run started at the oldest segment, about
+  13 seconds behind live.
+- **Behind live** is the wall clock minus the playhead's program date-time
+  (`getStartDate()` plus `currentTime` in Safari, `AVPlayerItem.currentDate()`
+  on tvOS), as a median over the last 20 seconds of the run. Without faults,
+  Safari played 2.9 seconds behind live and AVPlayer 2.3 seconds.
+- Safari's `<video>` element reports only fatal errors, so the Safari column has
+  no codes for faults it recovered from. AVPlayer codes come from its error log.
+
+| Scenario | Safari (iOS sim) | AVPlayer (tvOS sim) |
+| --- | --- | --- |
+| No fault | Played; 2.9 s behind | Played; 2.3 s behind |
+| Connection reset before the response | Played through; 3.0 s behind | Played through; logged -1005; 2.7 s behind |
+| Body abort after 1 KiB | Played through; 2.2 s behind | Played through; logged -1005; 2.6 s behind |
+| No response for 8 s | Played through: cancelled the silent request at once; 3.4 s behind | Played through: gave up on the request after 2 s (-12889); 4.2 s behind |
+| Chunked framing error, any rendition | Played through; 3.1 s behind | Played through; logged -1005; 2.7 s behind |
+| Content-length framing error, any rendition | Played through; 2.3 s behind | Played through; logged -1005 and -12939; 2.2 s behind |
+| 404 on the next video segment | Played through; 2.2 s behind | Played through; logged the 404 (-12938); 2.2 s behind |
+| 429 with Retry-After, any rendition | Played through; 2.8 s behind | Played through; logged the 429 (-16845); 2.2 s behind |
+| One segment permanently missing | Stalled about 10 s, recovered; 12.9 s behind | Stalled about 15 s, recovered; logged the 404s; 16.9 s behind |
+| Damaged media at startup, any rendition | Played through; 3.2 s behind | **Stuck** at 10 s with no picture and no error |
+| Malformed master playlist at startup | **Gave up** (media error 4) | **Gave up** (-12642) |
+| Wrong-track initialization at startup, any rendition | Not exercised¹ | Not exercised¹; logged the 422 (-16845) |
+| Join during a 20 s video outage | Waited; started at about 24 s; 24 s behind | Waited; started at about 21 s, then **stuck** from about 31 s with no error |
+| 20 s video outage after 60 s² | Stalled about 20 s, recovered; 23.9 s behind | Stalled about 10 s, recovered 21 s behind, then **stuck** from about 95 s with no error; logged the 503s (-16849) |
+| 20 s outage of the top rendition² | Played through on the lower renditions; 2.8 s behind | Played through; logged the 503 (-16849); 2.3 s behind |
+| 15 s audio-only outage² | Stalled about 10 s, recovered; 19.1 s behind | Stalled about 5 s, recovered; logged the 503s and -15621 (live edges out of sync); 15.7 s behind |
+| 45 s playlist freeze | **Stuck**; did not resume after the playlist did | **Stuck** (-15410, invalid blocking reload); did not resume |
+| 15 s playlist rollback, top rendition | Played through; the playhead jumped 12 s ahead when the rollback began, so the live offset could not be read afterwards | Played through; logged -16832 (restarting from the live edge); 2.6 s behind |
+| 50 kbps for 20 s | Stalled about 16 s, recovered; 19 s behind | **Stuck** (-16830, media file not received in 2 s) after bandwidth returned |
+| Primary origin down for 30 s, backup advertised | Played through; 2.9 s behind | Played through; logged the 503 and -15418 (dropping out of low latency); 2.6 s behind |
+
+¹ As on HTTP/1.1, the player requested its video initialization before the audio
+one, so the simulator answered HTTP 422 and the player retried normally. On
+HTTP/1.1, Safari had requested them in the other order and got stuck.
+
+² Recorded on 15 November 2026 with a fix on top of `6ea5128`. On `6ea5128`
+itself, these outages ended about one second into the window: when a player
+cancelled a held [preload-hint](generated-streams.md#low-latency-hls) part, the
+simulator went on to answer the cancelled stream, marked the outage rule failed
+and served later requests normally, so both players played through. The fix
+treats a reset HTTP/2 stream as a disconnect, as on HTTP/1.1. The other rows were
+not affected: their faults were delivered as configured.
+
+On HTTP/2, the transport faults reset only the faulted stream: `INTERNAL_ERROR`
+for reset and abort, `PROTOCOL_ERROR` for the framing errors. Each player kept the
+same connections for the whole run (one on tvOS, two in Safari). The retry went
+out on the same connection within about 50 ms. Playback did not stall, except
+that AVPlayer started about a second late after the no-response fault, and the
+players stayed at low latency. A fault that emptied the buffer moved the players
+that recovered back to normal latency (13 to 24 seconds behind), and they did not
+return to low latency before the run ended. An outage of one rendition did not
+empty the buffer: both players moved to another rendition and stayed at low
+latency. Compared with HTTP/1.1, Safari
+recovered from the 50 kbps starvation, and AVPlayer stopped again after joining
+during an outage.
 
 ## DASH (Roku)
 

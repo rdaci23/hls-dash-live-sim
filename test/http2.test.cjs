@@ -15,7 +15,7 @@ const { createLocalCerts } = require("../dist/support-tools/local-certs.js");
 const config = require("../dist/support-tools/live-stream-fault-config.js");
 const freePort = require("./helpers/free-port.cjs");
 
-const { NGHTTP2_INTERNAL_ERROR, NGHTTP2_PROTOCOL_ERROR } = http2.constants;
+const { NGHTTP2_INTERNAL_ERROR, NGHTTP2_PROTOCOL_ERROR, NGHTTP2_CANCEL } = http2.constants;
 const OFF = { segment: { malformed: "off", forbidden: "off", missing: "off", latencyMs: 0 }, network: { bandwidthKbps: 0, jitterMs: 0 }, manifest: { freeze: "off" }, drm: { licenseFailure: "off", keyRotationMismatch: "off" } };
 const TOKEN = "http2-session-control-token";
 let certs, tlsFiles, ca;
@@ -31,7 +31,8 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function session(t, options = {}, rules) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "h2-session-"));
   let scenarioFile;
-  if (rules) { scenarioFile = path.join(dir, "scenario.json"); await fsp.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, rules })); }
+  // `rules` is a rule list, or a definition with a timeline.
+  if (rules) { scenarioFile = path.join(dir, "scenario.json"); await fsp.writeFile(scenarioFile, JSON.stringify({ version: 1, seed: 42, ...(Array.isArray(rules) ? { rules } : { rules: [], ...rules }) })); }
   const started = await startHlsim({ port: await freePort(), faultConfigPath: path.join(dir, "faults.json"), lowLatency: true, http2: tlsFiles, scenarioFile, ...options });
   t.after(async () => { await started.close(); await fsp.rm(dir, { recursive: true, force: true }); });
   return started;
@@ -41,7 +42,8 @@ function connect(t, url) {
   const client = http2.connect(new URL(url).origin, { ca });
   client.on("error", () => {});
   t.after(() => client.destroy());
-  const request = (pathname, { method = "GET", headers = {}, body, timeoutMs = 10000 } = {}) => new Promise(resolve => {
+  // cancelAfterMs: the client resets the stream with CANCEL, as a player abandoning a request does.
+  const request = (pathname, { method = "GET", headers = {}, body, timeoutMs = 10000, cancelAfterMs } = {}) => new Promise(resolve => {
     const began = performance.now(), chunks = [];
     let head, settled = false, firstByteMs;
     const stream = client.request({ ":path": pathname, ":method": method, ...headers });
@@ -50,6 +52,7 @@ function connect(t, url) {
       resolve({ status: head?.[":status"], headers: head, body: Buffer.concat(chunks), ms: performance.now() - began, firstByteMs, rstCode: stream.rstCode, ...extra });
     };
     const timer = setTimeout(() => { stream.close(); done({ timedOut: true, complete: false }); }, timeoutMs);
+    if (cancelAfterMs !== undefined) setTimeout(() => stream.close(NGHTTP2_CANCEL), cancelAfterMs);
     stream.on("response", value => { head = value; });
     stream.on("data", chunk => { firstByteMs ??= performance.now() - began; chunks.push(chunk); });
     // 'end' also follows a reset with CANCEL: complete means a response and no error code.
@@ -261,6 +264,33 @@ test("HTTP/2 status outages, corrupt bodies, session controls and bandwidth limi
   assert.equal(shaped.status, 200); assert.ok(shaped.complete); assert.ok(shaped.body.equals(clean.body));
   assert.ok(shaped.ms >= expectedMs * 0.7, `the bandwidth limit shaped the body (${Math.round(shaped.ms)} ms for ~${Math.round(expectedMs)} ms)`);
   await post("apply", { settings: { network: { bandwidthKbps: 0 } } });
+});
+
+test("a client reset on HTTP/2 releases its handler: a cancelled held part does not end an outage", async t => {
+  const live = await session(t, {}, [{ kind: "outage", target: { track: "video:0", segment: "each" }, status: 503, afterMs: 0, beforeMs: 60000 }]);
+  const h2 = connect(t, live.url), { playlist } = await newestSegment(h2);
+  const hint = /#EXT-X-PRELOAD-HINT:TYPE=PART,URI="([^"]+)"/.exec(playlist)[1];
+  const cancelled = await h2.request(hint, { cancelAfterMs: 50 });
+  assert.equal(cancelled.rstCode, NGHTTP2_CANCEL);
+  for (let n = 0; n < 100 && live.resourceOwnership().pendingWork > 0; n++) await pause(10);
+  assert.deepEqual([live.resourceOwnership().activeRequests, live.resourceOwnership().pendingWork], [0, 0], "the held handler stopped");
+  await pause(1200); // past the moment the hinted part would have been answered
+  const { segment } = await newestSegment(h2);
+  assert.equal((await h2.request(segment)).status, 503, "the outage is still in force");
+  assert.notEqual(live.scenario.report().result, "failed");
+  assert.ok(live.diagnostics.snapshot().events.some(e => e.event === "request.cancelled" && e.reason === "client_disconnect"), "the reset is logged as a disconnect, not a completed 200");
+});
+
+test("closing an HTTP/2 session after a client abandons a bandwidth-limited body", async t => {
+  const live = await session(t, {}, { timeline: [{ afterMs: 0, beforeMs: 600000, network: { bandwidthKbps: 50 } }] });
+  const h2 = connect(t, live.url), { segment } = await newestSegment(h2);
+  const shaped = await h2.request(segment.replace("/v0/", "/v2/"), { cancelAfterMs: 500 });
+  assert.equal(shaped.status, 200); assert.equal(shaped.complete, false);
+  for (let n = 0; n < 200 && live.resourceOwnership().pendingWork > 0; n++) await pause(10);
+  assert.equal(live.resourceOwnership().pendingWork, 0, "the shaped body stopped when the client reset its stream");
+  const began = performance.now();
+  await live.close();
+  assert.ok(performance.now() - began < 1000, "close does not wait for the abandoned body");
 });
 
 test("closing an HTTP/2 session releases held streams promptly", async t => {
