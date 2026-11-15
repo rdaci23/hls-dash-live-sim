@@ -15,6 +15,9 @@ import {
   portNumber,
   assertPortAvailable,
   playerAccess,
+  checkHttp2Tls,
+  serverScheme,
+  type Http2Tls,
 } from "./safe-http.js";
 import { ownershipArgs, assertOwnedContainer, orphanedOwner, MANAGED_LABEL, WORKSPACE_LABEL, workspaceId } from "./container-ownership.js";
 import {
@@ -72,6 +75,8 @@ export interface LivesimStartOptions {
   redundantStreams?: boolean;
   /** Chunked low-latency DASH: half-second chunks, early segment availability. */
   lowLatency?: boolean;
+  /** Serve players over HTTP/2 with TLS through the fault proxy; HTTP/1.1 stays available. Off by default. */
+  http2?: Http2Tls;
 }
 /** Chunk duration used for low-latency DASH, in seconds. */
 export const LOW_LATENCY_CHUNK_SECONDS = 0.5;
@@ -235,6 +240,9 @@ export async function startLivesim2(
   signal?.throwIfAborted();
   validateScenarioStart(options.scenarioStart, options.controlToken);
   const definition = loadScenario(options.scenarioFile);
+  if (options.http2) checkHttp2Tls(options.http2);
+  if (options.http2 && options.faultProxy === false)
+    throw new Error("--http2 is served by the DASH fault proxy; omit --no-fault-proxy");
   if (options.redundantStreams && options.faultProxy === false)
     throw new Error("--redundant-streams requires the DASH fault proxy; enable --fault-proxy");
   if ((definition || options.scenarioStart === "manual") && options.faultProxy === false)
@@ -464,6 +472,7 @@ export async function startLivesim2(
         access,
         redundantStreams: options.redundantStreams,
         lowLatency: options.lowLatency,
+        http2: options.http2,
       });
     signal?.throwIfAborted();
     const displayHost =
@@ -472,7 +481,7 @@ export async function startLivesim2(
         : host.includes(":")
           ? `[${host}]`
           : host;
-    const url = `http://${displayHost}:${port}${manifestPath}`;
+    const url = `${serverScheme(options.http2)}://${displayHost}:${port}${manifestPath}`;
     console.info(
       `DASH live ready: ${url}\nContainer: ${name}\nCtrl+C stops this session and its owned container.`,
     );

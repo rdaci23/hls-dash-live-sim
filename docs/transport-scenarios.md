@@ -7,6 +7,11 @@ correctly framed corrupt object. Healthy streams and publication/UTC clocks
 continue normally. These checks establish simulator behavior; player recovery
 requires separate observations with the player's timeout/retry settings recorded.
 
+With [`--http2`](configuration.md#http2-over-tls), an abort or reset ends only
+that request's HTTP/2 stream with an error code; the connection and its other
+requests continue. [Faults on HTTP/2](configuration.md#faults-on-http2) lists
+each action.
+
 ## Run a preset
 
 From a built source checkout, with all manual faults off:

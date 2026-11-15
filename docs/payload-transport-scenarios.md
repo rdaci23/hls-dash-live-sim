@@ -43,6 +43,10 @@ verification. This does not add a public caption/audio support claim.
 | [next-video-content-length.json](../examples/scenarios/next-video-content-length.json) | HTTP/1.1 declares 16 more bytes than it delivers, then closes. The full original body is present but its message is incomplete. |
 | [next-video-chunked.json](../examples/scenarios/next-video-chunked.json) | HTTP/1.1 uses chunked encoding with an invalid `Z` chunk-size token. It delivers no valid media body. |
 
+Over [`--http2`](configuration.md#faults-on-http2) the two framing presets send
+the same headers and then reset the stream with `PROTOCOL_ERROR`, since HTTP/2 has
+no Content-Length delimiting or chunked coding to break.
+
 Change `target.resource` to `manifest`/`init` with a matching track to target those
 resources. HEAD never consumes an action. A successful same-resource retry is
 required by these presets. The framing verifier reads raw HTTP bytes; an HTTP
