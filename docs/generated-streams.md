@@ -187,7 +187,7 @@ assets do. It combines with `--periods-per-hour` and `--redundant-streams`.
   With the default six-segment window the `_HLS_skip` requests received whole
   playlists, since there was nothing to skip; delta updates over HTTP/2 are
   covered by `test/http2.test.cjs`.
-- Media3 ExoPlayer 1.11.1, through the [Android probe](../android/README.md) in an
+- Media3 ExoPlayer 1.11.1, through the Android probe (`android/`) in an
   Android 15 phone emulator and an Android 16 TV emulator, played every shape:
   the fMP4 ladder (432p, then 720p), the MPEG-TS stream (360p), low-latency HLS,
   the ad-break stream across its discontinuities, DASH, low-latency DASH and DASH

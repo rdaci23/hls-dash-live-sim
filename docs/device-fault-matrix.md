@@ -172,7 +172,7 @@ during an outage.
 
 | Player | Build | How it played |
 | --- | --- | --- |
-| ExoPlayer, phone | Media3 1.11.1; Android 15 (API 35) emulator, Google APIs image, Pixel 7 profile | The [Android probe](../android/README.md) |
+| ExoPlayer, phone | Media3 1.11.1; Android 15 (API 35) emulator, Google APIs image, Pixel 7 profile | The Android probe (`android/` in a source checkout) |
 | ExoPlayer, TV | Media3 1.11.1; Android 16 (API 36) Android TV emulator, 1080p TV profile | The same APK |
 
 The emulators ran on the Mac and reached the simulator at `10.0.2.2`. They are

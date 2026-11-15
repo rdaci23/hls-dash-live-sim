@@ -28,8 +28,8 @@ release scripts now check Chrome and `main` before a review starts.
   simulators and devices.
 - An Android playback probe in `android/`: a minimal Media3 ExoPlayer app for
   phones and Android TV, built with the Gradle wrapper. It plays a stream muted
-  and reports its state as JSON once a second; see its
-  [README](android/README.md). It is not part of the npm package.
+  and reports its state as JSON once a second; see
+  `android/README.md` in a source checkout. It is not part of the npm package.
 - The [device fault matrix](docs/device-fault-matrix.md#low-latency-hls-over-http2-apple-simulators)
   records Safari and AVPlayer in the iOS and tvOS 26.4 simulators on low-latency
   HLS over HTTP/2. They played through every transport fault at low latency (2.2
