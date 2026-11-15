@@ -41,6 +41,12 @@ describe the simulator; recorded player results apply only to their tested scope
   [device fault matrix](docs/device-fault-matrix.md#android-emulators) records
   how it handled the 15 HLS and 10 DASH fault scenarios. These are emulator
   results, not device evidence.
+- `release:review` checks the Chrome build, `origin/main` and the release tag
+  before it starts, and stops within seconds when the review could not pass or
+  could not be published. It warns when the machine is heavily loaded.
+- `release:prepare` requires the current `origin/main` in the release branch.
+  `release:publish` merges a `main` that gained only a pull-request merge with
+  no file changes, then still tags the reviewed commit.
 
 ## 0.3.1 — 2026-11-12
 

@@ -1,10 +1,12 @@
 // npm run release:prepare -- <version> [--date YYYY-MM-DD]
 // Creates release/<version>, sets the package version, dates the changelog's
 // Unreleased section and commits "Prepare <version>". Pushes nothing.
+// HEAD must contain origin/main, so main can later fast-forward to the release.
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { parseVersion, compareVersions, prepareChangelog } = require('./release/changelog.cjs');
+const { readMain } = require('./release/preflight.cjs');
 
 const root = path.resolve(__dirname, '..');
 const run = (command, args, stdio = 'pipe') => execFileSync(command, args, { cwd: root, encoding: 'utf8', stdio: stdio === 'inherit' ? 'inherit' : ['ignore', 'pipe', 'pipe'] })?.trim();
@@ -38,6 +40,14 @@ function main() {
     const branch = 'release/' + version;
     if (run('git', ['branch', '--list', branch]))
         throw Error(`Branch ${branch} already exists`);
+    const main = readMain(run, 'HEAD');
+    if (!main.known || !main.fetched)
+        throw Error('Could not fetch origin/main; the release branch must start from the current main');
+    if (main.state !== 'fast-forward')
+        throw Error('origin/main has commits this branch lacks. Run `git merge origin/main` (or start from origin/main) first, so main can fast-forward to the release');
+    const unmerged = run('git', ['log', '--oneline', 'origin/main..HEAD']);
+    if (unmerged)
+        console.log(`The release includes ${unmerged.split('\n').length} commit(s) not yet on main:\n${unmerged}`);
     const changelogPath = path.join(root, 'CHANGELOG.md');
     const changelog = prepareChangelog(fs.readFileSync(changelogPath, 'utf8'), version, date);
 
