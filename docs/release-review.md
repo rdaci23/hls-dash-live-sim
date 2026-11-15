@@ -21,6 +21,56 @@ testing is optional; add `--extended-soak` explicitly when it is useful. The
 128 MiB per-process and aggregate memory-growth limits remain unchanged. Local
 passes retain their actual environment; untested CI-matrix targets stay unverified.
 
+## 0.4.0 release — 15 November 2026
+
+Release commit `14a68491d38ad9a7f21dce0d40ecb645f247efc8`, tagged `v0.4.0`,
+passed all 52 stages of its own clean-clone local review in about 1 hour 56
+minutes (macOS ARM64, Node v26.8.1, Chrome 157.0.8103.51). The preflight found
+a reviewed Chrome build and a `main` that could fast-forward, with no warnings.
+No hosted checks ran.
+
+- History scan: 138 commits, zero secret findings (gitleaks 8.30.1).
+- Package scan: 803 files, zero secret findings. Reviewed archive SHA-256:
+  `e2d79a36b5857520c5e8a2758682cb85d8f2aa5b46d8699db03df1abda315a77`.
+- Dependency audit: zero known vulnerabilities across all severities.
+- The six-case browser gate passed and was release-qualified for both protocols.
+  All 18 targeted scenario cases and all four caption controls passed.
+- The DVR release check passed with the same three documented player
+  limitations: HLS and DASH join-during-outage and DASH long-manifest-freeze.
+- The ten-minute concurrent smoke passed with the unchanged 128 MiB
+  memory-growth limits.
+
+The first candidate, `7bfa8ee`, failed at `package-install`: the changelog and
+three packaged documents linked to `android/README.md`, which the package does
+not include. `14a6849` replaced those links with the source-checkout path. Its
+first review run stopped after its output directory was deleted from outside
+the review; the run recorded here started afresh. `main` fast-forwarded to the
+release commit. npm received the reviewed archive on 15 November 2026.
+
+## 0.3.1 release — 13 November 2026
+
+Release commit `08e316ec8f673f023d06e86d03782ea56d0091f8`, tagged `v0.3.1`,
+passed all 52 stages of its own clean-clone local review in about 1 hour 58
+minutes (macOS ARM64, Node v26.8.1, Chrome 157.0.8103.51). No hosted checks ran.
+
+- History scan: 126 commits, zero secret findings (gitleaks 8.30.1).
+- Package scan: 800 files, zero secret findings. Reviewed archive SHA-256:
+  `0b57b569ab73e63c71adbe91d3cedad7b554381cbfbc9bd6da963637f09f79fd`.
+- Dependency audit: zero known vulnerabilities across all severities.
+- The six-case browser gate, all 18 targeted scenario cases, all four caption
+  controls, the DVR release check (with the same three documented limitations)
+  and the ten-minute concurrent smoke passed.
+
+The first candidate, `51a5858`, failed at `package-install` on a packaged link
+to a directory. On `08e316e`, the first run failed in `services-browser`: the
+DASH token-renewal case's one-second browser telemetry probe timed out while the
+machine's load average was 12 to 14, although the renewal itself succeeded. A
+rerun on the same commit, with the limit unchanged, passed and is the run
+recorded here. The earlier failure is not explained by the pass. `main` had
+gained a pull-request merge commit, so it reached the release through the merge
+`dc5c526`, whose files match the release commit; the tag marks `08e316e`. npm
+received the reviewed archive on 15 November 2026.
+
 ## 0.3.0 release — 11 November 2026
 
 Release commit `e9896e423e48aac827458b2a79663d7f1169e5ed`, tagged `v0.3.0`,
