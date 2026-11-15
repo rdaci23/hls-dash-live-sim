@@ -50,9 +50,11 @@ function repository() {
     return match[1];
 }
 
+// The log level is explicit because `npm run -s` passes a silent level to child
+// npm commands, which then omit the E404 text this check looks for.
 function npmVersionExists(name, version) {
     try {
-        return Boolean(run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', `${name}@${version}`, 'version']));
+        return Boolean(run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', `${name}@${version}`, 'version', '--loglevel', 'error']));
     }
     catch (error) {
         if (/E404/.test(String(error.stderr)))

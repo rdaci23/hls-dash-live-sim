@@ -5,6 +5,11 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+### Fixed
+
+- `npm run -s release:publish` no longer stops with "Could not check npm" for a
+  version that is not on npm yet. Silent mode had hidden the 404 the check reads.
+
 ## 0.4.0 — 2026-11-15
 
 Third public beta: opt-in HTTP/2 over TLS, which brought low-latency HLS in
