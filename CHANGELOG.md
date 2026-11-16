@@ -10,6 +10,9 @@ describe the simulator; recorded player results apply only to their tested scope
 - The [device fault matrix](docs/device-fault-matrix.md#roku-models) adds a Roku
   Streaming Stick 4K and a Roku Ultra on Roku OS 16.0.4. Both handled the 15 HLS
   and 10 DASH fault scenarios the same way as the Express 4K.
+- The README's supported-behavior table describes the fMP4 ladder as the HLS
+  default, adds HTTP/2 over TLS and the device fault matrix, and narrows the
+  unverified list to Roku models and OS versions beyond the three tested.
 
 ### Fixed
 

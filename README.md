@@ -86,16 +86,17 @@ assets.
 
 | Area | Current scope |
 | --- | --- |
-| HLS samples | H.264/AAC, muxed audio/video, 180p/360p renditions, two-second segments, LIVE/EVENT/VOD. |
+| HLS samples | fMP4 ladder by default: 234p, 432p and 720p H.264 with separate AAC and two-second segments. `--segment-format ts` serves two muxed H.264/AAC renditions (180p, 360p). LIVE/EVENT/VOD, plus [low-latency HLS and ad-break markers](docs/generated-streams.md). |
 | HLS live timing | Sliding window, increasing sequences, loop discontinuities and retained segments after window removal. |
 | HLS origin proxy | Signed child playlists, alternate audio, init resources, keys, ranges and declared CDN origins. |
 | DASH samples | livesim2 v1.15.3 at an immutable digest, H.264 video plus separate AAC, optional `--asset abr` 180p/360p ladder, live windows and supported period options. |
+| Transport | HTTP/1.1 by default. Opt-in [HTTP/2 over TLS](docs/configuration.md#http2-over-tls) (`--http2`), with a local CA and certificate from `hls-dash-live-sim certs`. |
 | Clock | Coherent real-time DASH availability and local UTC by default; external UTC is opt-in. |
 | Manual faults | Segment 403/404, malformed media, fixed response delay, manifest freeze, and limited encrypted-origin HLS key faults. |
 | Network conditions | Shared per-session media bandwidth ceiling and additional random media/manifest response jitter. |
-| Scenarios | Seeded media, manifest and init HTTP status or bounded body-stall/abort rules with same-resource retry assertions; timed bandwidth, seeded jitter and manifest freeze/resume profiles. |
+| Scenarios | Seeded media, manifest and init HTTP status or bounded body-stall/abort rules with same-resource retry assertions; timed bandwidth, seeded jitter and manifest freeze/resume profiles; [connection faults](docs/transport-scenarios.md) and offline [key, token and UTC faults](docs/local-services.md). |
 | Inspection | Generated HLS/DASH baseline previews in the control page, request/fault IDs, bounded redacted diagnostics and JSONL export. |
-| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS/DASH bandwidth-adaptation and timed HLS/DASH media-outage checks. |
+| Playback evidence | Healthy/startup-404/during-playback-404 cases in Chrome hls.js/dash.js and one identified physical Roku; separate automatic HLS/DASH bandwidth-adaptation and timed HLS/DASH media-outage checks. The exploratory [device fault matrix](docs/device-fault-matrix.md) compares three Roku models, Safari and AVPlayer (simulators) and ExoPlayer (emulators) on the same fault scenarios. |
 
 **Limits:** no commercial DRM, ad insertion or shared virtual clock.
 Low-latency HLS/DASH and HLS ad markers are [generated](docs/generated-streams.md)
@@ -106,7 +107,7 @@ bandwidth adaptation have separate two-rendition Chrome checks. Default dash.js
 HTTP-error rendition fallback failed its optional compatibility probe; simulator
 fault isolation is verified independently. Player-specific recovery behavior is
 recorded as compatibility evidence; Roku recovery fixes are outside this repo.
-Apple, Android and additional Roku models remain unverified. [Detailed capabilities and limits](docs/implementation.md).
+Apple and Android devices, and Roku models or OS versions beyond the three in the device fault matrix, remain unverified. [Detailed capabilities and limits](docs/implementation.md).
 
 ## Fault controls
 
