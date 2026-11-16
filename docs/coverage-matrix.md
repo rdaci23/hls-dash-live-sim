@@ -54,10 +54,10 @@ seconds behind live in one simulator run each. ExoPlayer used parts and blocking
 reloads over HTTP/1.1. HTTP/2 delivery, held requests,
 delta updates, faults, session controls and shutdown have simulator tests in
 `test/http2.test.cjs`.
-The [device fault matrix](device-fault-matrix.md) records how a Roku Express 4K,
-Safari, AVPlayer and ExoPlayer (Android emulators) handled the same fault
+The [device fault matrix](device-fault-matrix.md) records how three Roku models
+(Express 4K, Streaming Stick 4K and Ultra on one Roku OS build), Safari, AVPlayer and ExoPlayer (Android emulators) handled the same fault
 scenarios; it is exploratory evidence, and simulator and emulator results are not
 device evidence. Commercial DRM, ad insertion logic, HTTP/3 and virtual
-clocks are deferred. Apple and Android devices, additional Roku hardware and
+clocks are deferred. Apple and Android devices, other Roku models and OS versions, and
 internet-isolated Roku playback are unverified; native recovery development is
 outside this repository.

@@ -5,6 +5,12 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+### Changed
+
+- The [device fault matrix](docs/device-fault-matrix.md#roku-models) adds a Roku
+  Streaming Stick 4K and a Roku Ultra on Roku OS 16.0.4. Both handled the 15 HLS
+  and 10 DASH fault scenarios the same way as the Express 4K.
+
 ### Fixed
 
 - `npm run -s release:publish` no longer stops with "Could not check npm" for a

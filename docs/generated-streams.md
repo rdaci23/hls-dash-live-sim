@@ -208,8 +208,8 @@ simulators use the Mac's decoders and network, and the Android emulators run on
 the Mac and use its network, so neither is device evidence. The Android runs used
 HTTP/1.1. No Apple or Android device has played these shapes, and the Roku
 Express 4K played only the fMP4 ladder. The
-[device fault matrix](device-fault-matrix.md) covers that Roku, the Apple
-simulators and the Android emulators under faults.
+[device fault matrix](device-fault-matrix.md) covers that Roku and two other
+Roku models, the Apple simulators and the Android emulators under faults.
 
 ## MP4 VoD (Docker)
 
