@@ -5,6 +5,8 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-23
+
 Headless CLI session controls (`control` / `session`), redacted `--session-file`
 startup metadata, a programmatic package entrypoint (`dist/index.js`), and a
 bundled `SKILL.md` installer (`skill`) plus documentation for Claude Code,
