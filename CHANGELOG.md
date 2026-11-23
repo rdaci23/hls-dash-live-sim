@@ -41,11 +41,16 @@ Roku models in the device fault matrix.
   status in [implementation](docs/implementation.md),
   [development](docs/development.md) and the [roadmap](docs/scenario-roadmap.md),
   and narrow the unverified list to Roku models and OS versions beyond the three tested.
+- Chrome 158.0.8127.36 is a reviewed browser build for scenario, causality and
+  DVR evidence; [review](docs/browser-qualification.md).
 
 ### Fixed
 
 - `npm run -s release:publish` no longer stops with "Could not check npm" for a
   version that is not on npm yet. Silent mode had hidden the 404 the check reads.
+- The MP4 VoD Docker integration check sets `0755` on its temporary media
+  directory so Linux `nobody` nginx workers can traverse the read-only `/vod`
+  mount.
 
 ## 0.4.0 — 2026-11-15
 

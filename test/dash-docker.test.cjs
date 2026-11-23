@@ -349,6 +349,8 @@ test("MP4 VoD mode serves HLS from the digest-pinned image with the bundled conf
     const { startHlsim, DEFAULT_VOD_IMAGE } = require("../dist/support-tools/hls-sim-runner.js");
     assert.match(DEFAULT_VOD_IMAGE, /@sha256:[a-f0-9]{64}$/);
     const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "hls-vod-")));
+    // On Linux, mkdtemp creates 0700 owned by the host user, while nginx workers run as nobody.
+    await fs.chmod(directory, 0o755);
     const name = "hls-dash-vod-" + Date.now();
     let session;
     try {

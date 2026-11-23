@@ -220,3 +220,14 @@ test('Chrome 157.0.8103.51 is reviewed for every profile; neighbouring builds an
       assert.equal(reviewedIdentity(profile, { protocol, playerVersion: 'unknown', browserVersion: '157.0.8103.51' }), false);
     }
 });
+
+test('Chrome 158.0.8127.36 is reviewed for every profile; neighbouring builds and other players are not', () => {
+  const { reviewedIdentity } = require('../scripts/browser/reviewed-identity.cjs');
+  for (const profile of ['scenario', 'causality', 'dvr'])
+    for (const [protocol, playerVersion] of [['hls', '1.7.3'], ['dash', '5.2.1']]) {
+      assert.equal(reviewedIdentity(profile, { protocol, playerVersion, browserVersion: '158.0.8127.36' }), true, profile + ' ' + protocol);
+      for (const browserVersion of ['158.0.8127.35', '158.0.8127.37', '158.0.8128.36'])
+        assert.equal(reviewedIdentity(profile, { protocol, playerVersion, browserVersion }), false, browserVersion);
+      assert.equal(reviewedIdentity(profile, { protocol, playerVersion: 'unknown', browserVersion: '158.0.8127.36' }), false);
+    }
+});

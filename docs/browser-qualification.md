@@ -28,6 +28,13 @@ unchanged files with the build recognized qualified all 18 scenario cases. A
 separate DVR release check on the same commit passed with the same three
 documented player limitations. Without recognition, it failed only on identity.
 
+Chrome **158.0.8127.36** was added on 23 November 2026 on Linux x86_64 with the
+unchanged hls.js **1.7.3** and dash.js **5.2.1** packages for the 0.5.0 local
+candidate review, which still requires the six-case browser gate, all four
+caption controls, all 18 targeted scenario cases, the DVR release check (with
+the same three documented player limitations) and the ten-minute concurrent
+smoke to pass on the exact release commit.
+
 `scripts/browser/reviewed-identity.cjs` holds the scoped build lists used by
 scenario observations, native console/caption causes and DVR limitations. The
 previously reviewed Chrome 156 builds keep their existing scopes. This is not a
