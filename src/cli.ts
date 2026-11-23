@@ -22,6 +22,23 @@ import {
   createTemplateFromUrl,
   saveTemplate,
 } from "./support-tools/stream-templates.js";
+import {
+  SessionControlClient,
+  validateSessionFileTarget,
+  writeSessionFile,
+  writeExclusiveOutputFile,
+  parseSettingsFile,
+  formatControlStatus,
+  formatControlMutation,
+  type ManualFlagsPatch,
+  type MutationPinOptions,
+} from "./support-tools/control-client.js";
+import {
+  readBundledSkill,
+  installAgentSkill,
+  type AgentSkillTarget,
+} from "./support-tools/agent-skill.js";
+import type { FaultMode } from "./support-tools/live-stream-fault-config.js";
 
 function packageVersion(): string {
   return JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8")).version;
@@ -61,10 +78,37 @@ async function starting<T extends { close(): Promise<void> }>(
   }
 }
 
+function recordSessionMetadata(
+  session: { url: string; diagnostics?: { sessionId: string } },
+  protocol: "hls" | "dash",
+  args: any,
+): void {
+  if (!args["session-file"]) return;
+  if (!session.diagnostics?.sessionId) {
+    throw new Error("--session-file requires an active diagnostic proxy session");
+  }
+  const token = args["control-token"] ?? process.env.HLS_DASH_CONTROL_TOKEN ?? "";
+  const externallyManaged = Boolean(args.scenario && args["scenario-start"] !== "manual");
+  writeSessionFile(args["session-file"], {
+    sessionId: session.diagnostics.sessionId,
+    protocol,
+    url: session.url,
+    sessionControlsAvailable: !externallyManaged && token.length >= 16,
+  });
+}
+
 async function supervise(
-  session: { url: string; close(): Promise<void> },
+  session: { url: string; diagnostics?: { sessionId: string }; close(): Promise<void> },
   show: boolean,
+  protocol: "hls" | "dash",
+  args: any,
 ) {
+  try {
+    recordSessionMetadata(session, protocol, args);
+  } catch (error) {
+    await session.close();
+    throw error;
+  }
   let closing = false;
   const shutdown = async () => {
     if (closing) return;
@@ -152,6 +196,10 @@ const startOptions = (builder) =>
     })
     .option("scenario-start", { choices: ["auto", "manual"], default: "auto", description: "Auto-start a definition, or expose authenticated manual scenario controls" })
     .option("control-token", { type: "string", description: "Simulator session control token (or HLS_DASH_CONTROL_TOKEN); at least 16 characters for writes" })
+    .option("session-file", {
+      type: "string",
+      description: "Write redacted session metadata (URL, protocol, sessionId; no secrets) to a new JSON file",
+    })
     .option("diagnostics-rotate-files",{type:"number",description:"Opt-in append-only diagnostic rotation, 2–256 files, 10 MiB each; no eviction"})
     .option("diagnostics-file", {
       type: "string",
@@ -170,6 +218,73 @@ const startOptions = (builder) =>
       default: false,
     });
 
+const controlTargetOptions = (builder) =>
+  builder
+    .option("url", {
+      type: "string",
+      description: "Target simulator origin or manifest URL (or env HLS_DASH_SIM_URL)",
+    })
+    .option("session-file", {
+      type: "string",
+      description: "Session metadata file written by livesim --session-file",
+    })
+    .option("session-id", {
+      type: "string",
+      description: "Pin expected simulator session UUID",
+    })
+    .option("control-token", {
+      type: "string",
+      description: "Simulator session control token (or env HLS_DASH_CONTROL_TOKEN)",
+    })
+    .option("ca-cert", {
+      type: "string",
+      description: "CA certificate PEM for --http2 TLS sessions (or env HLS_DASH_CA_CERT)",
+    })
+    .option("timeout", {
+      type: "number",
+      description: "Request or wait timeout in milliseconds",
+    })
+    .option("json", {
+      type: "boolean",
+      default: false,
+      description: "Emit structured JSON to stdout",
+    });
+
+const controlMutationOptions = (builder) =>
+  controlTargetOptions(builder)
+    .option("revision", {
+      type: "number",
+      description: "Pin expected session-control revision",
+    })
+    .option("run-id", {
+      type: "string",
+      description: "Pin expected scenario run UUID",
+    });
+
+function buildControlClient(args: any, defaultTimeoutMs?: number): SessionControlClient {
+  if (args.timeout !== undefined && (!Number.isInteger(args.timeout) || Number(args.timeout) < 100)) {
+    throw new Error("--timeout must be an integer of at least 100 milliseconds");
+  }
+  return new SessionControlClient({
+    url: args.url,
+    sessionFile: args["session-file"],
+    sessionId: args["session-id"],
+    token: args["control-token"],
+    caCert: args["ca-cert"],
+    timeoutMs: args.timeout ?? defaultTimeoutMs,
+  });
+}
+
+function pinFromArgs(args: any): MutationPinOptions {
+  if (args.revision !== undefined && (!Number.isSafeInteger(args.revision) || Number(args.revision) < 0)) {
+    throw new Error("--revision must be a non-negative integer");
+  }
+  return {
+    ...(args.revision !== undefined ? { revision: Number(args.revision) } : {}),
+    ...(args["run-id"] !== undefined ? { runId: String(args["run-id"]) } : {}),
+  };
+}
+
 /** Generated HLS defaults to the fMP4 ladder. The MPEG-TS sample is kept for
  * the options only it supports: rendition selection and ad breaks. */
 function generatedHlsFormat(explicit: "ts" | "fmp4" | undefined, adBreakSegments?: number, rendition?: string, lowLatency?: boolean): "ts" | "fmp4" {
@@ -184,6 +299,7 @@ async function runTemplate(name: string, args) {
     throw new Error(
       "This template requires true low-latency media and transport, which are not supported yet",
     );
+  if (args["session-file"]) validateSessionFileTarget(args["session-file"]);
   const type =
     args["sim-type"] ??
     template.protocol ??
@@ -212,6 +328,8 @@ async function runTemplate(name: string, args) {
         }),
       ),
       args.showManifest,
+      "dash",
+      args,
     );
   } else {
     await supervise(
@@ -238,6 +356,8 @@ async function runTemplate(name: string, args) {
         }),
       ),
       args.showManifest,
+      "hls",
+      args,
     );
   }
 }
@@ -273,6 +393,464 @@ const program = yargs(hideBin(process.argv))
         profile: args["fault-profile"],
         controlToken: args["control-token"],
       });
+    },
+  )
+  .command(
+    ["control", "session"],
+    "Inspect or control a running simulator session from the CLI",
+    (sub) =>
+      sub
+        .command(
+          "status",
+          "Read simulator health, control mode, revision and current test state",
+          controlTargetOptions,
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const snapshot = await client.status();
+            console.info(args.json ? JSON.stringify(snapshot, null, 2) : formatControlStatus(snapshot));
+          },
+        )
+        .command(
+          "catalog",
+          "List scenario presets compatible with the connected stream",
+          (b) =>
+            controlTargetOptions(b)
+              .option("discover", {
+                type: "boolean",
+                default: true,
+                description: "Perform inert baseline playlist discovery first",
+              })
+              .option("all", {
+                type: "boolean",
+                default: false,
+                description: "Include unavailable presets and their prerequisite reasons",
+              })
+              .option("search", {
+                type: "string",
+                description: "Filter presets by ID, name or expected effect",
+              }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const data = await client.catalog({ discover: args.discover });
+            const query = args.search ? String(args.search).trim().toLowerCase() : "";
+            const presets = (data.presets ?? []).filter(
+              (p: any) =>
+                (args.all || p.enabled) &&
+                (!query || `${p.id} ${p.name} ${p.expectedEffect ?? ""}`.toLowerCase().includes(query)),
+            );
+            if (args.json) {
+              console.info(JSON.stringify({ ...data, presets }, null, 2));
+              return;
+            }
+            console.info(
+              `${presets.length} shown (${(data.presets ?? []).filter((p: any) => p.enabled).length} compatible with ${data.manifestUrl})`,
+            );
+            for (const preset of presets) {
+              console.info(
+                `- ${preset.id}${preset.enabled ? "" : " [unavailable]"}: ${preset.name}\n  ${
+                  preset.enabled ? preset.expectedEffect ?? "" : preset.reason ?? "Unavailable for this stream"
+                }`,
+              );
+            }
+          },
+        )
+        .command(
+          "manifest",
+          "Fetch an inert baseline manifest preview without consuming faults",
+          (b) =>
+            controlTargetOptions(b)
+              .option("playlist", {
+                type: "string",
+                description: "Playlist selector (root, video:0, audio:0, text:0, or advertised URI)",
+              })
+              .option("output", {
+                type: "string",
+                description: "Save raw manifest text to a new file",
+              }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const result = await client.manifest({ playlist: args.playlist });
+            if (args.output) {
+              const saved = writeExclusiveOutputFile(args.output, result.text);
+              if (args.json) {
+                console.info(JSON.stringify({ ...result, savedTo: saved }, null, 2));
+              } else {
+                console.info(`Baseline manifest preview (${result.url}) saved to ${saved}`);
+              }
+              return;
+            }
+            if (args.json) {
+              console.info(JSON.stringify(result, null, 2));
+            } else {
+              process.stdout.write(result.text.endsWith("\n") ? result.text : result.text + "\n");
+            }
+          },
+        )
+        .command(
+          "diagnostics",
+          "Export recent redacted diagnostic JSONL events from the simulator",
+          (b) =>
+            controlTargetOptions(b).option("output", {
+              type: "string",
+              description: "Save JSONL diagnostics to a new file",
+            }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const result = await client.diagnostics();
+            if (args.output) {
+              const saved = writeExclusiveOutputFile(args.output, result.jsonl);
+              if (args.json) {
+                console.info(JSON.stringify({ sessionId: result.sessionId, protocol: result.protocol, savedTo: saved }, null, 2));
+              } else {
+                console.info(`Diagnostics for session ${result.sessionId} saved to ${saved}`);
+              }
+              return;
+            }
+            if (args.json) {
+              const lines = result.jsonl
+                .split(/\r?\n/)
+                .filter(Boolean)
+                .map(line => JSON.parse(line));
+              console.info(JSON.stringify({ sessionId: result.sessionId, protocol: result.protocol, events: lines }, null, 2));
+            } else {
+              process.stdout.write(result.jsonl.endsWith("\n") ? result.jsonl : result.jsonl + "\n");
+            }
+          },
+        )
+        .command(
+          "evidence",
+          "Export session-control test results and bounded redacted diagnostics",
+          (b) =>
+            controlTargetOptions(b).option("output", {
+              type: "string",
+              description: "Save session evidence JSON to a new file",
+            }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const evidence = await client.evidence();
+            const serialized = JSON.stringify(evidence, null, 2) + "\n";
+            if (args.output) {
+              const saved = writeExclusiveOutputFile(args.output, serialized);
+              if (args.json) {
+                console.info(JSON.stringify({ sessionId: evidence.sessionId, revision: evidence.revision, savedTo: saved }, null, 2));
+              } else {
+                console.info(`Session evidence saved to ${saved} (check playback recovery separately in your player)`);
+              }
+              return;
+            }
+            process.stdout.write(serialized);
+          },
+        )
+        .command(
+          "mode <mode>",
+          "Take scoped session control and switch between manual and scenario modes",
+          (b) =>
+            controlMutationOptions(b).positional("mode", {
+              choices: ["manual", "scenario"] as const,
+              demandOption: true,
+            }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const updated = await client.setMode(args.mode, pinFromArgs(args));
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation("Mode updated", updated));
+          },
+        )
+        .command(
+          "apply",
+          "Apply manual fault or network shaping settings to the session",
+          (b) =>
+            controlMutationOptions(b)
+              .option("file", {
+                type: "string",
+                description: "Portable manual settings export or fault config JSON file",
+              })
+              .option("ensure-mode", {
+                type: "boolean",
+                default: false,
+                description: "Switch to manual mode automatically before applying",
+              })
+              .option("missing", {
+                choices: ["off", "once", "random", "always"] as const,
+                description: "Segment HTTP 404 mode",
+              })
+              .option("forbidden", {
+                choices: ["off", "once", "random", "always"] as const,
+                description: "Segment HTTP 403 mode",
+              })
+              .option("malformed", {
+                choices: ["off", "once", "random", "always"] as const,
+                description: "Malformed media response mode",
+              })
+              .option("latency-ms", {
+                type: "number",
+                description: "Fixed response delay in milliseconds (0–60000)",
+              })
+              .option("bandwidth-kbps", {
+                type: "number",
+                description: "Shared media/init bandwidth ceiling in kbps (0–1000000; 0 disables)",
+              })
+              .option("jitter-ms", {
+                type: "number",
+                description: "Additional random response delay in milliseconds (0–60000; 0 disables)",
+              })
+              .option("freeze", {
+                choices: ["off", "always"] as const,
+                description: "Hold dynamic manifests at the latest snapshot",
+              })
+              .option("key-failure", {
+                choices: ["off", "once", "random", "always"] as const,
+                description: "Encrypted HLS origin key HTTP 403 mode",
+              })
+              .option("key-mismatch", {
+                choices: ["off", "once", "random", "always"] as const,
+                description: "Encrypted HLS origin key mismatch mode",
+              }),
+          async (args: any) => {
+            const patch: ManualFlagsPatch = {
+              missing: args.missing as FaultMode | undefined,
+              forbidden: args.forbidden as FaultMode | undefined,
+              malformed: args.malformed as FaultMode | undefined,
+              latencyMs: args["latency-ms"],
+              bandwidthKbps: args["bandwidth-kbps"],
+              jitterMs: args["jitter-ms"],
+              freeze: args.freeze as "off" | "always" | undefined,
+              keyFailure: args["key-failure"] as FaultMode | undefined,
+              keyMismatch: args["key-mismatch"] as FaultMode | undefined,
+            };
+            const hasPatch = Object.values(patch).some(v => v !== undefined);
+            if (!args.file && !hasPatch) {
+              throw new Error(
+                "Provide --file <settings.json> or at least one manual setting flag (e.g. --bandwidth-kbps, --missing, --freeze)",
+              );
+            }
+            const fileSettings = args.file ? parseSettingsFile(args.file) : undefined;
+            const client = buildControlClient(args);
+            const updated = await client.apply(
+              {
+                settings: fileSettings,
+                patch: hasPatch ? patch : undefined,
+                ensureManualMode: Boolean(args["ensure-mode"]),
+              },
+              pinFromArgs(args),
+            );
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation("Manual settings applied", updated));
+          },
+        )
+        .command(
+          "inject <type>",
+          "Arm a one-shot manual fault or latency spike for the next matching request",
+          (b) =>
+            controlMutationOptions(b)
+              .positional("type", {
+                choices: [
+                  "segment.missing",
+                  "segment.forbidden",
+                  "segment.malformed",
+                  "segment.latencySpike",
+                  "segment.latencyReset",
+                  "drm.licenseFailure",
+                  "drm.keyRotationMismatch",
+                ] as const,
+                demandOption: true,
+              })
+              .option("value", {
+                type: "number",
+                description: "Latency in milliseconds for segment.latencySpike (0–60000)",
+              })
+              .option("ensure-mode", {
+                type: "boolean",
+                default: false,
+                description: "Switch to manual mode automatically before injecting",
+              }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const updated = await client.inject(
+              args.type,
+              { value: args.value, ensureManualMode: Boolean(args["ensure-mode"]) },
+              pinFromArgs(args),
+            );
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation(`Injected ${args.type}`, updated));
+          },
+        )
+        .command(
+          "clear",
+          "Clear manual faults back to healthy settings and retain the completed manual test",
+          controlMutationOptions,
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const updated = await client.clear(pinFromArgs(args));
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation("Manual faults cleared", updated));
+          },
+        )
+        .command(
+          "arm <preset>",
+          "Prepare an immutable scenario preset without starting fault delivery",
+          (b) =>
+            controlMutationOptions(b)
+              .positional("preset", {
+                type: "string",
+                demandOption: true,
+                description: "Catalog preset ID (or loaded for a --scenario-start manual file)",
+              })
+              .option("discover", {
+                type: "boolean",
+                default: true,
+                description: "Perform inert baseline playlist discovery before arming",
+              }),
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const updated = await client.arm(args.preset, { discover: args.discover }, pinFromArgs(args));
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation(`Prepared ${args.preset}`, updated));
+          },
+        )
+        .command(
+          "start",
+          "Start the already prepared scenario run",
+          controlMutationOptions,
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const updated = await client.start(pinFromArgs(args));
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation("Scenario started", updated));
+          },
+        )
+        .command(
+          "stop",
+          "Stop and disarm the active scenario or manual test while retaining evidence",
+          controlMutationOptions,
+          async (args: any) => {
+            const client = buildControlClient(args);
+            const updated = await client.stop(pinFromArgs(args));
+            console.info(args.json ? JSON.stringify(updated, null, 2) : formatControlMutation("Session test stopped", updated));
+          },
+        )
+        .command(
+          "run <preset>",
+          "Switch to scenario mode, prepare and start a preset, and optionally wait for completion",
+          (b) =>
+            controlTargetOptions(b)
+              .positional("preset", {
+                type: "string",
+                demandOption: true,
+                description: "Catalog preset ID to prepare and start",
+              })
+              .option("wait", {
+                type: "boolean",
+                default: false,
+                description: "Wait until the scenario reaches a terminal simulator outcome",
+              })
+              .option("poll-ms", {
+                type: "number",
+                default: 500,
+                description: "Polling interval in milliseconds when --wait is set",
+              })
+              .option("discover", {
+                type: "boolean",
+                default: true,
+                description: "Perform inert baseline playlist discovery before arming",
+              }),
+          async (args: any) => {
+            const client = buildControlClient(args, 15000);
+            const result = await client.run(args.preset, {
+              wait: Boolean(args.wait),
+              timeoutMs: args.timeout ?? 60000,
+              pollIntervalMs: args["poll-ms"],
+              discover: args.discover,
+            });
+            if (args.wait) {
+              if (result.timedOut || result.outcome !== "passed") process.exitCode = 1;
+              if (args.json) {
+                console.info(JSON.stringify(result, null, 2));
+              } else {
+                console.info(
+                  `Scenario ${args.preset}: ${result.timedOut ? `timed out (state=${result.outcome})` : `outcome=${result.outcome}`}\n${result.note}`,
+                );
+              }
+            } else {
+              console.info(args.json ? JSON.stringify(result, null, 2) : formatControlMutation(`Running ${args.preset}`, result));
+            }
+          },
+        )
+        .command(
+          "wait",
+          "Wait until an active interactive or startup scenario reaches a terminal outcome",
+          (b) =>
+            controlTargetOptions(b).option("poll-ms", {
+              type: "number",
+              default: 500,
+              description: "Polling interval in milliseconds",
+            }),
+          async (args: any) => {
+            const client = buildControlClient(args, 15000);
+            const result = await client.wait({
+              timeoutMs: args.timeout ?? 60000,
+              pollIntervalMs: args["poll-ms"],
+            });
+            if (result.timedOut || result.outcome !== "passed") process.exitCode = 1;
+            if (args.json) {
+              console.info(JSON.stringify(result, null, 2));
+            } else {
+              console.info(
+                `Scenario wait: ${result.timedOut ? `timed out (state=${result.outcome})` : `outcome=${result.outcome}`} (session ${result.sessionId})\n${result.note}`,
+              );
+            }
+          },
+        )
+        .demandCommand(1, "Specify a control subcommand (e.g. status, catalog, manifest, run, apply, inject, clear, stop)"),
+    () => {},
+  )
+  .command(
+    "skill",
+    "Print or install the bundled AI agent SKILL.md for Claude, Codex and Google",
+    (builder) =>
+      builder
+        .option("install", {
+          choices: ["claude", "codex", "google", "all"] as const,
+          type: "string",
+          description: "Install SKILL.md for Claude Code, OpenAI Codex, Google (Gemini CLI / Antigravity), or all",
+        })
+        .option("global", {
+          type: "boolean",
+          default: false,
+          description: "Install into your user home skill directory instead of the current workspace",
+        })
+        .option("dir", {
+          type: "string",
+          description: "Target workspace directory when using --install (default: current directory)",
+        })
+        .option("force", {
+          type: "boolean",
+          default: false,
+          description: "Overwrite existing SKILL.md files when installing",
+        })
+        .option("json", {
+          type: "boolean",
+          default: false,
+          description: "Emit structured JSON output",
+        }),
+    (args: any) => {
+      if (!args.install) {
+        if (args.global || args.dir || args.force) {
+          throw new Error("Pass --install <claude|codex|google|all> when using --global, --dir or --force");
+        }
+        const content = readBundledSkill();
+        if (args.json) {
+          console.info(JSON.stringify({ name: "hls-dash-live-sim", content }, null, 2));
+        } else {
+          process.stdout.write(content.endsWith("\n") ? content : content + "\n");
+        }
+        return;
+      }
+      const { written } = installAgentSkill({
+        target: args.install as AgentSkillTarget,
+        global: Boolean(args.global),
+        dir: args.dir,
+        force: Boolean(args.force),
+      });
+      if (args.json) {
+        console.info(JSON.stringify({ target: args.install, global: Boolean(args.global), written }, null, 2));
+      } else {
+        console.info(`Installed hls-dash-live-sim skill (${args.install}):\n` + written.map(f => `  ${f}`).join("\n"));
+      }
     },
   )
   .command(
@@ -376,6 +954,12 @@ const program = yargs(hideBin(process.argv))
           });
         return;
       }
+      if (args["session-file"]) {
+        if (args.proxy === false || args["fault-proxy"] === false) {
+          throw new Error("--session-file requires the default Node/fault proxy");
+        }
+        validateSessionFileTarget(args["session-file"]);
+      }
       const common = {
         port: args.port,
         host: args.host,
@@ -432,7 +1016,7 @@ const program = yargs(hideBin(process.argv))
               lowLatency: args["low-latency"],
             }),
       );
-      await supervise(session, args.showManifest);
+      await supervise(session, args.showManifest, type, args);
     },
   )
   .command(

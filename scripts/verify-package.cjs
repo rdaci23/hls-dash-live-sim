@@ -43,6 +43,12 @@ async function ready(url, child, logs) {
     const changelog = await fs.readFile(path.join(root, 'CHANGELOG.md'), 'utf8');
     assert.ok(changelog.split(/\r?\n/).some(line => line.startsWith('## ' + version + ' —')), 'Changelog must cover the package version');
     assert.ok(files.includes('dist/cli.js'));
+    assert.ok(files.includes('dist/index.js'));
+    assert.ok(files.includes('dist/index.d.ts'));
+    assert.ok(files.includes('docs/ai-agents.md'));
+    assert.ok(files.includes('assets/skill/SKILL.md'));
+    assert.ok(files.includes('dist/support-tools/assets/skill/SKILL.md'));
+    assert.ok(!files.includes('AGENTS.md') && !files.includes('CLAUDE.md') && !files.includes('GEMINI.md'), 'repo contributor rules remain outside the npm archive');
     assert.ok(files.includes('dist/support-tools/assets/scenarios/next-manifest-retry.json'));
     assert.ok(files.includes('docs/scenario-controls.md'));
     assert.ok(files.includes('docs/payload-transport-scenarios.md'));

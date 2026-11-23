@@ -1,9 +1,11 @@
 # Core scenario implementation roadmap
 
-The repository and npm package stay private. Public release requires explicit
-approval after all core work below qualifies. HTTP fault delivery, valid stream
-authoring and browser compatibility are separate outcomes. A documented player
-limitation must never be hidden or presented as a simulator pass.
+This roadmap tracks the pre-1.0 core scenario milestones and their historical
+evidence ledger. The public beta is now published on GitHub and npm as
+`hls-dash-live-sim`; each release requires explicit maintainer approval and
+exact-commit local review. HTTP fault delivery, valid stream authoring and
+browser compatibility remain separate outcomes. A documented player limitation
+must never be hidden or presented as a simulator pass.
 
 On 4 November 2026 the maintainer switched private preparation to local-only
 verification to preserve the Actions allowance. Repository Actions is disabled;

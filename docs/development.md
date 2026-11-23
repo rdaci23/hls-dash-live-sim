@@ -96,8 +96,9 @@ DASH ladder. Stop sessions first. [Provenance](../assets/README.md).
 the included runner allowance. No active runs remained when it was disabled.
 Run routine, integration, browser, package and release checks locally. Do not
 enable Actions, dispatch workflows or retry old runs without explicit maintainer
-approval, including when local checks become green. The repository is public;
-keep the npm package private. Pushing a commit does not authorize hosted
+approval, including when local checks become green. The repository and
+`hls-dash-live-sim` npm package are public; npm releases are published locally
+from the reviewed archive (`release:publish`), never from CI. Pushing a commit does not authorize hosted
 verification. The workflow files keep their `push`/`pull_request` triggers, so
 re-enabling Actions, or a fork with Actions enabled, runs the routine job.
 

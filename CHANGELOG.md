@@ -5,14 +5,42 @@ describe the simulator; recorded player results apply only to their tested scope
 
 ## Unreleased
 
+Headless CLI session controls (`control` / `session`), redacted `--session-file`
+startup metadata, a programmatic package entrypoint (`dist/index.js`), and a
+bundled `SKILL.md` installer (`skill`) plus documentation for Claude Code,
+OpenAI Codex and Google (Gemini CLI / Antigravity), alongside two more physical
+Roku models in the device fault matrix.
+
+### Added
+
+- `hls-dash-live-sim control <subcommand>` (aliased as `session <subcommand>`)
+  for headless inspection and session-scoped control (`status`, `catalog`,
+  `manifest`, `diagnostics`, `evidence`, `mode`, `apply`, `inject`, `clear`,
+  `arm`, `start`, `stop`, `run`, `wait`), with `--json`, `--session-file` and
+  `--ca-cert` support ([CLI and AI agents](docs/ai-agents.md)).
+- `--session-file <new-file>` on `livesim`, `dummy-stream` and `*-stream` writes
+  `0600` non-secret session metadata (`sessionId`, `protocol`, `url`, `origin`,
+  `http2`, `sessionControlsAvailable`) without storing tokens or origin auth.
+- `hls-dash-live-sim skill` prints or installs the bundled
+  [Agent Skill](assets/skill/SKILL.md) for Claude Code, OpenAI Codex and Google
+  (Gemini CLI / Antigravity) without overwriting existing files unless `--force`
+  is set; contributor rules are also recorded in repository `AGENTS.md`,
+  `CLAUDE.md` and `GEMINI.md`.
+- Package root entrypoint (`dist/index.js` and `dist/index.d.ts`) exporting the
+  documented stream runners (`startHlsim`, `startLivesim2`,
+  `startDashFaultProxy`, `startTrackFixture`), `createLocalCerts`,
+  `SessionControlClient` and skill helpers.
+
 ### Changed
 
 - The [device fault matrix](docs/device-fault-matrix.md#roku-models) adds a Roku
   Streaming Stick 4K and a Roku Ultra on Roku OS 16.0.4. Both handled the 15 HLS
   and 10 DASH fault scenarios the same way as the Express 4K.
-- The README's supported-behavior table describes the fMP4 ladder as the HLS
-  default, adds HTTP/2 over TLS and the device fault matrix, and narrows the
-  unverified list to Roku models and OS versions beyond the three tested.
+- The README's supported-behavior table and [implementation notes](docs/implementation.md)
+  describe the fMP4 ladder as the HLS CLI default, update the npm publication
+  status in [implementation](docs/implementation.md),
+  [development](docs/development.md) and the [roadmap](docs/scenario-roadmap.md),
+  and narrow the unverified list to Roku models and OS versions beyond the three tested.
 
 ### Fixed
 

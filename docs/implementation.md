@@ -28,10 +28,12 @@ behavior belongs to explicit faults.
 
 ## HLS
 
-Generated samples use procedural 180p/360p H.264 Baseline and muxed AAC, with
-aligned keyframes and two-second segments. LIVE has a sliding window, increasing
+Generated samples serve a procedural fMP4 ladder by default in the CLI (234p,
+432p and 720p H.264 with separate AAC and two-second segments); `--segment-format ts`
+(and the `startHlsim()` library default) serves two muxed 180p/360p H.264/AAC
+renditions. LIVE has a sliding window, increasing
 media sequence numbers, program timestamps and explicit loop discontinuities.
-Both renditions share one time anchor. EVENT grows from startup; VOD ends.
+All renditions share one time anchor. EVENT grows from startup; VOD ends.
 
 Publication uses monotonic time plus a wall-clock anchor, so a system clock
 correction cannot reverse the window. Removed segments remain available for a
@@ -44,9 +46,10 @@ retired references for a grace period. Limits are 100,000 resources, 128 observe
 playlists and 4 MiB per remote playlist. Capacity failure returns HTTP 503 instead
 of silently evicting active references. Full-response buffering remains a limit.
 
-From a proxied origin, variable substitution (`EXT-X-DEFINE`), LL-HLS parts,
-blocking reload and delta updates fail explicitly with HTTP 422; the simulator's
-own [low-latency stream](generated-streams.md) is separate. Media/timeline scenario targeting uses generated samples; HLS origins support
+From a proxied origin, variable substitution (`EXT-X-DEFINE`) and origin delta
+updates (`EXT-X-SKIP`) fail explicitly with HTTP 422 so snapshots remain complete;
+low-latency HLS parts, preload hints and blocking reload are relayed, and the
+simulator's own [low-latency stream](generated-streams.md) is available directly. Media/timeline scenario targeting uses generated samples; HLS origins support
 manifest/init HTTP targeting through advertised playlists and EXT-X-MAP. The
 MPEG-TS sample has no init resource and its muxed audio cannot be targeted
 independently of video. [Resource targeting](resource-scenarios.md).
@@ -194,5 +197,5 @@ remain outside the verified support claim. Sports/news/OTT/mobile presets report
 the sample's actual renditions/windows rather than promising those features.
 
 The [release checklist](release-checklist.md) tracks licensing, notices and other
-public-beta requirements. The GitHub repository is public; the package is not
-published to npm, which remains a separate maintainer decision.
+public-beta requirements. The GitHub repository is public and the reviewed archive
+is published to npm as `hls-dash-live-sim` by the maintainer.

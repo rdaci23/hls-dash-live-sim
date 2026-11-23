@@ -9,7 +9,9 @@ track publication status in the [release checklist](docs/release-checklist.md).
 
 New here? Follow [setup](docs/getting-started.md), the [three-minute demo](docs/demo.md),
 then [three scenario recipes](docs/scenario-recipes.md). See [configuration](docs/configuration.md)
-for ready-to-copy settings, access controls and independent sessions.
+for ready-to-copy settings, access controls and independent sessions, or
+[CLI control and AI agents](docs/ai-agents.md) for headless automation and the bundled
+Claude Code, Codex and Google (Gemini CLI / Antigravity) skill.
 
 ## License
 
@@ -201,6 +203,11 @@ npm start -- livesim --sim-type hls --ad-break-segments 2
 npm run templates
 npm start -- create-manifest-template --help
 npm start -- livesim --help
+
+# Control a running session from the CLI or install the AI agent skill
+npm start -- control status --url http://127.0.0.1:8899/proxy.m3u8 --json
+npm start -- control run next-video-retry --url http://127.0.0.1:8899/proxy.m3u8 --wait
+npm start -- skill --install all
 ```
 
 Record redacted requests with `--diagnostics-file output/requests.jsonl` after
@@ -225,6 +232,7 @@ Manual faults must be off. [Scenario rules and replay](docs/scenarios.md).
 | [Setup](docs/getting-started.md) | Prerequisites, first HLS/DASH stream, ports and troubleshooting. |
 | [Demo](docs/demo.md) | A short real-UI walkthrough with a one-shot HTTP retry. |
 | [Configuration](docs/configuration.md) | Manual files, scenario files, sample settings and protected access. |
+| [CLI and AI agents](docs/ai-agents.md) | Headless `control`/`session` CLI, `--session-file`, and Claude/Codex/Google `SKILL.md` setup. |
 | [Scenario recipes](docs/scenario-recipes.md) | One 404/retry, sustained outage and scheduled network/freeze cycle. |
 | [Changelog](CHANGELOG.md) | Features, verification scope and known limits for each version. |
 | [Release review](docs/release-review.md) | History/package audit, clean-clone browser checks and publication decisions. |
